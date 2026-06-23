@@ -1,0 +1,6 @@
+.env
+__pycache__/
+*.pyc
+# Vault unseal key + root token (crown jewels — never commit)
+vault/.vault-init.json
+vault/file/
