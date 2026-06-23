@@ -1,11 +1,12 @@
 # PII-vault supporting services for the Claude tokenization pipeline.
 #   redis     -> token store (token -> Vault ciphertext)
-#   vault     -> transit engine, encrypts/decrypts the real PII values (DEV MODE — see note)
+#   vault     -> transit engine, encrypts/decrypts the real PII values (PERSISTENT file storage)
 #   presidio  -> PII detection over HTTP (POST /analyze)
 #
-# NOTE: Vault runs in DEV mode (in-memory). A restart loses the transit key, which orphans
-# every token in Redis (by design — ciphertext is useless without the key). Fine for testing;
-# switch to file storage + auto-unseal before relying on it.
+# Vault uses persistent file storage (pii-vault-data volume) + vault/config.hcl, so the transit
+# key and all tokens survive restarts/reboots. It must be unsealed on each start: stack-up.sh
+# initializes once and auto-unseals from vault/.vault-init.json (gitignored). Run stack-up.sh
+# instead of `docker compose up` directly — it brings up the stack AND unseals/bootstraps Vault.
 services:
   redis:
     image: redis:7-alpine
@@ -23,11 +24,16 @@ services:
     cap_add:
       - IPC_LOCK
     environment:
-      VAULT_DEV_ROOT_TOKEN_ID: pii-root-token
-      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+      VAULT_ADDR: http://127.0.0.1:8200
     ports:
       - "8200:8200"
-    command: ["server", "-dev"]
+    volumes:
+      - ./vault/config.hcl:/vault/config/config.hcl:ro
+      - pii-vault-data:/vault/file
+    # The image entrypoint auto-adds `-config=/vault/config`, which loads the mounted
+    # config.hcl. Do NOT also pass `-config=...` here or the file loads twice (two
+    # listeners on 8200 -> "address already in use").
+    command: ["server"]
     restart: unless-stopped
 
   presidio-analyzer:
@@ -39,3 +45,4 @@ services:
 
 volumes:
   pii-redis-data:
+  pii-vault-data:

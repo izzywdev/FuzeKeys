@@ -1,0 +1,5 @@
+# Keep shell scripts and Vault HCL as LF so they run inside Linux containers / bash.
+*.sh   text eol=lf
+*.hcl  text eol=lf
+# Windows batch must stay CRLF.
+*.cmd  text eol=crlf

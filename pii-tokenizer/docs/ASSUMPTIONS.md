@@ -43,9 +43,17 @@ corrupting model names, file paths, UUIDs, commit hashes, or version strings.
   rewrites *assistant* message text. Tool outputs *are* shown tokenized (via PostToolUse). A
   permissioned, terminal-only "expose/reveal" of tokens (and any prompt-display masking) would need a
   future Claude Code capability or a wrapper layer.
-- **Vault runs in dev mode (in-memory).** A Vault restart loses the transit key and orphans every
-  token in Redis (by design — ciphertext is useless without the key). Switch to file/raft storage +
-  auto-unseal before depending on it.
+- **Vault uses persistent file storage and survives restarts/reboots.** The transit key and all
+  ciphertext live in the `pii-vault-data` volume, so a restart no longer orphans tokens. The
+  tradeoff: persistent Vault is **sealed** on each start and must be unsealed. `stack-up.sh`
+  auto-unseals from `vault/.vault-init.json`, which holds the single unseal key **and** the root
+  token in cleartext on disk — appropriate for a localhost-only trust model, but it is the crown
+  jewel: lose it and a sealed Vault is unrecoverable; leak it and all ciphertext is exposed. It is
+  gitignored and must never be committed or synced. For multi-user/non-local use, move to multiple
+  unseal shares or KMS auto-unseal and a transit-scoped token instead of root.
+- **Tokens expire after 24h (`TOKEN_TTL=86400`).** Redis drops a token after a day; a `<TYPE_id>`
+  referenced after expiry no longer detokenizes (it passes through literally). Set `TOKEN_TTL=0`
+  for never-expire if you need detokenization across longer spans.
 - **Fail-open by design.** A stack outage lets raw tool I/O through rather than blocking work.
   Make the hooks fail-closed if your threat model requires it.
 - **Recall/precision is bounded by Presidio.** Misses (e.g. unusual formats) pass through; some

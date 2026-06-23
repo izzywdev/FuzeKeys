@@ -16,9 +16,20 @@ OS-agnostic but the Windows-specific gotchas are called out.
 
 ```bash
 cp .env.example .env
-docker compose up -d        # pii-redis :6379, pii-vault :8200, pii-presidio :5002
-./bootstrap.sh              # enable Vault transit engine + create the 'pii' aes256-gcm96 key
+./stack-up.sh               # docker up + Vault init/unseal + transit bootstrap (idempotent)
 ```
+
+`stack-up.sh` waits for the Docker daemon, runs `docker compose up -d` (pii-redis :6379,
+pii-vault :8200, pii-presidio :5002), then:
+
+- **Initializes Vault once** (1 unseal share) and saves the unseal key + root token to
+  `vault/.vault-init.json` (**gitignored — the crown jewels**).
+- **Auto-unseals** from that file on every run (persistent Vault is sealed on each start).
+- **Syncs `VAULT_TOKEN`** in `.env` to the persistent root token.
+- **Ensures** the transit engine + `pii` key exist.
+
+Vault uses **persistent file storage** (the `pii-vault-data` volume + `vault/config.hcl`), so the
+transit key and all tokens survive container restarts and host reboots.
 
 Verify:
 
@@ -28,7 +39,29 @@ python test_pii_vault.py              # ROUND-TRIP OK
 ```
 
 `test_pii_vault.py` proves the contract: after `tokenize()`, **Redis holds Vault ciphertext only**
-(every value starts with `vault:`), and `detokenize()` restores the original exactly.
+(every value starts with `vault:`), and `detokenize()` restores the original exactly. Tokens carry
+a **24h TTL** (`TOKEN_TTL=86400`) and auto-expire from Redis.
+
+### Auto-unseal at logon (survive reboots)
+
+Persistent Vault comes back **sealed** after a reboot, so register `stack-up.sh` to run at logon.
+Two options:
+
+- **No admin (Startup folder)** — drop a hidden launcher in
+  `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup` that runs `start-pii-stack.cmd`:
+
+  ```vbscript
+  ' PII-Stack.vbs
+  CreateObject("WScript.Shell").Run "cmd /c ""<REPO>\pii-tokenizer\start-pii-stack.cmd""", 0, False
+  ```
+
+- **Scheduled task (needs elevation once)** — from an **elevated** PowerShell:
+
+  ```powershell
+  .\register-pii-task.ps1     # registers the "PII-Stack" AtLogon task
+  ```
+
+Both run `stack-up.sh`, which waits for Docker Desktop to start, then unseals + bootstraps.
 
 ## 2. Prompt-level tokenization (LiteLLM proxy)
 
@@ -99,6 +132,10 @@ token in the transcript, while the tool itself received the real number (via the
 ## Teardown
 
 ```bash
-docker compose down          # keep Redis volume (tokens persist)
-docker compose down -v       # also drop the Redis volume (orphans all tokens)
+docker compose down          # stop containers; KEEP volumes (tokens + Vault key persist)
+docker compose down -v       # also drop pii-redis-data AND pii-vault-data volumes
 ```
+
+`down -v` destroys the persistent Vault storage. After that you must delete the stale
+`vault/.vault-init.json` and re-run `stack-up.sh` (it will re-initialize a fresh Vault); every
+previously issued token becomes permanently undecryptable.

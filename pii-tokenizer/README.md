@@ -27,8 +27,11 @@ Vault. Tools transparently get the real value back when they actually need it.
 
 | Path | Role |
 |------|------|
-| `docker-compose.yml` | Redis (token store) + Vault (transit encryption, **dev mode**) + Presidio analyzer (PII detection over HTTP). |
-| `bootstrap.sh` | Enables the Vault transit engine and creates the `pii` key. Idempotent. |
+| `docker-compose.yml` | Redis (token store) + Vault (transit encryption, **persistent file storage**) + Presidio analyzer (PII detection over HTTP). |
+| `vault/config.hcl` | Vault server config (file storage at `/vault/file`, TCP listener, tls disabled). |
+| `stack-up.sh` | **Entry point.** Idempotent: waits for Docker, brings containers up, initializes Vault once, auto-unseals, and bootstraps the transit `pii` key. Run this instead of `docker compose up`. |
+| `start-pii-stack.cmd` / `register-pii-task.ps1` | Windows auto-start at logon (Startup-folder launcher / elevated scheduled-task registration) so Vault is unsealed automatically after a reboot. |
+| `bootstrap.sh` | Transit-only bootstrap (enable engine + create `pii` key). Folded into `stack-up.sh`; kept for manual use. |
 | `pii_vault.py` | Shared library: `tokenize()` / `detokenize()` (+ `_obj` recursive variants). Presidio + secret regexes → Vault-encrypt → Redis. |
 | `pii_guardrail.py` | LiteLLM `CustomGuardrail` (`pre_call`) — tokenizes prompt messages at the proxy so the upstream LLM only sees tokens. |
 | `hooks/pretooluse_detokenize.py` | Claude Code PreToolUse hook — detokenizes tool **input** (`updatedInput`). |
@@ -40,13 +43,16 @@ Vault. Tools transparently get the real value back when they actually need it.
 ## Quickstart
 
 ```bash
-cp .env.example .env            # adjust if needed (dev defaults work out of the box)
-docker compose up -d            # redis + vault + presidio
-./bootstrap.sh                  # enable Vault transit + create the 'pii' key
+cp .env.example .env            # stack-up.sh fills in VAULT_TOKEN on first run
+./stack-up.sh                   # docker up + Vault init/unseal + transit bootstrap (idempotent)
 python test_pii_vault.py        # expect: ROUND-TRIP OK
 ```
 
-Then wire it into LiteLLM and Claude Code — see **[docs/INSTALL.md](docs/INSTALL.md)**.
+Vault uses **persistent storage** and must be unsealed on each start; `stack-up.sh` auto-unseals
+from `vault/.vault-init.json` (gitignored). Tokens carry a **24h TTL** by default (`TOKEN_TTL`).
+
+To unseal automatically after every reboot, register the logon auto-start — see
+**[docs/INSTALL.md](docs/INSTALL.md)**. Then wire it into LiteLLM and Claude Code (same doc).
 
 ## How detection works
 
