@@ -30,8 +30,13 @@ SignMeUp is a sophisticated automation platform that intelligently manages multi
 ### 🛡️ **PII Tokenizer** (LLM data-path protection)
 - **Tokenize before the model sees it**: PII/secrets (cards, SSNs, emails, phones, IBANs, API keys)
   are replaced with opaque `<CCD_…>`/`<APIKEY_…>` tokens before any text reaches the LLM provider.
-- **Vault-encrypted, Redis-stored**: real values are encrypted by HashiCorp Vault; only ciphertext
-  is stored. Local tools transparently get the real value back when they need it.
+- **Vault-encrypted, Redis-stored**: real values are encrypted by HashiCorp Vault (persistent
+  file storage) and only ciphertext is stored. Local tools transparently get the real value back
+  when they need it.
+- **Reboot-resilient & self-unsealing**: `stack-up.sh` plus a logon launcher bring the stack up and
+  auto-unseal Vault after a reboot — no manual bootstrap step. Tokens carry a **24h TTL**.
+- **Two enforcement points**: a LiteLLM `pre_call` guardrail tokenizes prompts before they leave for
+  the model; Claude Code PreToolUse/PostToolUse hooks detokenize tool input and re-tokenize tool output.
 - See **[`pii-tokenizer/`](pii-tokenizer/README.md)** and its
   **[installation guide](pii-tokenizer/docs/INSTALL.md)** / **[assumptions](pii-tokenizer/docs/ASSUMPTIONS.md)**.
 
