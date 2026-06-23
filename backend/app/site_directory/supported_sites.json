@@ -1,0 +1,107 @@
+{
+  "sites": {
+    "google": {
+      "name": "Google",
+      "url": "https://accounts.google.com",
+      "supported_actions": ["signup", "signin"],
+      "status": "development",
+      "scrapers": {
+        "signup": {
+          "latest_version": null,
+          "production_ready": false,
+          "success_rate": 0.0,
+          "last_tested": null
+        },
+        "signin": {
+          "latest_version": null,
+          "production_ready": false,
+          "success_rate": 0.0,
+          "last_tested": null
+        }
+      },
+      "patterns": {
+        "signup_url": "https://accounts.google.com/signup",
+        "signin_url": "https://accounts.google.com/signin",
+        "verification_methods": ["email", "sms"],
+        "common_selectors": {
+          "email_field": ["#identifierId", "[name='identifier']"],
+          "password_field": ["[name='password']", "#password"],
+          "submit_button": ["#identifierNext", "[type='submit']"]
+        }
+      }
+    },
+    "github": {
+      "name": "GitHub",
+      "url": "https://github.com",
+      "supported_actions": ["signup", "signin"],
+      "status": "development",
+      "scrapers": {
+        "signup": {
+          "latest_version": null,
+          "production_ready": false,
+          "success_rate": 0.0,
+          "last_tested": null
+        },
+        "signin": {
+          "latest_version": null,
+          "production_ready": false,
+          "success_rate": 0.0,
+          "last_tested": null
+        }
+      },
+      "patterns": {
+        "signup_url": "https://github.com/signup",
+        "signin_url": "https://github.com/login",
+        "verification_methods": ["email"],
+        "common_selectors": {
+          "email_field": ["#user_email", "[name='user[email]']"],
+          "password_field": ["#user_password", "[name='user[password]']"],
+          "username_field": ["#user_login", "[name='user[login]']"]
+        }
+      }
+    },
+    "openai": {
+      "name": "OpenAI",
+      "url": "https://platform.openai.com",
+      "supported_actions": ["signup", "signin", "apikey_creation"],
+      "status": "development",
+      "scrapers": {
+        "signup": {
+          "latest_version": null,
+          "production_ready": false,
+          "success_rate": 0.0,
+          "last_tested": null
+        },
+        "signin": {
+          "latest_version": null,
+          "production_ready": false,
+          "success_rate": 0.0,
+          "last_tested": null
+        },
+        "apikey_creation": {
+          "latest_version": null,
+          "production_ready": false,
+          "success_rate": 0.0,
+          "last_tested": null
+        }
+      },
+      "patterns": {
+        "signup_url": "https://platform.openai.com/signup",
+        "signin_url": "https://platform.openai.com/login",
+        "api_keys_url": "https://platform.openai.com/api-keys",
+        "verification_methods": ["email"],
+        "common_selectors": {
+          "email_field": ["[name='email']", "#email"],
+          "password_field": ["[name='password']", "#password"],
+          "api_key_button": ["[data-testid='create-new-secret-key']", ".create-key-button"]
+        }
+      }
+    }
+  },
+  "metadata": {
+    "last_updated": "2024-12-03T00:00:00Z",
+    "total_sites": 3,
+    "production_ready_count": 0,
+    "development_count": 3
+  }
+} 

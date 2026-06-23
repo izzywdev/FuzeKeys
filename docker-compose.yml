@@ -1,29 +1,56 @@
 version: '3.8'
 
+networks:
+  fuzeinfra:
+    external: true
+    name: fuzeinfra_default
+
 services:
-  postgres:
-    image: postgres:15
+  # FuzeKeys Backend API
+  fuzekeys-api:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fuzekeys-api
     environment:
-      POSTGRES_DB: signmeup
-      POSTGRES_USER: signmeup_user
-      POSTGRES_PASSWORD: signmeup_password
+      - DATABASE_URL=postgresql://fuzekeys_user:fuzekeys_password@shared-postgres:5432/fuzekeys
+      - DATABASE_URL_ASYNC=postgresql+asyncpg://fuzekeys_user:fuzekeys_password@shared-postgres:5432/fuzekeys
+      - REDIS_URL=redis://shared-redis:6379
+      - SECRET_KEY=fuzekeys-production-secret-change-this-in-production
+      - MASTER_KEY_SALT=fuzekeys-production-salt-change-this-in-production
+      - ENVIRONMENT=production
+      - PYTHONPATH=/app
+      - BACKEND_PORT=${BACKEND_PORT:-8002}
     ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - "${BACKEND_PORT:-8002}:8002"
+    networks:
+      - fuzeinfra
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U signmeup_user -d signmeup"]
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
       interval: 30s
       timeout: 10s
       retries: 3
 
-  redis:
-    image: redis:7-alpine
+  # FuzeKeys Frontend (React)
+  fuzekeys-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: fuzekeys-frontend
+    environment:
+      - REACT_APP_API_URL=http://fuzekeys.dev.local/api
+      - NODE_ENV=production
+      - FRONTEND_PORT=${FRONTEND_PORT:-3001}
+    depends_on:
+      - fuzekeys-api
     ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-
-volumes:
-  postgres_data:
-  redis_data: 
+      - "${FRONTEND_PORT:-3001}:3000"
+    networks:
+      - fuzeinfra
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3 

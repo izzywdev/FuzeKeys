@@ -6,7 +6,7 @@ import uvicorn
 from app.main import app
 
 if __name__ == "__main__":
-    print("Starting SignMeUp API server...")
+    print("Starting FuzeKeys API server...")
     uvicorn.run(
         app,
         host="127.0.0.1",

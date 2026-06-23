@@ -1,0 +1,9 @@
+[submodule "modules/EnvManager"]
+	path = modules/EnvManager
+	url = https://github.com/izzywdev/EnvManager.git
+[submodule "modules/FuzeInfra"]
+	path = modules/FuzeInfra
+	url = https://github.com/izzywdev/FuzeInfra.git
+[submodule "modules/FuzeFront"]
+	path = modules/FuzeFront
+	url = https://github.com/izzywdev/FuzeFront.git

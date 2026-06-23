@@ -1,0 +1,66 @@
+version: '3.8'
+
+networks:
+  fuzekeys:
+    driver: bridge
+    name: fuzekeys_network
+  fuzeinfra:
+    external: true
+    name: fuzeinfra_default
+
+services:
+  # FuzeKeys Backend API
+  fuzekeys-backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fuzekeys-backend
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://fuzeinfra:fuzeinfra_secure_password@fuzeinfra-postgres:5432/fuzeinfra_db
+      - REDIS_URL=redis://fuzeinfra-redis:6379
+      - SECRET_KEY=fuzekeys-production-secret-change-this-in-production
+      - MASTER_KEY_SALT=fuzekeys-production-salt-change-this-in-production
+      - ENVIRONMENT=production
+      - PYTHONPATH=/app
+    ports:
+      - "8002:8002"
+    networks:
+      - fuzekeys
+      - fuzeinfra
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "com.docker.compose.project=FuzeKeys"
+      - "com.fuzekeys.service=backend"
+
+  # FuzeKeys Frontend (React)
+  fuzekeys-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: fuzekeys-frontend
+    environment:
+      - REACT_APP_API_URL=http://localhost:8002
+      - NODE_ENV=production
+    depends_on:
+      fuzekeys-backend:
+        condition: service_healthy
+    ports:
+      - "3005:3000"
+    networks:
+      - fuzekeys
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - "com.docker.compose.project=FuzeKeys"
+      - "com.fuzekeys.service=frontend" 
