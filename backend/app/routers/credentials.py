@@ -17,6 +17,7 @@ import json
 from ..database import get_db
 from ..models.identity import Identity
 from ..models.account import Account
+from app.utils.logging import log_security_event
 
 logger = logging.getLogger(__name__)
 
@@ -26,12 +27,42 @@ router = APIRouter(prefix="/api/credentials", tags=["Credentials"])
 ENCRYPTION_KEY = os.getenv("CREDENTIAL_ENCRYPTION_KEY", Fernet.generate_key().decode())
 cipher_suite = Fernet(ENCRYPTION_KEY.encode() if isinstance(ENCRYPTION_KEY, str) else ENCRYPTION_KEY)
 
-# API key storage for microservice authentication
-VALID_API_KEYS = {
-    "scraper-service": os.getenv("SCRAPER_API_KEY", "scraper-key-12345"),
-    "mobile-service": os.getenv("MOBILE_API_KEY", "mobile-key-12345"),
-    "automation-service": os.getenv("AUTOMATION_API_KEY", "automation-key-12345")
-}
+# --- SECURITY (VULN 1): service API keys must come from the environment only. ---
+# Previously these had hardcoded fallback defaults (e.g. "scraper-key-12345"),
+# which let anyone with the source authenticate as any service. We now read each
+# key from its env var with NO default. A service whose env var is unset/empty is
+# excluded from the map entirely, so it cannot be authenticated against. We do NOT
+# raise at import time (other routers must still import this module); instead we
+# log a warning and fail closed at request time (401) — see verify_api_key.
+def _load_service_api_keys() -> Dict[str, str]:
+    """Build the service->key map from env, excluding any unset/blank key."""
+    raw_keys = {
+        "scraper-service": os.getenv("SCRAPER_API_KEY"),
+        "mobile-service": os.getenv("MOBILE_API_KEY"),
+        "automation-service": os.getenv("AUTOMATION_API_KEY"),
+    }
+    # Only keep services whose key is configured (non-empty after stripping).
+    configured = {
+        service: key.strip()
+        for service, key in raw_keys.items()
+        if key is not None and key.strip()
+    }
+    if not configured:
+        logger.warning(
+            "No service API keys are configured (SCRAPER_API_KEY / MOBILE_API_KEY / "
+            "AUTOMATION_API_KEY all unset or blank). All /api/credentials service "
+            "endpoints will reject every request with HTTP 401 until keys are set."
+        )
+    elif len(configured) < len(raw_keys):
+        missing = sorted(set(raw_keys) - set(configured))
+        logger.warning(
+            "Some service API keys are not configured and those services cannot "
+            "authenticate: %s", ", ".join(missing)
+        )
+    return configured
+
+# API key storage for microservice authentication (no hardcoded defaults).
+VALID_API_KEYS = _load_service_api_keys()
 
 # Request/Response Models with enhanced documentation
 class CredentialRequest(BaseModel):
@@ -57,12 +88,17 @@ class AccountCredentialRequest(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
+                "identity_id": 1,
                 "account_id": 1,
                 "credential_types": ["email", "password", "api_key"]
             }
         }
     )
-    
+
+    # SECURITY (VULN 2): the owning identity must be supplied so the lookup can be
+    # scoped to it; a service key cannot retrieve an account whose owning identity
+    # was not provided/authorized.
+    identity_id: int = Field(..., description="ID of the identity that owns the account", example=1)
     account_id: int = Field(..., description="ID of the account to retrieve credentials for", example=1)
     credential_types: List[str] = Field(..., description="List of credential types to retrieve", example=["email", "password"])
 
@@ -121,6 +157,7 @@ class CredentialUpdate(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
+                "identity_id": 1,
                 "account_id": 1,
                 "credentials": {
                     "email": "john.doe.1703123456@example.com",
@@ -136,7 +173,10 @@ class CredentialUpdate(BaseModel):
             }
         }
     )
-    
+
+    # SECURITY (VULN 2): owning identity required so a mutation is scoped to the
+    # account that actually belongs to the supplied identity.
+    identity_id: int = Field(..., description="ID of the identity that owns the account")
     account_id: int = Field(..., description="ID of the account to store credentials for")
     credentials: Dict[str, str] = Field(..., description="Credentials to store")
     metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata about the credentials")
@@ -179,16 +219,48 @@ class ValidationResult(BaseModel):
 
 # Authentication dependency
 async def verify_api_key(x_api_key: str = Header(..., description="API key for service authentication")):
-    """Verify API key for microservice authentication"""
+    """Verify API key for microservice authentication.
+
+    SECURITY (VULN 1): fails closed. If no keys are configured, or the provided
+    key is missing/blank, or it does not match a CONFIGURED key, we reject with
+    401. We never authenticate against an empty/absent key, so a request with no
+    or a blank X-API-Key cannot succeed even if (hypothetically) a stored key
+    were empty.
+    """
+    # No configured keys -> nobody can authenticate (fail closed).
+    if not VALID_API_KEYS:
+        logger.warning(
+            "Rejecting /api/credentials request: no service API keys are configured."
+        )
+        log_security_event(
+            "api_key_auth_failure",
+            details={"reason": "no_keys_configured"},
+        )
+        raise HTTPException(status_code=401, detail="Invalid API key")
+
+    # Reject missing/blank provided key before any comparison.
+    if not x_api_key or not x_api_key.strip():
+        log_security_event(
+            "api_key_auth_failure",
+            details={"reason": "missing_or_blank_key"},
+        )
+        raise HTTPException(status_code=401, detail="Invalid API key")
+
+    provided = x_api_key.strip()
     service_name = None
     for service, key in VALID_API_KEYS.items():
-        if x_api_key == key:
+        # `key` is guaranteed non-empty by _load_service_api_keys().
+        if secrets.compare_digest(provided, key):
             service_name = service
             break
-    
+
     if not service_name:
+        log_security_event(
+            "api_key_auth_failure",
+            details={"reason": "key_mismatch"},
+        )
         raise HTTPException(status_code=401, detail="Invalid API key")
-    
+
     return service_name
 
 # Helper functions
@@ -340,13 +412,52 @@ async def request_account_credentials(
     db: Session = Depends(get_db)
 ):
     """Request stored credentials for an existing account"""
-    
+
     try:
-        # Get account
-        account = db.query(Account).filter(Account.id == request.account_id).first()
+        # SECURITY (VULN 2 - IDOR): scope the lookup to the supplied owning
+        # identity. We join Account -> Identity and require both that the account
+        # has the requested id AND that it belongs to request.identity_id. A
+        # service key can therefore never fetch an account whose owning identity
+        # it did not supply. We return 404 (not 403) when no match is found so we
+        # do not leak whether the account id exists under a different owner.
+        #
+        # RESIDUAL TRUST ASSUMPTION: there is no tenant/authorization model yet,
+        # so a valid service key is trusted to act on behalf of any identity it
+        # names. This closes cross-account IDOR via raw id but does NOT yet bind a
+        # key to a specific set of identities.
+        # TODO: introduce per-tenant key scoping (map each service key to the
+        # tenant/identities it may act for) once a tenant model exists, and verify
+        # request.identity_id is within that key's allowed scope.
+        account = (
+            db.query(Account)
+            .join(Identity, Account.identity_id == Identity.id)
+            .filter(
+                (Account.id == request.account_id)
+                & (Account.identity_id == request.identity_id)
+            )
+            .first()
+        )
         if not account:
+            log_security_event(
+                "credential_access_denied",
+                details={
+                    "service": service_name,
+                    "account_id": request.account_id,
+                    "identity_id": request.identity_id,
+                },
+            )
             raise HTTPException(status_code=404, detail="Account not found")
-        
+
+        # Audit every successful retrieval of decrypted credentials.
+        log_security_event(
+            "credential_access",
+            details={
+                "service": service_name,
+                "account_id": request.account_id,
+                "identity_id": request.identity_id,
+            },
+        )
+
         logger.info(f"Retrieving credentials for account {account.website_name} by {service_name}")
         
         # Decrypt stored credentials
@@ -412,13 +523,41 @@ async def store_account_credentials(
     db: Session = Depends(get_db)
 ):
     """Store/update credentials for an account after successful signup"""
-    
+
     try:
-        # Get account
-        account = db.query(Account).filter(Account.id == request.account_id).first()
+        # SECURITY (VULN 2 - IDOR): scope the mutation to the supplied owning
+        # identity (see request_account_credentials for the full rationale and the
+        # residual per-tenant-scoping TODO). 404 (not 403) avoids leaking the
+        # existence of accounts owned by a different identity.
+        account = (
+            db.query(Account)
+            .join(Identity, Account.identity_id == Identity.id)
+            .filter(
+                (Account.id == request.account_id)
+                & (Account.identity_id == request.identity_id)
+            )
+            .first()
+        )
         if not account:
+            log_security_event(
+                "credential_store_denied",
+                details={
+                    "service": service_name,
+                    "account_id": request.account_id,
+                    "identity_id": request.identity_id,
+                },
+            )
             raise HTTPException(status_code=404, detail="Account not found")
-        
+
+        log_security_event(
+            "credential_store",
+            details={
+                "service": service_name,
+                "account_id": request.account_id,
+                "identity_id": request.identity_id,
+            },
+        )
+
         logger.info(f"Storing credentials for account {account.website_name} by {service_name}")
         
         # Encrypt and store credentials
@@ -463,19 +602,26 @@ Convenient endpoint for getting credentials when you know the account ID.
             """)
 async def get_account_credentials(
     account_id: int = Path(..., description="Account ID to retrieve credentials for"),
+    identity_id: int = Query(..., description="ID of the identity that owns the account"),
     credential_types: Optional[str] = Query(None, description="Comma-separated list of credential types to retrieve"),
     service_name: str = Depends(verify_api_key),
     db: Session = Depends(get_db)
 ):
-    """Get stored credentials for a specific account"""
-    
+    """Get stored credentials for a specific account.
+
+    SECURITY (VULN 2): the owning ``identity_id`` is now a required query
+    parameter so this GET path enforces the same ownership scoping as
+    request_account_credentials (the IDOR fix is applied there).
+    """
+
     credential_types_list = credential_types.split(",") if credential_types else None
-    
+
     request = AccountCredentialRequest(
+        identity_id=identity_id,
         account_id=account_id,
         credential_types=credential_types_list or []
     )
-    
+
     return await request_account_credentials(request, service_name, db)
 
 @router.get("/identity/{identity_id}/accounts",
