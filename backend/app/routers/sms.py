@@ -1,16 +1,20 @@
-from fastapi import APIRouter, HTTPException, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Depends, WebSocket, WebSocketDisconnect, Header
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from typing import List, Dict, Optional
 from pydantic import BaseModel
 import logging
 import json
+import re
+import secrets
+import hmac
 from datetime import datetime, timedelta
 import uuid
 
 from ..database import get_db
 from ..models.sms import SmsDevice, SmsOtpRequest, SmsOtpReceived
 from ..utils.websocket_manager import ConnectionManager
+from ..utils.logging import log_security_event
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +27,34 @@ sms_manager = ConnectionManager()
 # In-memory storage for pending OTP requests (in production, use Redis or database)
 pending_otp_requests: Dict[str, Dict] = {}
 
+# SECURITY: Module-level store mapping device_id -> issued API key.
+# The SmsDevice ORM model (app/models/sms.py) has no column to persist the
+# per-device API key, and this fix is scoped to sms.py only, so the key is
+# persisted here. This is consistent with the file's existing in-memory
+# approach (see pending_otp_requests above).
+# PRODUCTION NOTE: replace with a persistent, hashed key store (e.g. a
+# `device_api_key_hash` column on SmsDevice or a Redis/secret store) so keys
+# survive restarts and are never stored in plaintext. Keys here are kept in
+# memory only and compared with a constant-time comparison.
+registered_device_keys: Dict[str, str] = {}
+
+# Minimum / maximum accepted OTP length and the allowed character set.
+OTP_MIN_LEN = 4
+OTP_MAX_LEN = 10
+_OTP_PATTERN = re.compile(r"^\d{%d,%d}$" % (OTP_MIN_LEN, OTP_MAX_LEN))
+
+
+def _verify_device(device_id: str, api_key: Optional[str]) -> bool:
+    """Constant-time verification that the supplied api_key was issued to device_id."""
+    if not device_id or not api_key:
+        return False
+    expected = registered_device_keys.get(device_id)
+    if not expected:
+        return False
+    # hmac.compare_digest guards against timing attacks on the key comparison.
+    return hmac.compare_digest(expected, api_key)
+
+
 class OtpRequest(BaseModel):
     otp: str
     sender: str
@@ -30,6 +62,10 @@ class OtpRequest(BaseModel):
     timestamp: int
     device_id: str
     confidence: Optional[float] = None
+    # SECURITY: bind every OTP submission to a specific pending request.
+    # The device must tell us which request it is fulfilling; we no longer
+    # silently complete the "first waiting" request.
+    request_id: str
 
 class DeviceRegistrationRequest(BaseModel):
     device_id: str
@@ -65,10 +101,21 @@ async def register_device(request: DeviceRegistrationRequest, db: Session = Depe
             db.add(new_device)
         
         db.commit()
-        
-        # Generate API key (in production, use proper JWT or API key generation)
-        api_key = str(uuid.uuid4())
-        
+
+        # SECURITY: Generate a cryptographically strong API key and PERSIST it
+        # so it can actually be verified on subsequent device-authenticated
+        # calls (previously a uuid was returned but never stored or checked,
+        # leaving /otp completely unauthenticated).
+        # PRODUCTION NOTE: store a hash of this key, not the plaintext, in a
+        # durable store; also support rotation/expiry.
+        api_key = secrets.token_urlsafe(32)
+        registered_device_keys[request.device_id] = api_key
+
+        log_security_event(
+            "sms_device_registered",
+            details={"device_id": request.device_id},
+        )
+
         return {
             "success": True,
             "message": "Device registered successfully",
@@ -81,57 +128,148 @@ async def register_device(request: DeviceRegistrationRequest, db: Session = Depe
         raise HTTPException(status_code=500, detail="Failed to register device")
 
 @router.post("/otp")
-async def receive_otp(request: OtpRequest, db: Session = Depends(get_db)):
-    """Receive OTP code from mobile app"""
+async def receive_otp(
+    request: OtpRequest,
+    x_device_key: Optional[str] = Header(default=None, alias="X-Device-Key"),
+    db: Session = Depends(get_db),
+):
+    """Receive OTP code from mobile app.
+
+    SECURITY: This endpoint accepts device-submitted data and is therefore
+    authenticated. The submitting device must present the API key it was
+    issued at registration (via the ``X-Device-Key`` header) and must specify
+    which pending request it is fulfilling. The device is then verified to be
+    the device that owns/was assigned that request. This closes the OTP
+    hijacking hole where any unauthenticated caller could complete the
+    "first waiting" request with an attacker-controlled OTP.
+    """
     try:
-        logger.info(f"Received OTP {request.otp} from device {request.device_id}")
-        
-        # Store the received OTP
+        # 1) Authenticate the device. Reject unknown / unauthenticated devices.
+        if not _verify_device(request.device_id, x_device_key):
+            log_security_event(
+                "sms_otp_auth_failure",
+                details={
+                    "device_id": request.device_id,
+                    "request_id": request.request_id,
+                    "reason": "invalid_or_missing_device_key",
+                },
+            )
+            raise HTTPException(status_code=401, detail="Device authentication failed")
+
+        # 2) Validate the OTP format minimally (non-empty, digits, length bounds).
+        otp = (request.otp or "").strip()
+        if not _OTP_PATTERN.match(otp):
+            log_security_event(
+                "sms_otp_invalid_format",
+                details={
+                    "device_id": request.device_id,
+                    "request_id": request.request_id,
+                },
+            )
+            raise HTTPException(status_code=400, detail="Invalid OTP format")
+
+        # 3) Bind the OTP to the SPECIFIC request named by the device.
+        #    No more "first waiting" matching.
+        request_id = request.request_id
+        pending_request = pending_otp_requests.get(request_id)
+        if pending_request is None:
+            log_security_event(
+                "sms_otp_unknown_request",
+                details={"device_id": request.device_id, "request_id": request_id},
+            )
+            raise HTTPException(status_code=404, detail="Request not found")
+
+        # 3a) The request must still be open.
+        if pending_request.get("status") != "waiting":
+            log_security_event(
+                "sms_otp_request_not_waiting",
+                details={
+                    "device_id": request.device_id,
+                    "request_id": request_id,
+                    "status": pending_request.get("status"),
+                },
+            )
+            raise HTTPException(status_code=409, detail="Request is not awaiting an OTP")
+
+        # 3b) The request must not have expired.
+        timeout_ts = pending_request.get("timeout", 0)
+        if timeout_ts and timeout_ts < datetime.utcnow().timestamp():
+            pending_request["status"] = "timeout"
+            log_security_event(
+                "sms_otp_request_expired",
+                details={"device_id": request.device_id, "request_id": request_id},
+            )
+            raise HTTPException(status_code=410, detail="Request has expired")
+
+        # 3c) Verify the submitting device is the one assigned to this request.
+        #     A request may be assigned to a device at creation time; if it was
+        #     never assigned (legacy/unassigned), we bind it to the first
+        #     authenticated device that answers and record the assignment so a
+        #     different device cannot also complete it.
+        assigned_device = pending_request.get("assigned_device_id")
+        if assigned_device is None:
+            pending_request["assigned_device_id"] = request.device_id
+        elif not hmac.compare_digest(str(assigned_device), str(request.device_id)):
+            log_security_event(
+                "sms_otp_device_mismatch",
+                details={
+                    "device_id": request.device_id,
+                    "request_id": request_id,
+                    "assigned_device_id": assigned_device,
+                },
+            )
+            raise HTTPException(
+                status_code=403,
+                detail="Device is not assigned to this request",
+            )
+
+        # 4) Store the received OTP (now that the caller is authenticated and bound).
         otp_received = SmsOtpReceived(
             device_id=request.device_id,
-            otp_code=request.otp,
+            otp_code=otp,
             sender=request.sender,
             message_body=request.message_body,
             confidence=request.confidence,
             received_at=datetime.fromtimestamp(request.timestamp / 1000),
-            processed_at=datetime.utcnow()
+            processed_at=datetime.utcnow(),
+            matched_request_id=request_id,
         )
         db.add(otp_received)
-        
-        # Check if this OTP matches any pending requests
-        matching_request = None
-        for request_id, pending_request in pending_otp_requests.items():
-            if pending_request.get("status") == "waiting":
-                # Simple matching logic - you can make this more sophisticated
-                matching_request = pending_request
-                matching_request["status"] = "completed"
-                matching_request["otp_code"] = request.otp
-                matching_request["completed_at"] = datetime.utcnow().isoformat()
-                break
-        
+
+        # 5) Complete the bound request.
+        pending_request["status"] = "completed"
+        pending_request["otp_code"] = otp
+        pending_request["completed_at"] = datetime.utcnow().isoformat()
+
         db.commit()
-        
-        # Notify any waiting WebSocket connections
-        if matching_request:
-            await sms_manager.broadcast(json.dumps({
-                "type": "otp_received",
-                "request_id": request_id,
-                "otp": request.otp,
-                "device_id": request.device_id
-            }))
-        
-        # Update device last seen
+
+        log_security_event(
+            "sms_otp_completed",
+            details={"device_id": request.device_id, "request_id": request_id},
+        )
+
+        # Notify any waiting WebSocket connections.
+        await sms_manager.broadcast(json.dumps({
+            "type": "otp_received",
+            "request_id": request_id,
+            "device_id": request.device_id,
+            # NOTE: the OTP itself is intentionally NOT broadcast.
+        }))
+
+        # Update device last seen.
         device = db.query(SmsDevice).filter(SmsDevice.device_id == request.device_id).first()
         if device:
             device.last_seen = datetime.utcnow()
             db.commit()
-        
+
         return {
             "success": True,
             "message": "OTP received successfully",
-            "request_id": request_id if matching_request else None
+            "request_id": request_id
         }
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error receiving OTP: {e}")
         raise HTTPException(status_code=500, detail="Failed to process OTP")
