@@ -7,9 +7,10 @@ from sqlalchemy.orm import Session
 from typing import List, Dict, Optional, Any
 import logging
 import secrets
+import string
 from datetime import datetime, timedelta
 from pydantic import BaseModel, Field, ConfigDict
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 import base64
 import os
 import json
@@ -23,9 +24,76 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/credentials", tags=["Credentials"])
 
-# Encryption for credential storage
-ENCRYPTION_KEY = os.getenv("CREDENTIAL_ENCRYPTION_KEY", Fernet.generate_key().decode())
-cipher_suite = Fernet(ENCRYPTION_KEY.encode() if isinstance(ENCRYPTION_KEY, str) else ENCRYPTION_KEY)
+# --- SECURITY (HIGH): credential encryption key handling. ---
+# Previously this generated an ephemeral Fernet key at import when
+# CREDENTIAL_ENCRYPTION_KEY was unset. That is dangerous: the key rotated on
+# every process restart (so anything encrypted by a prior process became
+# permanently undecryptable) and an auto-generated, never-persisted key is not a
+# real secret. We now:
+#   1. Read CREDENTIAL_ENCRYPTION_KEY from the environment with NO default and
+#      NEVER fabricate a fallback key.
+#   2. Do NOT raise at import time — other routers import this module, so a
+#      missing/invalid key must not break the whole app at startup. We only log.
+#   3. Build the Fernet cipher LAZILY via _get_cipher(), which fails closed at
+#      request time (HTTP 503) when the key is missing/blank or invalid. Every
+#      encrypt/decrypt path routes through _get_cipher(), so no endpoint can ever
+#      operate with an insecure or absent key.
+ENCRYPTION_KEY = os.getenv("CREDENTIAL_ENCRYPTION_KEY")
+
+if not ENCRYPTION_KEY or not ENCRYPTION_KEY.strip():
+    logger.warning(
+        "CREDENTIAL_ENCRYPTION_KEY is not set. Credential encryption/decryption "
+        "endpoints will fail closed with HTTP 503 until a valid Fernet key is "
+        "configured. No ephemeral fallback key is generated."
+    )
+else:
+    # Validate the configured key is a usable Fernet key now so misconfiguration
+    # is surfaced in logs at startup — but still fail closed (not crash) at
+    # request time rather than raising here.
+    try:
+        Fernet(ENCRYPTION_KEY.strip().encode())
+    except Exception as _key_err:  # noqa: BLE001 - any malformed key value
+        logger.error(
+            "CREDENTIAL_ENCRYPTION_KEY is set but is not a valid Fernet key: %s. "
+            "Credential encryption/decryption endpoints will fail closed with "
+            "HTTP 503 until a valid key is configured.",
+            _key_err,
+        )
+
+
+def _get_cipher() -> Fernet:
+    """Return a Fernet cipher built from CREDENTIAL_ENCRYPTION_KEY.
+
+    SECURITY (HIGH): fails closed. If the key is missing/blank or is not a valid
+    Fernet key, this raises HTTPException(503) (logged via log_security_event)
+    instead of using an insecure key. All encrypt/decrypt calls go through here.
+    """
+    key = ENCRYPTION_KEY
+    if not key or not key.strip():
+        logger.error(
+            "Refusing credential crypto operation: CREDENTIAL_ENCRYPTION_KEY is "
+            "unset or blank."
+        )
+        log_security_event(
+            "credential_crypto_unavailable",
+            details={"reason": "encryption_key_missing"},
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Credential encryption is not configured",
+        )
+    try:
+        return Fernet(key.strip().encode())
+    except Exception as exc:  # noqa: BLE001 - malformed key value
+        logger.error("Refusing credential crypto operation: invalid Fernet key: %s", exc)
+        log_security_event(
+            "credential_crypto_unavailable",
+            details={"reason": "encryption_key_invalid"},
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Credential encryption is not configured",
+        )
 
 # --- SECURITY (VULN 1): service API keys must come from the environment only. ---
 # Previously these had hardcoded fallback defaults (e.g. "scraper-key-12345"),
@@ -264,13 +332,60 @@ async def verify_api_key(x_api_key: str = Header(..., description="API key for s
     return service_name
 
 # Helper functions
+def _generate_strong_password(length: int = 20) -> str:
+    """Generate a cryptographically strong random password.
+
+    SECURITY (HIGH): replaces the previous predictable scheme
+    (``f"{identity.name}Pass123!"``), which was trivially guessable from public
+    identity data. Uses the ``secrets`` module (CSPRNG) to draw characters from
+    letters + digits + punctuation, and guarantees at least one character of each
+    class so common complexity policies are satisfied. Default length is 20.
+    """
+    if length < 4:
+        # Need room for one char of each of the 4 classes below.
+        length = 4
+
+    lowercase = string.ascii_lowercase
+    uppercase = string.ascii_uppercase
+    digits = string.digits
+    punctuation = string.punctuation
+    alphabet = lowercase + uppercase + digits + punctuation
+
+    # Guarantee at least one character from each class.
+    required = [
+        secrets.choice(lowercase),
+        secrets.choice(uppercase),
+        secrets.choice(digits),
+        secrets.choice(punctuation),
+    ]
+    remaining = [secrets.choice(alphabet) for _ in range(length - len(required))]
+
+    password_chars = required + remaining
+    # Shuffle so the guaranteed characters are not always at the front.
+    # secrets has no shuffle; use a Fisher-Yates driven by secrets.randbelow.
+    for i in range(len(password_chars) - 1, 0, -1):
+        j = secrets.randbelow(i + 1)
+        password_chars[i], password_chars[j] = password_chars[j], password_chars[i]
+
+    return "".join(password_chars)
+
 def encrypt_credential(value: str) -> str:
-    """Encrypt a credential value"""
-    return cipher_suite.encrypt(value.encode()).decode()
+    """Encrypt a credential value.
+
+    Uses the lazily-built, guarded cipher: raises HTTPException(503) if the
+    encryption key is missing/invalid (fail closed) rather than encrypting with
+    an insecure key.
+    """
+    return _get_cipher().encrypt(value.encode()).decode()
 
 def decrypt_credential(encrypted_value: str) -> str:
-    """Decrypt a credential value"""
-    return cipher_suite.decrypt(encrypted_value.encode()).decode()
+    """Decrypt a credential value.
+
+    Uses the lazily-built, guarded cipher: raises HTTPException(503) if the
+    encryption key is missing/invalid (fail closed). A genuine bad/corrupt token
+    still raises InvalidToken to the caller, which is handled separately.
+    """
+    return _get_cipher().decrypt(encrypted_value.encode()).decode()
 
 def generate_credentials_for_identity(identity: Identity, site_name: str, action_type: str) -> Dict[str, str]:
     """Generate credentials for an identity based on site requirements"""
@@ -289,9 +404,9 @@ def generate_credentials_for_identity(identity: Identity, site_name: str, action
     
     # Password generation
     if "password" in [action_type] or action_type in ["signup", "signin"]:
-        # Generate secure password
-        password = f"{identity.name.replace(' ', '')}Pass123!"
-        credentials["password"] = password
+        # SECURITY (HIGH): generate a strong random password via the CSPRNG-backed
+        # helper instead of the old predictable "{name}Pass123!" scheme.
+        credentials["password"] = _generate_strong_password()
     
     # Name/username
     credentials["name"] = identity.name
@@ -466,7 +581,14 @@ async def request_account_credentials(
             try:
                 decrypted_data = decrypt_credential(account.encrypted_credentials)
                 stored_credentials = json.loads(decrypted_data)
-            except Exception as e:
+            except HTTPException:
+                # SECURITY (HIGH): a 503 from _get_cipher() (missing/invalid key)
+                # must propagate so the request fails closed — never silently
+                # return empty credentials when encryption is misconfigured.
+                raise
+            except (InvalidToken, ValueError, json.JSONDecodeError) as e:
+                # Genuine bad/corrupt or non-JSON stored token: log and treat as
+                # no readable credentials (the key itself is fine here).
                 logger.error(f"Error decrypting credentials: {e}")
                 stored_credentials = {}
         

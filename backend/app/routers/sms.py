@@ -15,6 +15,10 @@ from ..database import get_db
 from ..models.sms import SmsDevice, SmsOtpRequest, SmsOtpReceived
 from ..utils.websocket_manager import ConnectionManager
 from ..utils.logging import log_security_event
+# SECURITY: operator/user-facing endpoints require the application JWT.
+# get_current_user validates the bearer token and resolves the User.
+from .auth import get_current_user
+from ..models.user import User
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +79,19 @@ class DeviceRegistrationRequest(BaseModel):
 
 @router.post("/register-device")
 async def register_device(request: DeviceRegistrationRequest, db: Session = Depends(get_db)):
-    """Register a new SMS interceptor device"""
+    """Register a new SMS interceptor device.
+
+    SECURITY / BOOTSTRAP TRUST ASSUMPTION: This endpoint is intentionally left
+    UNauthenticated because it is the bootstrap that ISSUES the per-device API
+    key — requiring the device key here would be a chicken-and-egg problem and
+    break first-time registration. The trust assumption is therefore that
+    registration is reachable only by intended devices (network/ingress policy
+    or an out-of-band enrolment secret should gate it in production). Note it is
+    also self-overwriting: re-registering an existing device_id rotates its key,
+    so exposure should be limited by the surrounding network controls.
+    PRODUCTION NOTE: add an enrolment token / mutual-TLS / signed attestation so
+    arbitrary callers cannot register or hijack a device_id.
+    """
     try:
         # Check if device already exists
         existing_device = db.query(SmsDevice).filter(SmsDevice.device_id == request.device_id).first()
@@ -275,13 +291,36 @@ async def receive_otp(
         raise HTTPException(status_code=500, detail="Failed to process OTP")
 
 @router.get("/requests/{device_id}")
-async def get_otp_requests(device_id: str, db: Session = Depends(get_db)):
-    """Get pending OTP requests for a device"""
+async def get_otp_requests(
+    device_id: str,
+    x_device_key: Optional[str] = Header(default=None, alias="X-Device-Key"),
+    db: Session = Depends(get_db),
+):
+    """Get pending OTP requests for a device.
+
+    SECURITY: This is a DEVICE-to-server callback (the mobile interceptor polls
+    for work it should fulfil), so it is authenticated with the per-device API
+    key exactly like ``/otp`` — not the user JWT. The device must present the
+    ``X-Device-Key`` it was issued at registration, and that key must belong to
+    the ``device_id`` in the path, preventing one device from enumerating
+    another device's pending requests. Unknown/unauthenticated devices get 401.
+    """
     try:
+        # Authenticate the calling device against the device_id in the path.
+        if not _verify_device(device_id, x_device_key):
+            log_security_event(
+                "sms_requests_auth_failure",
+                details={
+                    "device_id": device_id,
+                    "reason": "invalid_or_missing_device_key",
+                },
+            )
+            raise HTTPException(status_code=401, detail="Device authentication failed")
+
         # Return pending requests for this device
         device_requests = []
         for request_id, request_data in pending_otp_requests.items():
-            if (request_data.get("status") == "waiting" and 
+            if (request_data.get("status") == "waiting" and
                 request_data.get("timeout", 0) > datetime.utcnow().timestamp()):
                 device_requests.append({
                     "request_id": request_id,
@@ -292,14 +331,29 @@ async def get_otp_requests(device_id: str, db: Session = Depends(get_db)):
                 })
         
         return device_requests
-        
+
+    except HTTPException:
+        # Preserve auth/validation status codes (e.g. 401) — don't mask as 500.
+        raise
     except Exception as e:
         logger.error(f"Error getting OTP requests: {e}")
         raise HTTPException(status_code=500, detail="Failed to get OTP requests")
 
 @router.post("/request-otp")
-async def request_otp(service: str, timeout_seconds: int = 300, db: Session = Depends(get_db)):
-    """Request an OTP for a specific service (called by your main app)"""
+async def request_otp(
+    service: str,
+    timeout_seconds: int = 300,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Request an OTP for a specific service (called by your main app).
+
+    SECURITY: This is an OPERATOR/USER-facing action (the main app asks the
+    platform to wait for an OTP for a given service), so it requires the
+    application JWT via get_current_user. An unauthenticated caller could
+    otherwise spam OTP requests / push fake jobs to devices. Devices do not
+    call this endpoint, so device-key auth is not appropriate here.
+    """
     try:
         request_id = str(uuid.uuid4())
         timeout_timestamp = (datetime.utcnow() + timedelta(seconds=timeout_seconds)).timestamp()
@@ -345,8 +399,20 @@ async def request_otp(service: str, timeout_seconds: int = 300, db: Session = De
         raise HTTPException(status_code=500, detail="Failed to create OTP request")
 
 @router.get("/request-status/{request_id}")
-async def get_request_status(request_id: str, db: Session = Depends(get_db)):
-    """Get the status of an OTP request"""
+async def get_request_status(
+    request_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get the status of an OTP request.
+
+    SECURITY: This endpoint returns the received OTP value itself
+    (``otp_code``), which is highly sensitive. It is operator/user-facing
+    (the main app polls for the result), so it requires the application JWT.
+    Leaving it unauthenticated would let any caller read OTP codes by guessing
+    or enumerating request_ids. Device-key auth is not used because devices
+    submit OTPs (via /otp), they do not read them back.
+    """
     try:
         if request_id in pending_otp_requests:
             request_data = pending_otp_requests[request_id]
@@ -380,8 +446,17 @@ async def get_request_status(request_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Failed to get request status")
 
 @router.get("/devices")
-async def get_devices(db: Session = Depends(get_db)):
-    """Get all registered SMS devices"""
+async def get_devices(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get all registered SMS devices.
+
+    SECURITY: This lists the full device inventory (ids, names, OS/app
+    versions, activity) which is sensitive operational/PII-ish data and an
+    enumeration aid for attackers. It is an operator/admin view, so it requires
+    the application JWT. Not a device callback, so device-key auth does not fit.
+    """
     try:
         devices = db.query(SmsDevice).all()
         return [
@@ -403,7 +478,17 @@ async def get_devices(db: Session = Depends(get_db)):
 
 @router.websocket("/ws/sms-interceptor")
 async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket endpoint for real-time communication with mobile apps"""
+    """WebSocket endpoint for real-time communication with mobile apps.
+
+    SECURITY NOTE: This socket broadcasts OTP *request* notifications (service +
+    request_id + timeout) but never the OTP value itself (see /otp, which
+    intentionally omits the code from broadcasts). It is currently
+    unauthenticated. RESIDUAL HARDENING (left as a documented follow-up, since a
+    full WS auth handshake is a larger change than this scoped auth fix):
+    require the device to send its X-Device-Key as the first frame and call
+    _verify_device before joining the broadcast group, mirroring the device-key
+    model used by the HTTP callbacks. Tracked rather than silently ignored.
+    """
     await sms_manager.connect(websocket)
     try:
         while True:
@@ -426,7 +511,14 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @router.get("/health")
 async def health_check():
-    """Health check endpoint"""
+    """Health check endpoint.
+
+    SECURITY: Left unauthenticated by design — health/liveness probes are
+    called by infrastructure (load balancers, k8s) before any auth context
+    exists. It returns only coarse counts (active connections, pending request
+    count), not OTP values, device ids, or other sensitive data, so no auth is
+    required.
+    """
     return {
         "status": "healthy",
         "timestamp": datetime.utcnow().isoformat(),

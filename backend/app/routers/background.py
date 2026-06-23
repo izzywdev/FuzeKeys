@@ -9,6 +9,12 @@ from ..services.email_service import EmailConfig, create_email_config
 from ..database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 
+# SECURITY: every state-changing / data-exposing endpoint in this router must
+# require an authenticated user. get_current_user (async JWT dependency) raises
+# 401 for missing/invalid bearer tokens. User is the ORM model used by auth.
+from app.routers.auth import get_current_user
+from app.models.user import User
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/background", tags=["background"])
@@ -55,19 +61,20 @@ class ServiceStatusResponse(BaseModel):
 @router.post("/email-config", summary="Add email configuration for monitoring")
 async def add_email_config(
     config_request: EmailConfigRequest,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user)
 ):
-    """Add an email account for verification monitoring"""
+    """Add an email account for verification monitoring (authenticated)."""
     try:
         manager = await get_background_manager()
-        
+
         # Create email config
         email_config = create_email_config(
             email_address=config_request.email_address,
             password=config_request.password,
             provider=config_request.provider
         )
-        
+
         # Override with custom settings if provided
         if config_request.imap_server:
             email_config.imap_server = config_request.imap_server
@@ -77,52 +84,85 @@ async def add_email_config(
             email_config.smtp_server = config_request.smtp_server
         if config_request.smtp_port:
             email_config.smtp_port = config_request.smtp_port
-        
+
+        # SECURITY: associate this config with the authenticated user's id rather
+        # than trusting any user-supplied identifier. We attach the owner id so the
+        # in-memory store can never be keyed/looked-up by an attacker-controlled
+        # email/identifier. setattr is used because EmailConfig is a frozen-ish
+        # dataclass owned by another module (we don't edit that file here).
+        try:
+            setattr(email_config, "owner_user_id", current_user.id)
+        except Exception:
+            pass
+
         # Add to background manager
         manager.add_email_config(email_config)
-        
-        logger.info(f"Added email configuration for {config_request.email_address}")
-        
+
+        # SECURITY/PII: never log the email address, password, or IMAP/SMTP creds.
+        # Log only the authenticated user id and a count of configured accounts.
+        logger.info(
+            "Added email configuration for user_id=%s (total accounts=%s)",
+            current_user.id, len(manager.email_configs)
+        )
+
+        # PRODUCTION NOTE: EmailConfig currently holds the IMAP/SMTP password in
+        # plaintext in process memory (see services/email_service.py EmailConfig).
+        # This is a HIGH-severity at-rest exposure. Before production these
+        # credentials MUST be encrypted at rest using the app's Fernet credential
+        # encryption (app/utils/encryption.py) and decrypted only at connection
+        # time. Fixing that requires changing the EmailConfig model / service and
+        # is intentionally out of scope for this single-file remediation.
+
         return {
             "success": True,
-            "message": f"Email configuration added for {config_request.email_address}",
+            "message": "Email configuration added",
             "email_address": config_request.email_address
         }
-        
+
     except Exception as e:
-        logger.error(f"Error adding email config: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # SECURITY: do not echo internal exception text (may contain creds/PII).
+        logger.error("Error adding email config for user_id=%s", current_user.id)
+        raise HTTPException(status_code=500, detail="Failed to add email configuration")
 
 @router.get("/email-configs", summary="List configured email accounts")
-async def list_email_configs():
-    """List all configured email accounts (without passwords)"""
+async def list_email_configs(
+    current_user: User = Depends(get_current_user)
+):
+    """List configured email accounts for the authenticated user (no passwords)."""
     try:
         manager = await get_background_manager()
-        
+
         configs = []
         for config in manager.email_configs:
+            # Only expose configs owned by the authenticated user when ownership
+            # is tracked; legacy entries without an owner are not exposed.
+            if getattr(config, "owner_user_id", None) != current_user.id:
+                continue
             configs.append({
                 "email_address": config.email_address,
                 "imap_server": config.imap_server,
                 "imap_port": config.imap_port,
                 "provider": "gmail" if "gmail" in config.imap_server else "other"
             })
-        
+
         return {
             "email_configs": configs,
             "total": len(configs)
         }
-        
+
     except Exception as e:
-        logger.error(f"Error listing email configs: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error listing email configs for user_id=%s", current_user.id)
+        raise HTTPException(status_code=500, detail="Failed to list email configurations")
 
 @router.post("/automation-job", summary="Create automation job", response_model=Dict[str, str])
-async def create_automation_job(job_request: AutomationJobRequest):
-    """Create a new signup automation job"""
+async def create_automation_job(
+    job_request: AutomationJobRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Create a new signup automation job (authenticated)."""
     try:
         manager = await get_background_manager()
-        
+
         # Create automation job
         job_id = await manager.create_automation_job(
             website=job_request.website,
@@ -130,44 +170,51 @@ async def create_automation_job(job_request: AutomationJobRequest):
             email_account=job_request.email_account,
             signup_data=job_request.signup_data
         )
-        
-        logger.info(f"Created automation job {job_id} for {job_request.website}")
-        
+
+        # PII: email_account is a user identifier; log only the job id + user id.
+        logger.info(
+            "Created automation job %s for user_id=%s", job_id, current_user.id
+        )
+
         return {
             "job_id": job_id,
             "status": "created",
             "message": f"Automation job created for {job_request.website}"
         }
-        
+
     except Exception as e:
-        logger.error(f"Error creating automation job: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error creating automation job for user_id=%s", current_user.id)
+        raise HTTPException(status_code=500, detail="Failed to create automation job")
 
 @router.get("/automation-job/{job_id}", summary="Get job status", response_model=JobStatusResponse)
-async def get_job_status(job_id: str):
-    """Get the status of an automation job"""
+async def get_job_status(
+    job_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Get the status of an automation job (authenticated)."""
     try:
         manager = await get_background_manager()
-        
+
         job_status = await manager.get_job_status(job_id)
         if not job_status:
             raise HTTPException(status_code=404, detail="Job not found")
-        
+
         return JobStatusResponse(**job_status)
-        
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting job status: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error getting job status for user_id=%s", current_user.id)
+        raise HTTPException(status_code=500, detail="Failed to get job status")
 
 @router.get("/automation-jobs", summary="List all automation jobs")
 async def list_automation_jobs(
     status: Optional[str] = None,
     website: Optional[str] = None,
-    limit: int = 50
+    limit: int = 50,
+    current_user: User = Depends(get_current_user)
 ):
-    """List automation jobs with optional filtering"""
+    """List automation jobs with optional filtering (authenticated)."""
     try:
         manager = await get_background_manager()
         
@@ -202,12 +249,15 @@ async def list_automation_jobs(
         }
         
     except Exception as e:
-        logger.error(f"Error listing automation jobs: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error listing automation jobs for user_id=%s", current_user.id)
+        raise HTTPException(status_code=500, detail="Failed to list automation jobs")
 
 @router.post("/solve-captcha", summary="Solve captcha using AI")
-async def solve_captcha(captcha_request: CaptchaSolveRequest):
-    """Solve a captcha using AI vision capabilities"""
+async def solve_captcha(
+    captcha_request: CaptchaSolveRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Solve a captcha using AI vision capabilities (authenticated)."""
     try:
         manager = await get_background_manager()
         
@@ -246,18 +296,24 @@ async def solve_captcha(captcha_request: CaptchaSolveRequest):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error solving captcha: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error solving captcha for user_id=%s", current_user.id)
+        raise HTTPException(status_code=500, detail="Failed to solve captcha")
 
 @router.get("/status", summary="Get background service status", response_model=ServiceStatusResponse)
-async def get_service_status():
-    """Get the current status of all background services"""
+async def get_service_status(
+    current_user: User = Depends(get_current_user)
+):
+    """Get the current status of all background services (authenticated).
+
+    Exposes aggregate counts about email accounts/jobs that should not be
+    visible to anonymous callers, so authentication is required.
+    """
     try:
         manager = await get_background_manager()
-        
+
         # Count pending tasks
         pending_tasks = sum(1 for task in manager.tasks.values() if task.status == 'pending')
-        
+
         return ServiceStatusResponse(
             email_monitoring=manager.email_service is not None and manager.running,
             captcha_solving=True,  # Always available if OpenAI key is configured
@@ -265,52 +321,61 @@ async def get_service_status():
             pending_tasks=pending_tasks,
             email_accounts=len(manager.email_configs)
         )
-        
+
     except Exception as e:
-        logger.error(f"Error getting service status: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error getting service status for user_id=%s", current_user.id)
+        raise HTTPException(status_code=500, detail="Failed to get service status")
 
 @router.post("/start", summary="Start background services")
-async def start_services():
-    """Start all background services"""
+async def start_services(
+    current_user: User = Depends(get_current_user)
+):
+    """Start all background services (authenticated)."""
     try:
         manager = await get_background_manager()
         await manager.start()
-        
+
+        logger.info("Background services started by user_id=%s", current_user.id)
+
         return {
             "success": True,
             "message": "Background services started",
             "running": manager.running
         }
-        
+
     except Exception as e:
-        logger.error(f"Error starting services: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error starting services for user_id=%s", current_user.id)
+        raise HTTPException(status_code=500, detail="Failed to start services")
 
 @router.post("/stop", summary="Stop background services")
-async def stop_services():
-    """Stop all background services"""
+async def stop_services(
+    current_user: User = Depends(get_current_user)
+):
+    """Stop all background services (authenticated)."""
     try:
         manager = await get_background_manager()
         await manager.stop()
-        
+
+        logger.info("Background services stopped by user_id=%s", current_user.id)
+
         return {
             "success": True,
             "message": "Background services stopped",
             "running": manager.running
         }
-        
+
     except Exception as e:
-        logger.error(f"Error stopping services: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error stopping services for user_id=%s", current_user.id)
+        raise HTTPException(status_code=500, detail="Failed to stop services")
 
 @router.get("/tasks", summary="List background tasks")
 async def list_tasks(
     task_type: Optional[str] = None,
     status: Optional[str] = None,
-    limit: int = 50
+    limit: int = 50,
+    current_user: User = Depends(get_current_user)
 ):
-    """List background tasks with optional filtering"""
+    """List background tasks with optional filtering (authenticated)."""
     try:
         manager = await get_background_manager()
         
@@ -345,34 +410,39 @@ async def list_tasks(
         }
         
     except Exception as e:
-        logger.error(f"Error listing tasks: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error listing tasks for user_id=%s", current_user.id)
+        raise HTTPException(status_code=500, detail="Failed to list tasks")
 
 @router.delete("/automation-job/{job_id}", summary="Cancel automation job")
-async def cancel_automation_job(job_id: str):
-    """Cancel a pending or running automation job"""
+async def cancel_automation_job(
+    job_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Cancel a pending or running automation job (authenticated)."""
     try:
         manager = await get_background_manager()
-        
+
         job = manager.automation_jobs.get(job_id)
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
-        
+
         if job.status in ['completed', 'failed']:
             raise HTTPException(status_code=400, detail="Job already completed")
-        
+
         # Update job status
         job.status = 'cancelled'
         job.completed_at = datetime.now()
-        
+
+        logger.info("Job %s cancelled by user_id=%s", job_id, current_user.id)
+
         return {
             "success": True,
             "message": f"Job {job_id} cancelled",
             "job_id": job_id
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error cancelling job: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) 
+        logger.error("Error cancelling job for user_id=%s", current_user.id)
+        raise HTTPException(status_code=500, detail="Failed to cancel job")
