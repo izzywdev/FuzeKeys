@@ -1,0 +1,41 @@
+# PII-vault supporting services for the Claude tokenization pipeline.
+#   redis     -> token store (token -> Vault ciphertext)
+#   vault     -> transit engine, encrypts/decrypts the real PII values (DEV MODE — see note)
+#   presidio  -> PII detection over HTTP (POST /analyze)
+#
+# NOTE: Vault runs in DEV mode (in-memory). A restart loses the transit key, which orphans
+# every token in Redis (by design — ciphertext is useless without the key). Fine for testing;
+# switch to file storage + auto-unseal before relying on it.
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: pii-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - pii-redis-data:/data
+    restart: unless-stopped
+
+  vault:
+    image: hashicorp/vault:1.18
+    container_name: pii-vault
+    cap_add:
+      - IPC_LOCK
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: pii-root-token
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    ports:
+      - "8200:8200"
+    command: ["server", "-dev"]
+    restart: unless-stopped
+
+  presidio-analyzer:
+    image: mcr.microsoft.com/presidio-analyzer:latest
+    container_name: pii-presidio
+    ports:
+      - "5002:3000"
+    restart: unless-stopped
+
+volumes:
+  pii-redis-data:

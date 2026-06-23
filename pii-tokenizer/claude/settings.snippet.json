@@ -1,0 +1,39 @@
+{
+  "//": "Merge these blocks into your Claude Code settings.json (per-user or per-project).",
+  "//paths": "Use ABSOLUTE paths. Replace <PYTHON> with your python.exe and <REPO> with the absolute path to this repo.",
+  "//python": "Use python.exe (NOT pythonw.exe) for these hooks: they MUST write their JSON result to stdout.",
+  "//chezmoi": "If settings.json is chezmoi-managed, edit the chezmoi SOURCE then `chezmoi apply` — a session-end sync will otherwise revert direct edits.",
+
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"<PYTHON>\" \"<REPO>/pii-tokenizer/hooks/pretooluse_detokenize.py\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"<PYTHON>\" \"<REPO>/pii-tokenizer/hooks/posttooluse_tokenize.py\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  },
+
+  "env": {
+    "//": "Route Claude Code through the LiteLLM proxy so prompts are tokenized before they reach Anthropic.",
+    "ANTHROPIC_BASE_URL": "http://localhost:4000",
+    "ANTHROPIC_API_KEY": "sk-litellm-master-local-dev"
+  }
+}
