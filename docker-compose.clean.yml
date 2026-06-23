@@ -1,0 +1,135 @@
+version: '3.8'
+
+networks:
+  fuzeinfra:
+    external: true
+    name: fuzeinfra_default
+
+services:
+  # Database initialization service
+  fuzekeys-db-init:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fuzekeys-db-init
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@shared-postgres:5432/postgres
+      - PYTHONPATH=/app
+    networks:
+      - fuzeinfra
+    command: >
+      sh -c "
+        echo 'Waiting for PostgreSQL to be ready...'
+        while ! pg_isready -h shared-postgres -p 5432 -U postgres; do
+          sleep 2
+        done
+        echo 'PostgreSQL is ready!'
+        
+        echo 'Setting up FuzeKeys database...'
+        python -c '
+import psycopg2
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+
+try:
+    conn = psycopg2.connect(
+        host=\"shared-postgres\",
+        port=5432,
+        user=\"postgres\", 
+        password=\"postgres\",
+        database=\"postgres\"
+    )
+    conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+    cursor = conn.cursor()
+    
+    cursor.execute(\"SELECT 1 FROM pg_catalog.pg_database WHERE datname = %s\", (\"fuzekeys\",))
+    if not cursor.fetchone():
+        cursor.execute(\"CREATE DATABASE fuzekeys\")
+        print(\"Created fuzekeys database\")
+    
+    cursor.execute(\"SELECT 1 FROM pg_roles WHERE rolname = %s\", (\"fuzekeys_user\",))
+    if not cursor.fetchone():
+        cursor.execute(\"CREATE USER fuzekeys_user WITH PASSWORD %s\", (\"fuzekeys_password\",))
+        print(\"Created fuzekeys_user\")
+    
+    cursor.execute(\"GRANT ALL PRIVILEGES ON DATABASE fuzekeys TO fuzekeys_user\")
+    cursor.close()
+    conn.close()
+    
+    conn = psycopg2.connect(
+        host=\"shared-postgres\",
+        port=5432,
+        user=\"postgres\",
+        password=\"postgres\",
+        database=\"fuzekeys\"
+    )
+    conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+    cursor = conn.cursor()
+    
+    cursor.execute(\"GRANT ALL ON SCHEMA public TO fuzekeys_user\")
+    cursor.execute(\"GRANT CREATE ON SCHEMA public TO fuzekeys_user\")
+    cursor.execute(\"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO fuzekeys_user\")
+    cursor.execute(\"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO fuzekeys_user\")
+    
+    cursor.close()
+    conn.close()
+    print(\"Database setup completed successfully!\")
+    
+except Exception as e:
+    print(f\"Database setup error: {e}\")
+    exit(1)
+'
+        
+        echo 'Running database migrations...'
+        python -c '
+from app.database import engine, Base
+from app.models.site import Site
+
+Base.metadata.create_all(engine)
+print(\"Database tables created successfully!\")
+'
+        
+        echo 'Database initialization completed!'
+      "
+    restart: "no"
+
+  # FuzeKeys Backend API
+  fuzekeys-api:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fuzekeys-api
+    env_file:
+      - docker.env
+    depends_on:
+      - fuzekeys-db-init
+    ports:
+      - "8002:8002"
+    networks:
+      - fuzeinfra
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # FuzeKeys Frontend (React)
+  fuzekeys-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: fuzekeys-frontend
+    env_file:
+      - docker.env
+    depends_on:
+      - fuzekeys-api
+    ports:
+      - "3001:3000"
+    networks:
+      - fuzeinfra
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3 

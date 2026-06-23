@@ -5,7 +5,7 @@ const Chat: React.FC = () => {
   const [messages, setMessages] = useState<Array<{id: number, text: string, sender: 'user' | 'assistant'}>>([
     {
       id: 1,
-      text: "Hello! I'm the SignMeUp assistant. I can help you manage identities and automate account creation. Try asking me to 'sign me up for GitHub' or about 'creating identities'.",
+      text: "Hello! I'm the FuzeKeys assistant. I can help you manage identities and automate account creation. Try asking me to 'sign me up for GitHub' or about 'creating identities'.",
       sender: 'assistant'
     }
   ]);
@@ -23,7 +23,7 @@ const Chat: React.FC = () => {
     } else if (msg.includes('account') || msg.includes('accounts')) {
       return "Your accounts are managed securely with:\n\n• **Encrypted storage** of all credentials\n• **Automated signup scripts** for quick registration\n• **API key management** for integrated services\n• **Success rate tracking** for each website\n\nCheck the Accounts page to see your current accounts.";
     } else if (msg.includes('how') || msg.includes('work')) {
-      return "SignMeUp works through AI-powered automation:\n\n1. **Web Analysis**: I analyze website signup forms\n2. **Script Generation**: Create reusable automation scripts\n3. **Identity Selection**: Choose which identity to use\n4. **Automated Signup**: Fill forms and handle verification\n5. **Secure Storage**: Encrypt and store all account data\n\nEverything is encrypted with your master key!";
+      return "FuzeKeys works through AI-powered automation:\n\n1. **Web Analysis**: I analyze website signup forms\n2. **Script Generation**: Create reusable automation scripts\n3. **Identity Selection**: Choose which identity to use\n4. **Automated Signup**: Fill forms and handle verification\n5. **Secure Storage**: Encrypt and store all account data\n\nEverything is encrypted with your master key!";
     } else {
       return "I'm here to help with identity management and account automation! You can ask me about:\n\n• Signing up for specific websites\n• Managing your identities\n• Viewing your accounts\n• How the automation works\n\nWhat would you like to know more about?";
     }

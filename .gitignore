@@ -139,4 +139,20 @@ public
 
 # Temporary folders
 tmp/
-temp/ 
+temp/
+
+# --- FuzeKeys: secrets & captured data (never commit) ---
+docker.env
+*.env
+!*.env.example
+!env.example
+backend/google_responses.json
+backend/google_requests.json
+backend/google_network_capture.json
+backend/*_form_data.json
+
+# --- FuzeKeys: debug/automation artifacts ---
+*.png
+*.backup
+backend/*_page_source.html
+backend/initial_page_source.html 

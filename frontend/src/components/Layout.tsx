@@ -8,6 +8,7 @@ const Layout: React.FC = () => {
     { name: 'Dashboard', href: '/dashboard' },
     { name: 'Identities', href: '/identities' },
     { name: 'Accounts', href: '/accounts' },
+    { name: 'Sites Database', href: '/sites' },
     { name: 'Chat', href: '/chat' },
   ];
 
@@ -17,7 +18,7 @@ const Layout: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
             <div className="flex items-center">
-              <h1 className="text-xl font-bold text-primary-600">SignMeUp</h1>
+              <h1 className="text-xl font-bold text-primary-600">FuzeKeys</h1>
               <span className="ml-2 text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded">Demo</span>
             </div>
             

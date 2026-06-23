@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Standalone SignMeUp API Server
+Standalone FuzeKeys API Server
 """
 import asyncio
 import sys
@@ -23,7 +23,7 @@ from app.models import User, Identity, Account
 from app.utils.encryption import EncryptionManager
 
 app = FastAPI(
-    title="SignMeUp API",
+    title="FuzeKeys API",
     description="Intelligent Identity & Account Management System",
     version="1.0.0"
 )
@@ -42,7 +42,7 @@ demo_encryption = EncryptionManager("demo_master_key_123")
 
 @app.get("/")
 async def root():
-    return {"message": "SignMeUp API is running", "version": "1.0.0", "status": "healthy"}
+    return {"message": "FuzeKeys API is running", "version": "1.0.0", "status": "healthy"}
 
 @app.get("/health")
 async def health_check():
@@ -138,7 +138,7 @@ async def chat_endpoint(message: dict):
     elif "automation" in user_message.lower():
         response = "I can automate the signup process for many websites using intelligent scripts that adapt to different forms and requirements. The automation includes handling CAPTCHAs, email verification, and form filling."
     else:
-        response = "Hello! I'm the SignMeUp assistant. I can help you manage identities, automate account creation, and track your accounts across different websites. Try asking me about 'creating identities', 'signing up for services', or 'managing accounts'."
+        response = "Hello! I'm the FuzeKeys assistant. I can help you manage identities, automate account creation, and track your accounts across different websites. Try asking me about 'creating identities', 'signing up for services', or 'managing accounts'."
     
     return {
         "response": response,
@@ -176,7 +176,7 @@ async def startup():
 
 def main():
     """Main function to run the server."""
-    print("🚀 Starting SignMeUp API Server...")
+    print("🚀 Starting FuzeKeys API Server...")
     
     # Initialize database
     asyncio.run(startup())

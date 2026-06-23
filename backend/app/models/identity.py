@@ -35,6 +35,7 @@ class Identity(Base):
     encrypted_profession = Column(Text)
     encrypted_company = Column(Text)
     encrypted_bio = Column(Text)
+    encrypted_gender = Column(Text)  # Added for platform-specific requirements
     
     # Custom fields (encrypted JSON)
     encrypted_custom_fields = Column(Text)  # JSON string of custom fields
@@ -52,4 +53,5 @@ class Identity(Base):
     accounts = relationship("Account", back_populates="identity", cascade="all, delete-orphan")
     
     def __repr__(self):
+        return f"<Identity(id={self.id}, name='{self.name}', user_id={self.user_id})>" 
         return f"<Identity(id={self.id}, name='{self.name}', user_id={self.user_id})>" 

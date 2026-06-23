@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
-app = FastAPI(title="SignMeUp API Test")
+app = FastAPI(title="FuzeKeys API Test")
 
 app.add_middleware(
     CORSMiddleware,
@@ -14,7 +14,7 @@ app.add_middleware(
 
 @app.get("/")
 async def root():
-    return {"message": "SignMeUp API is running", "status": "healthy"}
+    return {"message": "FuzeKeys API is running", "status": "healthy"}
 
 @app.get("/health")
 async def health():

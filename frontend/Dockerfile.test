@@ -1,0 +1,30 @@
+FROM node:18-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Install curl for health checks and testing
+RUN apk add --no-cache curl bash
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm install --legacy-peer-deps
+
+# Copy source code
+COPY . .
+
+# Create test results directory
+RUN mkdir -p test-results
+
+# Set environment variables
+ENV CI=true
+ENV NODE_ENV=test
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:3000 || exit 1
+
+# Default command runs tests
+CMD ["npm", "test", "--", "--testPathPattern=SitesDatabase", "--watchAll=false", "--verbose", "--coverage"] 

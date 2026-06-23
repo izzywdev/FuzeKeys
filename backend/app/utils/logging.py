@@ -45,7 +45,7 @@ def setup_logging():
     
     # Add file handler for general logs
     logger.add(
-        log_dir / "signmeup.log",
+        log_dir / "fuzekeys.log",
         format=file_format,
         level=log_level,
         rotation="10 MB",

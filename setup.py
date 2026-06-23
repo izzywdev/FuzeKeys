@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
 """
-SignMeUp Setup Script
-This script helps set up the SignMeUp development environment.
+FuzeKeys Setup Script
+This script helps set up the FuzeKeys development environment.
 """
 
 import os
 import subprocess
 import sys
 from pathlib import Path
+
+# Import version information
+try:
+    from version import get_version
+except ImportError:
+    def get_version():
+        return "1.0.0"
 
 def run_command(command, cwd=None, check=True):
     """Run a shell command and return the result."""
@@ -104,12 +111,12 @@ def create_env_file():
         
         # Update database URL for local development
         content = content.replace(
-            "DATABASE_URL=postgresql://username:password@localhost/signmeup",
-            "DATABASE_URL=postgresql://signmeup_user:signmeup_password@localhost/signmeup"
+            "DATABASE_URL=postgresql://username:password@localhost/fuzekeys",
+            "DATABASE_URL=postgresql://fuzekeys_user:fuzekeys_password@localhost/fuzekeys"
         )
         content = content.replace(
-            "DATABASE_URL_ASYNC=postgresql+asyncpg://username:password@localhost/signmeup",
-            "DATABASE_URL_ASYNC=postgresql+asyncpg://signmeup_user:signmeup_password@localhost/signmeup"
+            "DATABASE_URL_ASYNC=postgresql+asyncpg://username:password@localhost/fuzekeys",
+            "DATABASE_URL_ASYNC=postgresql+asyncpg://fuzekeys_user:fuzekeys_password@localhost/fuzekeys"
         )
         
         with open(env_file, 'w') as f:
@@ -124,7 +131,8 @@ def create_env_file():
 
 def main():
     """Main setup function."""
-    print("🚀 Welcome to SignMeUp Setup!")
+    print("🚀 Welcome to FuzeKeys Setup!")
+    print(f"Version: {get_version()}")
     print("This script will help you set up the development environment.\n")
     
     # Check Python version

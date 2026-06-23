@@ -81,7 +81,7 @@ async def get_ai_response(message: str, context: Dict[str, Any] = None) -> str:
     """Get AI response for chat message."""
     try:
         system_prompt = """
-        You are an AI assistant for SignMeUp, a system that manages digital identities and automates account creation.
+        You are an AI assistant for FuzeKeys, a system that manages digital identities and automates account creation.
         
         You can help users with:
         1. Creating and managing digital identities

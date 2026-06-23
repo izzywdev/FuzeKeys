@@ -1,0 +1,116 @@
+version: '3.8'
+
+networks:
+  fuzekeys-test:
+    driver: bridge
+
+services:
+  # PostgreSQL Database for testing
+  fuzekeys-db-test:
+    image: postgres:15
+    container_name: fuzekeys-db-test
+    environment:
+      - POSTGRES_DB=fuzekeys_test
+      - POSTGRES_USER=fuzekeys_user
+      - POSTGRES_PASSWORD=fuzekeys_password
+    ports:
+      - "5433:5432"
+    networks:
+      - fuzekeys-test
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fuzekeys_user -d fuzekeys_test"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # FuzeKeys Backend API
+  fuzekeys-backend-test:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fuzekeys-backend-test
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://fuzekeys_user:fuzekeys_password@fuzekeys-db-test:5432/fuzekeys_test
+      - SECRET_KEY=test-secret-key
+      - MASTER_KEY_SALT=test-salt
+      - ENVIRONMENT=test
+      - PYTHONPATH=/app
+    ports:
+      - "8003:8002"
+    networks:
+      - fuzekeys-test
+    depends_on:
+      fuzekeys-db-test:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "com.docker.compose.project=FuzeKeys-Test"
+    command: >
+      sh -c "
+        echo '🔧 Initializing database...' &&
+        python init_test_db.py &&
+        echo '🚀 Starting backend server...' &&
+        python -m uvicorn app.main:app --host 0.0.0.0 --port 8002
+      "
+
+  # FuzeKeys Frontend (React) - Test Configuration
+  fuzekeys-frontend-test:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - REACT_APP_API_URL=http://localhost:8003
+    container_name: fuzekeys-frontend-test
+    environment:
+      - REACT_APP_API_URL=http://localhost:8003
+      - NODE_ENV=production
+    depends_on:
+      fuzekeys-backend-test:
+        condition: service_healthy
+    ports:
+      - "3006:3000"
+    networks:
+      - fuzekeys-test
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      - "com.docker.compose.project=FuzeKeys-Test"
+
+  # Test Runner Service
+  fuzekeys-test-runner:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.test
+    container_name: fuzekeys-test-runner
+    environment:
+      - CI=true
+      - REACT_APP_API_URL=http://fuzekeys-backend-test:8002
+    networks:
+      - fuzekeys-test
+    depends_on:
+      fuzekeys-frontend-test:
+        condition: service_healthy
+      fuzekeys-backend-test:
+        condition: service_healthy
+    volumes:
+      - ./frontend/src:/app/src:ro
+      - ./frontend/public:/app/public:ro
+      - test_results:/app/test-results
+    command: npm test -- --testPathPattern=SitesDatabase --watchAll=false --coverage --coverageDirectory=test-results
+
+volumes:
+  postgres_test_data:
+  test_results: 

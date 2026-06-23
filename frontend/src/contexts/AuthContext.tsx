@@ -6,7 +6,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   loading: boolean;
   login: (email: string, password: string, masterKey: string) => Promise<void>;
-  register: (userData: any) => Promise<void>;
+  register: (userData: any) => Promise<User>;
   logout: () => void;
 }
 

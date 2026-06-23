@@ -1,26 +1,27 @@
 """
-Database configuration and utilities for SignMeUp.
-Modified to use SQLite for local development.
+Database configuration and utilities for FuzeKeys.
+Modified to use PostgreSQL for production-ready deployment.
 """
 import asyncio
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy import text
 import os
 from pathlib import Path
 
-# Create database directory if it doesn't exist
-db_dir = Path("data")
-db_dir.mkdir(exist_ok=True)
-
-# SQLite database URL for local development
-DATABASE_URL = f"sqlite+aiosqlite:///./data/signmeup.db"
+# PostgreSQL database URL - FuzeKeys database on FuzeInfra
+DATABASE_URL = os.getenv(
+    "DATABASE_URL", 
+    "postgresql+asyncpg://fuzekeys_user:fuzekeys_password@localhost:5432/fuzekeys"
+)
 
 # Create async engine
 engine = create_async_engine(
     DATABASE_URL,
     echo=True,  # Set to False in production
-    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
+    pool_pre_ping=True,
+    pool_recycle=300,
 )
 
 # Create session maker
@@ -55,7 +56,7 @@ get_db = get_async_session
 async def create_tables():
     """Create all database tables."""
     try:
-        from app.models import User, Identity, Account, SignupScript, ApiKey
+        from app.models import User, Identity, Account, AccountStage, SignupScript, ApiKey
         
         async with engine.begin() as conn:
             # Create all tables
@@ -75,7 +76,7 @@ async def init_database():
         
         # Add sample data for demo
         async with async_session_maker() as session:
-            from app.models import User, Identity, Account
+            from app.models import User, Identity, Account, AccountStage, StageType, StageStatus
             from app.utils.encryption import EncryptionManager
             import hashlib
             from datetime import datetime
@@ -88,7 +89,7 @@ async def init_database():
             
             # Create demo user
             demo_user = User(
-                email="demo@signmeup.com",
+                email="demo@fuzekeys.com",
                 username="demo_user",
                 hashed_password=hashlib.sha256("demo123".encode()).hexdigest(),
                 master_key_hash=hashlib.sha256("masterkey123".encode()).hexdigest(),
@@ -136,83 +137,134 @@ async def init_database():
             session.add_all([professional_identity, personal_identity])
             await session.flush()
             
-            # Create demo accounts
-            accounts = [
-                Account(
-                    identity_id=professional_identity.id,
-                    website_name="GitHub",
-                    website_url="https://github.com",
-                    website_domain="github.com",
-                    encrypted_username=encryption_manager.encrypt("alex_johnson_dev"),
-                    encrypted_email=encryption_manager.encrypt("alex.johnson.pro@email.com"),
-                    encrypted_password=encryption_manager.encrypt("SecurePass123!"),
-                    is_active=True,
-                    signup_completed=True,
-                    signup_method="automated",
-                    encrypted_notes=encryption_manager.encrypt("Used for software development projects")
-                ),
-                Account(
-                    identity_id=professional_identity.id,
-                    website_name="LinkedIn",
-                    website_url="https://linkedin.com",
-                    website_domain="linkedin.com",
-                    encrypted_username=encryption_manager.encrypt("alex-johnson-dev"),
-                    encrypted_email=encryption_manager.encrypt("alex.johnson.pro@email.com"),
-                    encrypted_password=encryption_manager.encrypt("LinkedInPass456!"),
-                    is_active=True,
-                    signup_completed=True,
-                    signup_method="automated",
-                    encrypted_notes=encryption_manager.encrypt("Professional networking account")
-                ),
-                Account(
-                    identity_id=personal_identity.id,
-                    website_name="Twitter",
-                    website_url="https://twitter.com",
-                    website_domain="twitter.com",
-                    encrypted_username=encryption_manager.encrypt("alexj_tech"),
-                    encrypted_email=encryption_manager.encrypt("alexj.personal@email.com"),
-                    encrypted_password=encryption_manager.encrypt("TwitterPass789!"),
-                    is_active=True,
-                    signup_completed=False,
-                    signup_method="automated",
-                    encrypted_notes=encryption_manager.encrypt("Email verification pending")
-                ),
-                Account(
-                    identity_id=personal_identity.id,
-                    website_name="Reddit",
-                    website_url="https://reddit.com",
-                    website_domain="reddit.com",
-                    encrypted_username=encryption_manager.encrypt("alexj_techie"),
-                    encrypted_email=encryption_manager.encrypt("alexj.personal@email.com"),
-                    encrypted_password=encryption_manager.encrypt("RedditPass101!"),
-                    is_active=True,
-                    signup_completed=True,
-                    signup_method="automated",
-                    encrypted_notes=encryption_manager.encrypt("Community discussions and tech news")
-                ),
-                Account(
-                    identity_id=professional_identity.id,
-                    website_name="StackOverflow",
-                    website_url="https://stackoverflow.com",
-                    website_domain="stackoverflow.com",
-                    encrypted_username=encryption_manager.encrypt("alex_johnson_dev"),
-                    encrypted_email=encryption_manager.encrypt("alex.johnson.pro@email.com"),
-                    encrypted_password=encryption_manager.encrypt("StackPass202!"),
-                    is_active=True,
-                    signup_completed=True,
-                    signup_method="automated",
-                    encrypted_notes=encryption_manager.encrypt("Technical Q&A and problem solving")
-                )
+            # Create demo accounts with stages
+            accounts_data = [
+                {
+                    "identity": professional_identity,
+                    "website": "GitHub",
+                    "url": "https://github.com",
+                    "domain": "github.com",
+                    "username": "alex_johnson_dev",
+                    "email": "alex.johnson.pro@email.com",
+                    "password": "SecurePass123!",
+                    "completed": True,
+                    "notes": "Used for software development projects"
+                },
+                {
+                    "identity": professional_identity,
+                    "website": "LinkedIn",
+                    "url": "https://linkedin.com",
+                    "domain": "linkedin.com",
+                    "username": "alex-johnson-dev",
+                    "email": "alex.johnson.pro@email.com",
+                    "password": "LinkedInPass456!",
+                    "completed": True,
+                    "notes": "Professional networking account"
+                },
+                {
+                    "identity": personal_identity,
+                    "website": "Twitter",
+                    "url": "https://twitter.com",
+                    "domain": "twitter.com",
+                    "username": "alexj_tech",
+                    "email": "alexj.personal@email.com",
+                    "password": "TwitterPass789!",
+                    "completed": False,
+                    "notes": "Phone verification pending"
+                },
+                {
+                    "identity": personal_identity,
+                    "website": "Instagram",
+                    "url": "https://instagram.com",
+                    "domain": "instagram.com",
+                    "username": "alexj_photo",
+                    "email": "alexj.personal@email.com",
+                    "password": "InstaPass101!",
+                    "completed": False,
+                    "notes": "Human verification required"
+                }
             ]
             
-            session.add_all(accounts)
-            await session.commit()
+            for account_data in accounts_data:
+                # Create the account
+                account = Account(
+                    identity_id=account_data["identity"].id,
+                    website_name=account_data["website"],
+                    website_url=account_data["url"],
+                    website_domain=account_data["domain"],
+                    encrypted_username=encryption_manager.encrypt(account_data["username"]),
+                    encrypted_email=encryption_manager.encrypt(account_data["email"]),
+                    encrypted_password=encryption_manager.encrypt(account_data["password"]),
+                    is_active=True,
+                    signup_completed=account_data["completed"],
+                    signup_method="automated",
+                    encrypted_notes=encryption_manager.encrypt(account_data["notes"])
+                )
+                session.add(account)
+                await session.flush()
+                
+                # Create stages for the account
+                stages_config = {
+                    "GitHub": [
+                        (StageType.EMAIL_VERIFICATION, "Email Verification", StageStatus.COMPLETED),
+                        (StageType.PROFILE_SETUP, "Profile Setup", StageStatus.COMPLETED),
+                        (StageType.TERMS_ACCEPTANCE, "Terms Acceptance", StageStatus.COMPLETED),
+                        (StageType.ACCOUNT_ACTIVATION, "Account Activation", StageStatus.COMPLETED),
+                    ],
+                    "LinkedIn": [
+                        (StageType.EMAIL_VERIFICATION, "Email Verification", StageStatus.COMPLETED),
+                        (StageType.PROFILE_SETUP, "Profile Setup", StageStatus.COMPLETED),
+                        (StageType.TERMS_ACCEPTANCE, "Terms Acceptance", StageStatus.COMPLETED),
+                        (StageType.ACCOUNT_ACTIVATION, "Account Activation", StageStatus.COMPLETED),
+                    ],
+                    "Twitter": [
+                        (StageType.EMAIL_VERIFICATION, "Email Verification", StageStatus.COMPLETED),
+                        (StageType.PHONE_VERIFICATION, "Phone Verification", StageStatus.FAILED),
+                        (StageType.PROFILE_SETUP, "Profile Setup", StageStatus.PENDING),
+                        (StageType.TERMS_ACCEPTANCE, "Terms Acceptance", StageStatus.PENDING),
+                        (StageType.ACCOUNT_ACTIVATION, "Account Activation", StageStatus.PENDING),
+                    ],
+                    "Instagram": [
+                        (StageType.EMAIL_VERIFICATION, "Email Verification", StageStatus.COMPLETED),
+                        (StageType.PHONE_VERIFICATION, "Phone Verification", StageStatus.IN_PROGRESS),
+                        (StageType.HUMAN_VERIFICATION, "Human Verification", StageStatus.PENDING),
+                        (StageType.PROFILE_SETUP, "Profile Setup", StageStatus.PENDING),
+                        (StageType.TERMS_ACCEPTANCE, "Terms Acceptance", StageStatus.PENDING),
+                        (StageType.ACCOUNT_ACTIVATION, "Account Activation", StageStatus.PENDING),
+                    ]
+                }
+                
+                website_stages = stages_config.get(account_data["website"], [])
+                for stage_type, stage_name, status in website_stages:
+                    stage = AccountStage(
+                        account_id=account.id,
+                        stage_type=stage_type,
+                        stage_name=stage_name,
+                        status=status,
+                        attempts=1 if status != StageStatus.PENDING else 0,
+                        started_at=datetime.utcnow() if status in [StageStatus.COMPLETED, StageStatus.IN_PROGRESS, StageStatus.FAILED] else None,
+                        completed_at=datetime.utcnow() if status == StageStatus.COMPLETED else None,
+                        error_message="Phone number verification timeout" if stage_type == StageType.PHONE_VERIFICATION and status == StageStatus.FAILED else None
+                    )
+                    session.add(stage)
             
-        print("✅ Database initialized with sample data!")
-        
+            await session.commit()
+            print("✅ Sample data created successfully!")
+            
     except Exception as e:
         print(f"❌ Error initializing database: {e}")
         raise
+
+
+async def check_connection():
+    """Check database connection."""
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text("SELECT 1"))
+        return True
+    except Exception as e:
+        print(f"❌ Database connection failed: {e}")
+        return False
 
 
 if __name__ == "__main__":

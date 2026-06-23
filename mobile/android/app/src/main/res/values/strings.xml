@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">SignMeUp SMS Interceptor</string>
+    <string name="service_notification_title">SMS Interceptor</string>
+    <string name="service_notification_text">Monitoring SMS messages for OTP codes</string>
+    <string name="permission_rationale_title">SMS Permissions Required</string>
+    <string name="permission_rationale_message">This app needs SMS permissions to detect and forward OTP codes to your server. Your privacy is important - messages are only processed locally to extract OTP codes.</string>
+    <string name="permission_denied_message">SMS permissions are required for the app to function. Please enable them in Settings.</string>
+</resources> 

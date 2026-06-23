@@ -6,6 +6,8 @@ import Dashboard from './pages/Dashboard';
 import Identities from './pages/Identities';
 import Accounts from './pages/Accounts';
 import Chat from './pages/Chat';
+import SitesDatabase from './components/SitesDatabase';
+import { GoogleIntegrationPage } from './integrations/google';
 import './index.css';
 
 function App() {
@@ -30,7 +32,9 @@ function App() {
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="identities" element={<Identities />} />
             <Route path="accounts" element={<Accounts />} />
+            <Route path="sites" element={<SitesDatabase />} />
             <Route path="chat" element={<Chat />} />
+            <Route path="integrations/google" element={<GoogleIntegrationPage />} />
           </Route>
           
           {/* Catch all route */}
