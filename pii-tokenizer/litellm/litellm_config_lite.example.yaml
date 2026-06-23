@@ -1,0 +1,91 @@
+﻿# Always-on proxy for Claude Code + OpenAI on :4000.
+# Models load from this YAML (reliable â€” no DB needed for routing).
+# Spend logs + key validation use the shared Postgres from start_litellm_proxy.ps1 (DATABASE_URL).
+# Start with:  litellm --config litellm_config_lite.yaml --port 4000
+model_list:
+  # ============ Anthropic (Claude) ============
+  - model_name: claude-opus-4-8
+    litellm_params:
+      model: anthropic/claude-opus-4-8
+      api_key: os.environ/ANTHROPIC_API_KEY
+  - model_name: claude-sonnet-4-6
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
+  - model_name: claude-haiku-4-5
+    litellm_params:
+      model: anthropic/claude-haiku-4-5-20251001
+      api_key: os.environ/ANTHROPIC_API_KEY
+  - model_name: claude-3-5-sonnet-latest
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
+  - model_name: claude-3-5-haiku-latest
+    litellm_params:
+      model: anthropic/claude-haiku-4-5-20251001
+      api_key: os.environ/ANTHROPIC_API_KEY
+  - model_name: claude              # alias -> Opus
+    litellm_params:
+      model: anthropic/claude-opus-4-8
+      api_key: os.environ/ANTHROPIC_API_KEY
+  - model_name: claude-haiku        # alias -> Haiku
+    litellm_params:
+      model: anthropic/claude-haiku-4-5-20251001
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  # ============ OpenAI ============ (requires OPENAI_API_KEY)
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+  - model_name: gpt-4.1
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+  - model_name: gpt-4.1-mini
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+  - model_name: o3
+    litellm_params:
+      model: openai/o3-mini
+      api_key: os.environ/OPENAI_API_KEY
+  - model_name: o4-mini
+    litellm_params:
+      model: openai/o3-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  # ============ Provider wildcards (catch-all) ============
+  - model_name: "anthropic/*"
+    litellm_params:
+      model: anthropic/*
+      api_key: os.environ/ANTHROPIC_API_KEY
+  - model_name: "openai/*"
+    litellm_params:
+      model: openai/*
+      api_key: os.environ/OPENAI_API_KEY
+  - model_name: "*"                 # bare unknown ids (e.g. Claude Code's exact pins) -> Anthropic
+    litellm_params:
+      model: anthropic/*
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+# No DATABASE_URL / store_model_in_db -> no Postgres dependency, no Prisma, no crashes.
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  store_model_in_db: false   # two instances share one DB â€” only :4001 owns the config blob
+
+# pii-vault guardrail: tokenizes PII/secrets in prompts before they leave for Anthropic.
+# pii-vault/ is added to sys.path by litellm_launcher.py so pii_guardrail imports.
+# The identifier guard in pii_vault.py prevents the earlier false positives (it was
+# mangling model-version strings like "claude-haiku-4-5-20251001" as phone numbers).
+guardrails:
+  - guardrail_name: pii-tokenizer
+    litellm_params:
+      guardrail: pii_guardrail.PIITokenizer
+      mode: pre_call
+      default_on: true
+
