@@ -9,7 +9,11 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from app.main import app
-from app.database import get_db_session, Base
+# NOTE: app.database exposes the async dependency as `get_async_session` with a
+# backward-compat alias `get_db` (it does NOT export `get_db_session`). The
+# routers all declare `Depends(get_db)`, so `get_db` is the correct symbol to
+# import and to use as the dependency-override key.
+from app.database import get_db, Base
 from app.models.identity import Identity
 from app.models.account import Account
 import os
@@ -54,7 +58,7 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     async def override_get_db():
         yield db_session
     
-    app.dependency_overrides[get_db_session] = override_get_db
+    app.dependency_overrides[get_db] = override_get_db
     
     async with AsyncClient(app=app, base_url="http://test") as ac:
         yield ac
