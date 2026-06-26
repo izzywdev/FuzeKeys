@@ -11,7 +11,12 @@ class Identity(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    
+
+    # Identity-vault (Phase 1): tenant + handle to the Vaultwarden collection
+    # holding this persona's encrypted PII / cards / logins. No secrets here.
+    org_id = Column(Integer, ForeignKey("organizations.id"), nullable=True, index=True)
+    vault_collection_ref = Column(String(255), nullable=True, index=True)
+
     # Identity metadata
     name = Column(String(200), nullable=False)  # Display name for this identity
     description = Column(Text)  # Description of when to use this identity
