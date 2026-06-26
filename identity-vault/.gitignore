@@ -1,0 +1,3 @@
+# Secrets & local state — never commit
+.env
+openbao/.openbao-init.json
