@@ -1212,7 +1212,7 @@ components:
       description: Returned (HTTP 202) when a sensitive resource needs approval, or is still pending.
       required: [status, request_id, expires_at]
       properties:
-        status: { type: string, const: approval_required }
+        status: { type: string, enum: [approval_required] }
         request_id: { type: string }
         resource_ref: { type: string, nullable: true }
         sensitivity: { $ref: '#/components/schemas/SensitivityTier' }

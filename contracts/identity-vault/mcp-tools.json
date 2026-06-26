@@ -1,0 +1,388 @@
+{
+  "$schema": "https://modelcontextprotocol.io/schema/draft/tool-list",
+  "mcpVersion": "2024-11-05",
+  "server": {
+    "name": "fuzekeys-secrets-broker",
+    "version": "0.1.0",
+    "transport": "streamable-http",
+    "auth": {
+      "scheme": "bearer",
+      "tokenKind": "agent-token",
+      "description": "Opaque agent token, stored hashed server-side, bound to a user_id + agent_scopes. Fail-closed: blank/unknown/inactive -> auth error. Every tool resolves agent -> user and enforces owner + scope; out-of-scope/cross-tenant -> denied + audited."
+    }
+  },
+  "conventions": {
+    "sensitivityTiers": {
+      "LOW": "metadata / display name / discovery listings — auto-released, audited",
+      "MEDIUM": "site username/password, current TOTP code — auto in-scope, audited",
+      "HIGH": "API tokens, full cards, SSN/passport & sensitive PII, service secrets — human approval required"
+    },
+    "approvalPending": {
+      "description": "HIGH (or policy-elevated) requests return this shape instead of a value. Poll check_approval(request_id) until status=approved, then read the one-time short-TTL value.",
+      "shape": {
+        "status": "approval_required",
+        "request_id": "string",
+        "resource_ref": "string",
+        "sensitivity": "HIGH",
+        "expires_at": "ISO-8601 date-time"
+      }
+    },
+    "restEquivalence": "Field names/types mirror contracts/identity-vault/openapi.yaml components/schemas. The REST API and these MCP tools are two facades over the same broker policy engine.",
+    "noSecretLeak": "No tool returns a TOTP seed, raw PAN/CVV at rest, or any HIGH value outside the approval flow. Discovery tools return metadata only."
+  },
+  "tools": [
+    {
+      "name": "list_identities",
+      "description": "List personas (identities) in the agent's scope. Metadata only (id + display name + status); no secret or sensitive-PII values. LOW sensitivity. Maps to REST GET /identities.",
+      "sensitivity": "LOW",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "cursor": { "type": "string", "description": "Opaque pagination cursor." },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 200, "default": 50 }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "required": ["items"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "name"],
+              "properties": {
+                "id": { "type": "integer" },
+                "name": { "type": "string" },
+                "status": { "type": ["string", "null"] }
+              },
+              "additionalProperties": false
+            }
+          },
+          "next_cursor": { "type": ["string", "null"] }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_site_logins",
+      "description": "List a persona's site logins. Metadata only (site, status, has_totp, masked username hint); never passwords. LOW sensitivity. Maps to REST GET /identities/{id}/site-logins.",
+      "sensitivity": "LOW",
+      "inputSchema": {
+        "type": "object",
+        "required": ["identity_id"],
+        "properties": {
+          "identity_id": { "type": "integer" },
+          "cursor": { "type": "string" },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 200, "default": 50 }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "required": ["items"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "identity_id", "site", "status"],
+              "properties": {
+                "id": { "type": "integer" },
+                "identity_id": { "type": "integer" },
+                "site": { "type": "string" },
+                "website_name": { "type": ["string", "null"] },
+                "username_hint": { "type": ["string", "null"] },
+                "has_totp": { "type": "boolean" },
+                "status": { "type": "string", "enum": ["active", "inactive", "unverified"] }
+              },
+              "additionalProperties": false
+            }
+          },
+          "next_cursor": { "type": ["string", "null"] }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_api_tokens",
+      "description": "List a persona's API tokens / service secrets. Metadata only (service, name, sensitivity); never token values. LOW sensitivity. Maps to REST GET /identities/{id}/api-tokens.",
+      "sensitivity": "LOW",
+      "inputSchema": {
+        "type": "object",
+        "required": ["identity_id"],
+        "properties": {
+          "identity_id": { "type": "integer" },
+          "cursor": { "type": "string" },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 200, "default": 50 }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "required": ["items"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "identity_id", "service", "name"],
+              "properties": {
+                "id": { "type": "integer" },
+                "identity_id": { "type": "integer" },
+                "service": { "type": "string" },
+                "name": { "type": "string" },
+                "sensitivity": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH"] }
+              },
+              "additionalProperties": false
+            }
+          },
+          "next_cursor": { "type": ["string", "null"] }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_identity_profile",
+      "description": "Get persona profile PII. Non-sensitive fields (name/address/phone/etc.) auto-release in scope; requesting HIGH fields (ssn, passport, other org-classified sensitive) returns approval_pending. Maps to REST GET /identities/{id}/profile.",
+      "sensitivity": "MEDIUM",
+      "approvalForFields": ["ssn", "passport"],
+      "inputSchema": {
+        "type": "object",
+        "required": ["identity_id"],
+        "properties": {
+          "identity_id": { "type": "integer" },
+          "fields": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Profile field names to request; default = all non-sensitive."
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["identity_id", "released_fields", "fields"],
+            "properties": {
+              "identity_id": { "type": "integer" },
+              "released_fields": { "type": "array", "items": { "type": "string" } },
+              "fields": { "type": "object", "additionalProperties": { "type": "string" } }
+            },
+            "additionalProperties": false
+          },
+          { "$ref": "#/$defs/approvalPending" }
+        ]
+      }
+    },
+    {
+      "name": "get_site_login",
+      "description": "Get a site login's username + password. MEDIUM: auto-released in scope, audited. Org policy may elevate to HIGH (then returns approval_pending). Maps to REST GET /identities/{id}/site-logins/{site}.",
+      "sensitivity": "MEDIUM",
+      "inputSchema": {
+        "type": "object",
+        "required": ["identity_id", "site"],
+        "properties": {
+          "identity_id": { "type": "integer" },
+          "site": { "type": "string" },
+          "fields": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["username", "password"] },
+            "description": "Subset to return; default both."
+          }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["identity_id", "site", "released_fields"],
+            "properties": {
+              "identity_id": { "type": "integer" },
+              "site": { "type": "string" },
+              "username": { "type": ["string", "null"] },
+              "password": { "type": ["string", "null"] },
+              "released_fields": { "type": "array", "items": { "type": "string", "enum": ["username", "password"] } }
+            },
+            "additionalProperties": false
+          },
+          { "$ref": "#/$defs/approvalPending" }
+        ]
+      }
+    },
+    {
+      "name": "get_totp_code",
+      "description": "Get the CURRENT TOTP code for a site login. The broker computes the code; the TOTP seed is NEVER returned. MEDIUM, audited. Maps to REST GET /identities/{id}/site-logins/{site}/totp.",
+      "sensitivity": "MEDIUM",
+      "inputSchema": {
+        "type": "object",
+        "required": ["identity_id", "site"],
+        "properties": {
+          "identity_id": { "type": "integer" },
+          "site": { "type": "string" }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["identity_id", "site", "code", "expires_at"],
+            "properties": {
+              "identity_id": { "type": "integer" },
+              "site": { "type": "string" },
+              "code": { "type": "string" },
+              "period_seconds": { "type": "integer", "default": 30 },
+              "expires_at": { "type": "string", "format": "date-time" }
+            },
+            "additionalProperties": false
+          },
+          { "$ref": "#/$defs/approvalPending" }
+        ]
+      }
+    },
+    {
+      "name": "get_card",
+      "description": "Get a stored card's full details (PAN/CVV). HIGH: ALWAYS returns approval_pending first; full card released one-time, short-TTL, via check_approval after a human approves. Maps to REST GET /identities/{id}/cards/{cardId}.",
+      "sensitivity": "HIGH",
+      "inputSchema": {
+        "type": "object",
+        "required": ["identity_id", "card_id"],
+        "properties": {
+          "identity_id": { "type": "integer" },
+          "card_id": { "type": "integer" }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": { "$ref": "#/$defs/approvalPending" }
+    },
+    {
+      "name": "get_api_token",
+      "description": "Get an API token / service secret value. HIGH (configurable per org): returns approval_pending; value released one-time, short-TTL, via check_approval. Maps to REST GET /identities/{id}/api-tokens/{service}.",
+      "sensitivity": "HIGH",
+      "inputSchema": {
+        "type": "object",
+        "required": ["identity_id", "service"],
+        "properties": {
+          "identity_id": { "type": "integer" },
+          "service": { "type": "string" }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": { "$ref": "#/$defs/approvalPending" }
+    },
+    {
+      "name": "store_site_login",
+      "description": "Store a newly-created site login (the ONLY agent write). The broker creates the Vaultwarden Login item + Postgres metadata. password/totp_seed are write-only and never echoed back. Policy-gated, audited; may return approval_pending per org policy. Maps to REST POST /identities/{id}/site-logins.",
+      "sensitivity": "MEDIUM",
+      "write": true,
+      "inputSchema": {
+        "type": "object",
+        "required": ["identity_id", "site", "username", "password"],
+        "properties": {
+          "identity_id": { "type": "integer" },
+          "site": { "type": "string" },
+          "website_name": { "type": ["string", "null"] },
+          "website_url": { "type": ["string", "null"] },
+          "username": { "type": "string" },
+          "password": { "type": "string", "writeOnly": true },
+          "totp_seed": { "type": ["string", "null"], "writeOnly": true }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["id", "identity_id", "site", "status"],
+            "properties": {
+              "id": { "type": "integer" },
+              "identity_id": { "type": "integer" },
+              "site": { "type": "string" },
+              "website_name": { "type": ["string", "null"] },
+              "has_totp": { "type": "boolean" },
+              "status": { "type": "string", "enum": ["active", "inactive", "unverified"] },
+              "vault_item_ref": { "type": ["string", "null"] }
+            },
+            "additionalProperties": false
+          },
+          { "$ref": "#/$defs/approvalPending" }
+        ]
+      }
+    },
+    {
+      "name": "check_approval",
+      "description": "Poll an approval request. While pending -> approval_pending. On approval -> the ONE-TIME, short-TTL released value (profile/card/api_token, consumed on read). On denied/expired -> status only, no value. Maps to REST GET /approvals/{request_id}.",
+      "sensitivity": "LOW",
+      "inputSchema": {
+        "type": "object",
+        "required": ["request_id"],
+        "properties": {
+          "request_id": { "type": "string" }
+        },
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "oneOf": [
+          { "$ref": "#/$defs/approvalPending" },
+          {
+            "type": "object",
+            "required": ["request_id", "status"],
+            "properties": {
+              "request_id": { "type": "string" },
+              "status": { "type": "string", "enum": ["approved", "denied", "expired"] },
+              "resource_ref": { "type": ["string", "null"] },
+              "value_ttl_seconds": { "type": ["integer", "null"] },
+              "profile_value": {
+                "type": "object",
+                "properties": {
+                  "identity_id": { "type": "integer" },
+                  "released_fields": { "type": "array", "items": { "type": "string" } },
+                  "fields": { "type": "object", "additionalProperties": { "type": "string" } }
+                }
+              },
+              "card_value": {
+                "type": "object",
+                "properties": {
+                  "card_id": { "type": "integer" },
+                  "cardholder_name": { "type": ["string", "null"] },
+                  "number": { "type": "string" },
+                  "cvv": { "type": ["string", "null"] },
+                  "exp_month": { "type": "integer" },
+                  "exp_year": { "type": "integer" }
+                }
+              },
+              "api_token_value": {
+                "type": "object",
+                "properties": {
+                  "credential_id": { "type": "integer" },
+                  "service": { "type": "string" },
+                  "token": { "type": "string" }
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "approvalPending": {
+      "type": "object",
+      "required": ["status", "request_id", "expires_at"],
+      "properties": {
+        "status": { "type": "string", "const": "approval_required" },
+        "request_id": { "type": "string" },
+        "resource_ref": { "type": ["string", "null"] },
+        "sensitivity": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH"] },
+        "expires_at": { "type": "string", "format": "date-time" },
+        "poll_url": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    }
+  }
+}
