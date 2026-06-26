@@ -83,6 +83,10 @@ class Account(Base):
     
     # Comprehensive encrypted credentials (for API access)
     encrypted_credentials = Column(Text)  # JSON blob of all credentials
+
+    # Identity-vault (Phase 1): handle to the Vaultwarden Login item. The
+    # encrypted_* columns stay for now; Phase 6 migrates values out and drops them.
+    vault_item_ref = Column(String(255), nullable=True, index=True)
     
     # Account status
     is_active = Column(Boolean, default=True)
