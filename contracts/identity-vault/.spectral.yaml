@@ -1,0 +1,24 @@
+extends: ["spectral:oas"]
+# Spectral ruleset for the Secrets-Broker contract.
+# Base = the official OpenAPI (oas) rules; a few tightenings below for a
+# security-sensitive vault API.
+rules:
+  # Every operation must declare an operationId (generated-client method names).
+  operation-operationId: error
+  operation-operationId-unique: error
+  # Tags used by operations must be declared at the top level.
+  operation-tag-defined: error
+  # Operations must declare a success (2xx) response.
+  operation-success-response: error
+  # Info hygiene for a published contract.
+  info-contact: warn
+  info-description: error
+  # Servers should be defined.
+  oas3-api-servers: error
+  # Spectral 6.x + nimma crashes traversing some OpenAPI 3.1 schemas under these
+  # example/typed-enum rules ("Cannot read properties of null (reading 'enum')").
+  # Disabled so structural linting runs cleanly; schema validity is covered by
+  # the YAML parse + openapi-typescript generation succeeding.
+  typed-enum: off
+  oas3-valid-schema-example: off
+  oas3-valid-media-example: off
