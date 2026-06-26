@@ -15,6 +15,7 @@ permissions:
   pull-requests: write      # triage/update/comment, update-branch
   issues: write             # file the tracking issue, close resolved issues
   actions: read
+  id-token: write           # claude-code-action OIDC
 
 concurrency:
   group: governance-nightly
