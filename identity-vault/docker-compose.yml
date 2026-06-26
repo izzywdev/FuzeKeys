@@ -1,0 +1,52 @@
+# Identity-vault storage backends for the Secrets-Broker (design §4, §9).
+#   vaultwarden -> encrypted identity PII + cards + site logins (client-side crypto;
+#                  we never implement field encryption). Bitwarden-API compatible.
+#   openbao     -> machine/agent API tokens + service secrets (KV v2 + ACL policy + audit).
+#                  Truly-OSS (MPL) Vault fork — avoids HashiCorp BSL, no licensing/payment.
+#
+# Ports are offset from the existing pii-tokenizer stack (which owns 8200/6379/5002):
+#   OpenBao     8210 -> 8200   (API; Vault-compatible /v1/sys/*)
+#   Vaultwarden 8222 -> 80
+#
+# OpenBao uses persistent file storage and must be unsealed on each start. Run
+# ./stack-up.sh (NOT `docker compose up`) — it brings the stack up AND init/unseals
+# OpenBao, enables the KV v2 mount, and provisions the broker policy + token.
+services:
+  openbao:
+    image: openbao/openbao:latest
+    container_name: idv-openbao
+    cap_add:
+      - IPC_LOCK
+    environment:
+      BAO_ADDR: http://127.0.0.1:8200
+      # Inject server config via env instead of a host bind mount: Docker Desktop (WSL2)
+      # intermittently fails NEW host binds with "mkdir /run/desktop/mnt/host/d: file
+      # exists". The entrypoint writes BAO_LOCAL_CONFIG to /openbao/config/local.json and
+      # loads it via the auto `-config=/openbao/config`. This JSON mirrors
+      # openbao/config/config.hcl (kept as the human-readable reference). For k8s/Helm,
+      # use a ConfigMap mount instead of this env.
+      BAO_LOCAL_CONFIG: '{"storage":{"file":{"path":"/openbao/file"}},"listener":{"tcp":{"address":"0.0.0.0:8200","tls_disable":1}},"disable_mlock":true,"ui":true,"api_addr":"http://127.0.0.1:8200"}'
+    ports:
+      - "8210:8200"
+    volumes:
+      - idv-openbao-data:/openbao/file   # named volume (host binds are unreliable on Docker Desktop)
+    command: ["server"]
+    restart: unless-stopped
+
+  vaultwarden:
+    image: vaultwarden/server:latest
+    container_name: idv-vaultwarden
+    environment:
+      SIGNUPS_ALLOWED: "false"            # broker/admin provisions accounts; no open signup
+      ADMIN_TOKEN: ${VW_ADMIN_TOKEN}      # set in .env (argon2 PHC hash recommended)
+      DOMAIN: ${VW_DOMAIN:-http://localhost:8222}
+      ORG_GROUPS_ENABLED: "true"
+    ports:
+      - "8222:80"
+    volumes:
+      - idv-vaultwarden-data:/data
+    restart: unless-stopped
+
+volumes:
+  idv-openbao-data:
+  idv-vaultwarden-data:
