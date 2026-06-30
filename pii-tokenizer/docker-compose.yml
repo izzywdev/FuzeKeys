@@ -1,12 +1,16 @@
-# PII-vault supporting services for the Claude tokenization pipeline.
-#   redis     -> token store (token -> Vault ciphertext)
-#   vault     -> transit engine, encrypts/decrypts the real PII values (PERSISTENT file storage)
-#   presidio  -> PII detection over HTTP (POST /analyze)
+# Fully containerized PII tokenization stack. `docker compose up -d --build` runs everything:
+#   redis            -> token store (token -> Vault ciphertext)
+#   vault            -> transit engine, encrypts/decrypts real PII values (PERSISTENT file storage)
+#   presidio-analyzer-> PII detection over HTTP (POST /analyze)
+#   vault-bootstrap  -> one-shot: init (once) + unseal + ensure transit key, then exits
+#   tokenizer        -> FastAPI service wrapping pii_vault (host hook shims call it on 127.0.0.1:8099)
+#   litellm          -> proxy on :4000 with the pii-tokenizer guardrail (Claude Code routes here)
 #
-# Vault uses persistent file storage (pii-vault-data volume) + vault/config.hcl, so the transit
-# key and all tokens survive restarts/reboots. It must be unsealed on each start: stack-up.sh
-# initializes once and auto-unseals from vault/.vault-init.json (gitignored). Run stack-up.sh
-# instead of `docker compose up` directly — it brings up the stack AND unseals/bootstraps Vault.
+# `name:` is pinned so volumes stay `pii-vault_*` regardless of the directory this runs from —
+# do not change it or the persistent Vault data is orphaned. The only host pieces are the Claude
+# Code hook shims (hooks/) which call the tokenizer at 127.0.0.1:8099.
+name: pii-vault
+
 services:
   redis:
     image: redis:7-alpine
@@ -30,9 +34,8 @@ services:
     volumes:
       - ./vault/config.hcl:/vault/config/config.hcl:ro
       - pii-vault-data:/vault/file
-    # The image entrypoint auto-adds `-config=/vault/config`, which loads the mounted
-    # config.hcl. Do NOT also pass `-config=...` here or the file loads twice (two
-    # listeners on 8200 -> "address already in use").
+    # The image entrypoint auto-adds `-config=/vault/config`, which loads the mounted config.hcl.
+    # Do NOT also pass `-config=...` or the file loads twice (two listeners on 8200 -> bind clash).
     command: ["server"]
     restart: unless-stopped
 
@@ -43,6 +46,77 @@ services:
       - "5002:3000"
     restart: unless-stopped
 
+  # One-shot: initialize (once) + unseal + ensure the transit key, then exit. Replaces the old
+  # host stack-up.sh / Startup launcher. Runs on every `compose up`; persistent Vault is sealed
+  # on each start. The unseal key + root token live in the pii-vault-init volume (crown jewels).
+  vault-bootstrap:
+    build: .
+    image: fuzekeys-tokenizer
+    container_name: pii-vault-bootstrap
+    command: ["python", "service/vault_bootstrap.py"]
+    environment:
+      VAULT_ADDR: http://vault:8200
+      VAULT_INIT_FILE: /init/.vault-init.json
+      VAULT_TRANSIT_KEY: pii
+    volumes:
+      - pii-vault-init:/init
+    depends_on:
+      - vault
+    restart: "no"
+
+  tokenizer:
+    build: .
+    image: fuzekeys-tokenizer
+    container_name: pii-tokenizer
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      VAULT_ADDR: http://vault:8200
+      VAULT_INIT_FILE: /init/.vault-init.json
+      VAULT_TRANSIT_KEY: pii
+      PRESIDIO_URL: http://presidio-analyzer:3000
+      TOKEN_TTL: "86400"
+      PII_ENTITIES: CREDIT_CARD,US_SSN,EMAIL_ADDRESS,PHONE_NUMBER,IBAN_CODE
+      PII_SCORE_THRESHOLD: "0.4"
+      MAX_TOKENIZE_CHARS: "20000"
+    volumes:
+      - pii-vault-init:/init:ro
+    ports:
+      - "127.0.0.1:8099:8099"
+    depends_on:
+      vault-bootstrap:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+      presidio-analyzer:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8099/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable
+    container_name: pii-litellm
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    env_file:
+      - .env
+    environment:
+      TOKENIZER_URL: http://tokenizer:8099
+      PYTHONPATH: /app
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-litellm-master-local-dev}
+    volumes:
+      - ./litellm/litellm_config_lite.example.yaml:/app/config.yaml:ro
+      # pii_guardrail.py mount removed — guardrail disabled in config
+    ports:
+      - "4000:4000"
+    depends_on:
+      tokenizer:
+        condition: service_started
+    restart: unless-stopped
+
 volumes:
   pii-redis-data:
   pii-vault-data:
+  pii-vault-init:

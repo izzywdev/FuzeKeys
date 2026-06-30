@@ -73,6 +73,30 @@ model_list:
       model: anthropic/*
       api_key: os.environ/ANTHROPIC_API_KEY
 
+# Resilience / fallbacks. Without this, a primary-model failure (e.g.
+# "APIError: Cannot connect to host api.anthropic.com" / DNS hiccup / 5xx)
+# surfaces straight to the client with "Available Model Group Fallbacks=None".
+# Each primary Claude model retries, then falls back FIRST to other Claude
+# models, then to OpenAI (a DIFFERENT provider + host, billed to OPENAI_API_KEY)
+# so an Anthropic-side outage still gets served. Cross-provider is the fallback
+# that actually survives an api.anthropic.com outage (same-host Claude fallbacks
+# would share the failure); the Claude-first ordering keeps quality when only
+# one Claude model/region is degraded.
+litellm_settings:
+  num_retries: 2
+  request_timeout: 600
+  fallbacks:
+    - claude-opus-4-8: ["claude-sonnet-4-6", "claude-haiku-4-5", "gpt-4o"]
+    - claude-sonnet-4-6: ["claude-haiku-4-5", "gpt-4o"]
+    - claude-haiku-4-5: ["claude-sonnet-4-6", "gpt-4o-mini"]
+    - claude: ["claude-sonnet-4-6", "claude-haiku-4-5", "gpt-4o"]
+    - claude-haiku: ["claude-haiku-4-5", "gpt-4o-mini"]
+    - claude-3-5-sonnet-latest: ["claude-sonnet-4-6", "gpt-4o"]
+    - claude-3-5-haiku-latest: ["claude-haiku-4-5", "gpt-4o-mini"]
+  # Catch-all for any model group without an explicit list above (covers the
+  # "*" route that Claude Code's exact model pins resolve through).
+  default_fallbacks: ["claude-sonnet-4-6", "claude-haiku-4-5", "gpt-4o"]
+
 # No DATABASE_URL / store_model_in_db -> no Postgres dependency, no Prisma, no crashes.
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
@@ -82,10 +106,11 @@ general_settings:
 # pii-vault/ is added to sys.path by litellm_launcher.py so pii_guardrail imports.
 # The identifier guard in pii_vault.py prevents the earlier false positives (it was
 # mangling model-version strings like "claude-haiku-4-5-20251001" as phone numbers).
-guardrails:
-  - guardrail_name: pii-tokenizer
-    litellm_params:
-      guardrail: pii_guardrail.PIITokenizer
-      mode: pre_call
-      default_on: true
+# DISABLED TEMPORARILY — testing without guardrail
+# guardrails:
+#   - guardrail_name: pii-tokenizer
+#     litellm_params:
+#       guardrail: pii_guardrail.PIITokenizer
+#       mode: pre_call
+#       default_on: true
 

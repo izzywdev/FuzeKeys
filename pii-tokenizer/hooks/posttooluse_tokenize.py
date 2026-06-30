@@ -1,13 +1,33 @@
 #!/usr/bin/env python
-"""PostToolUse hook: tokenize PII/secrets in the tool result BEFORE it enters the model's context,
-via hookSpecificOutput.updatedToolOutput. Emits only when something changed.
-Fail-open: any error -> no output -> original result is used (note: this means a stack outage
-lets raw tool output through; acceptable for local dev, revisit for fail-closed later)."""
-import sys
-import os
-import json
+"""PostToolUse hook shim (host): tokenize PII/secrets in the tool result BEFORE it enters the
+model's context, via the containerized tokenizer service (hookSpecificOutput.updatedToolOutput).
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+Thin client — stdlib only — so it runs under pythonw.exe with no console flash. Emits only when
+something changed. Fail-open: any error -> no output -> original result is used (note: a stack
+outage lets raw tool output through; acceptable for local dev, revisit for fail-closed later)."""
+import json
+import os
+import sys
+import urllib.request
+
+TOKENIZER_URL = os.environ.get("TOKENIZER_URL_HOST", "http://127.0.0.1:8099")
+
+
+def _call(path, payload):
+    req = urllib.request.Request(
+        TOKENIZER_URL + path,
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        return json.loads(resp.read().decode())
+
+
+def _emit(obj):
+    # Explicit write + flush so the JSON reaches Claude Code's pipe even under pythonw.exe.
+    sys.stdout.write(json.dumps(obj))
+    sys.stdout.flush()
 
 
 def main():
@@ -19,15 +39,15 @@ def main():
     if resp is None:
         return
     try:
-        import pii_vault as pv
-        updated = pv.tokenize(resp) if isinstance(resp, str) else pv.tokenize_obj(resp)
+        # /tokenize_obj handles both strings and nested JSON (it recurses, tokenizing string leaves).
+        updated = _call("/tokenize_obj", {"obj": resp})["obj"]
     except Exception:
-        return
+        return  # service down -> fail open
     if updated != resp:
-        print(json.dumps({"hookSpecificOutput": {
+        _emit({"hookSpecificOutput": {
             "hookEventName": "PostToolUse",
             "updatedToolOutput": updated,
-        }}))
+        }})
 
 
 if __name__ == "__main__":
