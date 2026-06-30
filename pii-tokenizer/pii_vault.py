@@ -34,6 +34,15 @@ _load_env(os.path.join(os.path.dirname(__file__), ".env"))
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 VAULT_ADDR = os.environ.get("VAULT_ADDR", "http://127.0.0.1:8200")
 VAULT_TOKEN = os.environ.get("VAULT_TOKEN", "")
+# Containerized runtime: when VAULT_TOKEN isn't set in the env, read the root token from the
+# Vault init file written by the vault-bootstrap container (shared volume mounted at /init).
+if not VAULT_TOKEN:
+    _init_file = os.environ.get("VAULT_INIT_FILE", "/init/.vault-init.json")
+    try:
+        with open(_init_file, encoding="utf-8") as _fh:
+            VAULT_TOKEN = json.load(_fh).get("root_token", "")
+    except Exception:
+        pass
 VAULT_KEY = os.environ.get("VAULT_TRANSIT_KEY", "pii")
 PRESIDIO_URL = os.environ.get("PRESIDIO_URL", "http://localhost:5002")
 TOKEN_TTL = int(os.environ.get("TOKEN_TTL", "0"))
