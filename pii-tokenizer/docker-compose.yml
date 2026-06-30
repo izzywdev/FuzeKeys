@@ -116,7 +116,29 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  # Feature 2: local Gemma second-stage LLM PII detector via Ollama.
+  # After `docker compose up -d`, pull the model once:
+  #   docker exec pii-ollama ollama pull gemma3:4b
+  # Then set LLM_PII_DETECTION=true in .env and restart the tokenizer service.
+  ollama:
+    image: ollama/ollama:latest
+    container_name: pii-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - pii-ollama-data:/root/.ollama
+    restart: unless-stopped
+    # Uncomment the block below to enable GPU acceleration (requires nvidia-container-toolkit):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
 volumes:
   pii-redis-data:
   pii-vault-data:
   pii-vault-init:
+  pii-ollama-data:
