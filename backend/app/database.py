@@ -77,7 +77,7 @@ async def init_database():
         # Add sample data for demo
         async with async_session_maker() as session:
             from app.models import User, Identity, Account, AccountStage, StageType, StageStatus
-            from app.utils.encryption import EncryptionManager
+            from app.utils.encryption import EncryptionManager, hash_password, generate_master_key_hash
             import hashlib
             from datetime import datetime
             
@@ -89,10 +89,10 @@ async def init_database():
             
             # Create demo user
             demo_user = User(
-                email="demo@fuzekeys.com",
+                email="demo@fuzekeys.io",
                 username="demo_user",
-                hashed_password=hashlib.sha256("demo123".encode()).hexdigest(),
-                master_key_hash=hashlib.sha256("masterkey123".encode()).hexdigest(),
+                hashed_password=hash_password("demo123"),
+                master_key_hash=generate_master_key_hash("masterkey123"),
                 is_active=True
             )
             session.add(demo_user)

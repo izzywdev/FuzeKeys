@@ -4,13 +4,15 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 import os
 from dotenv import load_dotenv
 
+# Load environment variables BEFORE importing routers: database.py builds its
+# async engine from DATABASE_URL_ASYNC at import time, so .env must be applied
+# first or the configured DB (e.g. :5433) is ignored in favor of the default.
+load_dotenv()
+
 from app.routers import auth, identities, accounts, automation, chat, sms, infrastructure, llm_scraper, credentials, google_integration, site_integrations
 # Temporarily use mock sites router
 # from app.routers import sites
 from app.utils.logging import setup_logging
-
-# Load environment variables
-load_dotenv()
 
 # Setup logging
 setup_logging()
