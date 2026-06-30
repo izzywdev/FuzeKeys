@@ -1,11 +1,16 @@
 """Shared PII tokenization library.
 
-tokenize(text)   -> detect PII/secrets (Presidio + regex), Vault-encrypt each value,
-                    store ciphertext in Redis keyed by a `<TYPE_id>` token, return redacted text.
+tokenize(text)   -> detect PII/secrets (Presidio + regex + optional LLM), Vault-encrypt each
+                    value, store ciphertext in Redis keyed by a `<TYPE_id>` token, return
+                    redacted text.
 detokenize(text) -> find `<TYPE_id>` tokens, look up ciphertext in Redis, Vault-decrypt, restore.
 
 Real values are NEVER stored in Redis — only Vault ciphertext. Detokenization requires Vault.
 Used by both the LiteLLM proxy guardrail and the Claude Code PreToolUse/PostToolUse hooks.
+
+Second-stage LLM detection (Feature 2): when LLM_PII_DETECTION=true, a local Gemma model via
+Ollama is called *after* Presidio + SECRET_PATTERNS to catch PII the patterns miss. Fail-open:
+any Ollama error simply returns an empty span list.
 """
 import os
 import re
@@ -51,6 +56,22 @@ ENTITIES = [e for e in os.environ.get(
 SCORE = float(os.environ.get("PII_SCORE_THRESHOLD", "0.5"))
 MAX_CHARS = int(os.environ.get("MAX_TOKENIZE_CHARS", "20000"))
 
+# --- Feature 2: LLM second-stage detection config (Ollama / Gemma) ---
+LLM_PII_DETECTION = os.environ.get("LLM_PII_DETECTION", "false").lower() in ("1", "true", "yes")
+OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
+OLLAMA_PII_MODEL = os.environ.get("OLLAMA_PII_MODEL", "gemma3:4b")
+LLM_PII_MAX_CHARS = int(os.environ.get("LLM_PII_MAX_CHARS", "8000"))
+LLM_PII_TIMEOUT = int(os.environ.get("LLM_PII_TIMEOUT", "30"))
+
+# Load the PII taxonomy document once at import time (embedded in the LLM prompt).
+_SKILL_PATH = os.path.join(os.path.dirname(__file__), "skills", "pii_types.md")
+_LLM_SKILL_DOC = ""
+try:
+    with open(_SKILL_PATH, encoding="utf-8") as _fh:
+        _LLM_SKILL_DOC = _fh.read()
+except Exception:
+    pass  # Fail-open: missing skill doc -> prompt has no taxonomy table
+
 _r = redis.from_url(REDIS_URL, decode_responses=True)
 
 # Presidio entity_type -> short token prefix
@@ -60,6 +81,18 @@ ENTITY_PREFIX = {
     "US_SSN": "SSN",
     "PHONE_NUMBER": "PHONE",
     "IBAN_CODE": "IBAN",
+    # LLM-detected types (Feature 2)
+    "PERSON": "NAME",
+    "ADDRESS": "ADDR",
+    "LOCATION": "ADDR",
+    "DATE_OF_BIRTH": "DOB",
+    "PASSPORT": "PASSPORT",
+    "DRIVER_LICENSE": "DL",
+    "BANK_ACCOUNT": "BANK",
+    "IP_ADDRESS": "IP",
+    "API_KEY": "APIKEY",
+    "PASSWORD": "PWD",
+    "USERNAME": "USER",
 }
 
 # High-confidence secret/key patterns (detected locally; Presidio doesn't cover these well).
@@ -70,6 +103,11 @@ SECRET_PATTERNS = [
     ("APIKEY", re.compile(r"AKIA[0-9A-Z]{16}")),
     ("APIKEY", re.compile(r"ghp_[A-Za-z0-9]{36}")),
     ("APIKEY", re.compile(r"xox[baprs]-[A-Za-z0-9\-]{10,}")),
+    # Feature 1: Atlassian Cloud API tokens / PATs.
+    # AT[A-Z]TT covers ATATT (Cloud API token) and ATCTT (Connect/OAuth token).
+    ("APIKEY", re.compile(r"AT[A-Z]TT[A-Za-z0-9_\-=\.]{20,}")),
+    # ATBB covers Atlassian Bitbucket tokens (ATBB<base64body>).
+    ("APIKEY", re.compile(r"ATBB[A-Za-z0-9_\-=\.]{20,}")),
     ("TOKEN", re.compile(r"eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}")),
 ]
 
@@ -117,6 +155,64 @@ def _vault_decrypt(ciphertext):
     return base64.b64decode(out["data"]["plaintext"]).decode()
 
 
+def _llm_detect(text):
+    """Ask the local Gemma model (via Ollama) to find PII the pattern stage missed.
+
+    Returns a list of (start, end, "LLM:<TYPE>") tuples. Fail-open: any error returns [].
+    Only called when LLM_PII_DETECTION=true and len(text) <= LLM_PII_MAX_CHARS.
+    """
+    if not LLM_PII_DETECTION:
+        return []
+    if len(text) > LLM_PII_MAX_CHARS:
+        return []
+    try:
+        taxonomy_section = (
+            f"\n\n{_LLM_SKILL_DOC}\n\n" if _LLM_SKILL_DOC else ""
+        )
+        prompt = (
+            "You are a PII detection engine. Identify all personally identifiable information "
+            "and secrets in the text below."
+            f"{taxonomy_section}"
+            "Text to analyse:\n"
+            "---\n"
+            f"{text}\n"
+            "---\n"
+            'Return ONLY valid JSON: {"pii": [{"type": "TYPE", "value": "exact substring"}]}. '
+            "No prose."
+        )
+        resp = _post_json(
+            f"{OLLAMA_URL}/api/generate",
+            {
+                "model": OLLAMA_PII_MODEL,
+                "prompt": prompt,
+                "stream": False,
+                "format": "json",
+                "options": {"temperature": 0},
+            },
+            timeout=LLM_PII_TIMEOUT,
+        )
+        raw = resp.get("response", "{}")
+        parsed = json.loads(raw)
+        items = parsed.get("pii", [])
+        spans = []
+        for item in items:
+            entity_type = str(item.get("type", "")).strip()
+            value = str(item.get("value", "")).strip()
+            if not entity_type or not value:
+                continue
+            # Find all occurrences of this value in the text.
+            pos = 0
+            while True:
+                idx = text.find(value, pos)
+                if idx == -1:
+                    break
+                spans.append((idx, idx + len(value), "LLM:" + entity_type))
+                pos = idx + len(value)
+        return spans
+    except Exception:
+        return []  # Fail-open: Ollama down/slow/malformed response
+
+
 def _detect(text):
     """Return list of (start, end, entity_type) spans."""
     spans = []
@@ -134,12 +230,16 @@ def _detect(text):
     for label, pat in SECRET_PATTERNS:
         for m in pat.finditer(text):
             spans.append((m.start(), m.end(), "SECRET:" + label))
+    # Feature 2: LLM second-stage detection (fail-open if Ollama unreachable).
+    spans.extend(_llm_detect(text))
     return spans
 
 
 def _prefix_for(entity_type):
     if entity_type.startswith("SECRET:"):
         return entity_type.split(":", 1)[1]
+    if entity_type.startswith("LLM:"):
+        entity_type = entity_type.split(":", 1)[1]
     return ENTITY_PREFIX.get(entity_type, re.sub(r"[^A-Z]", "", entity_type.upper()) or "PII")
 
 
