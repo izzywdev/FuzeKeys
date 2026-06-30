@@ -5,6 +5,18 @@
   "//chezmoi": "If settings.json is chezmoi-managed, edit the chezmoi SOURCE then `chezmoi apply` — a session-end sync will otherwise revert direct edits.",
 
   "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"<PYTHON>\" \"<REPO>/pii-tokenizer/hooks/userpromptsubmit_guard.py\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "*",
