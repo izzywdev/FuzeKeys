@@ -1,0 +1,29 @@
+version: '3.8'
+
+# Standalone FuzeKeys Postgres for local dev.
+# Port 5433 (host) -> 5432 (container) because :5432 is occupied by litellm-postgres.
+# Connection string: postgresql://fuzekeys_user:fuzekeys_dev_password@localhost:5433/fuzekeys
+
+volumes:
+  fuzekeys-pgdata:
+    name: fuzekeys_pgdata
+
+services:
+  fuzekeys-postgres:
+    image: postgres:15-alpine
+    container_name: fuzekeys-postgres
+    environment:
+      POSTGRES_DB: fuzekeys
+      POSTGRES_USER: fuzekeys_user
+      POSTGRES_PASSWORD: fuzekeys_dev_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - fuzekeys-pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fuzekeys_user -d fuzekeys"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s

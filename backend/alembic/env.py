@@ -32,13 +32,20 @@ target_metadata = Base.metadata
 
 
 def get_url():
-    """Get database URL from environment or config."""
-    # Try to get from environment first
-    url = os.getenv("DATABASE_URL")
+    """Get a *synchronous* (psycopg2) database URL for Alembic's own engine.
+
+    Alembic uses a synchronous SQLAlchemy engine.  The runtime app uses asyncpg
+    (DATABASE_URL_ASYNC).  This function normalises whatever is in DATABASE_URL
+    to the plain postgresql:// scheme so Alembic can connect with psycopg2.
+    """
+    # Prefer DATABASE_URL_SYNC if set explicitly; fall back to DATABASE_URL.
+    url = os.getenv("DATABASE_URL_SYNC") or os.getenv("DATABASE_URL")
     if url:
+        # Strip the asyncpg driver variant so Alembic uses psycopg2.
+        url = url.replace("postgresql+asyncpg://", "postgresql://")
         return url
-    
-    # Fallback to config
+
+    # Last resort: fall back to alembic.ini hard-coded value.
     return config.get_main_option("sqlalchemy.url")
 
 
