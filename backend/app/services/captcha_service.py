@@ -9,8 +9,6 @@ import aiohttp
 from PIL import Image
 import openai
 from playwright.async_api import Page, ElementHandle
-import cv2
-import numpy as np
 
 logger = logging.getLogger(__name__)
 
