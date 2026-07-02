@@ -1,0 +1,66 @@
+{{- if .Values.litellm.enabled }}
+{{- $comp := .Values.litellm -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fuzekeys.fullname" . }}-litellm
+  labels:
+    {{- include "fuzekeys.labels" . | nindent 4 }}
+    app.kubernetes.io/component: litellm
+spec:
+  replicas: {{ $comp.replicas }}
+  selector:
+    matchLabels:
+      {{- include "fuzekeys.selectorLabels" (dict "ctx" . "component" "litellm") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fuzekeys.labels" . | nindent 8 }}
+        app.kubernetes.io/component: litellm
+    spec:
+      {{- include "fuzekeys.nodeSelector" . | nindent 6 }}
+      containers:
+        - name: litellm
+          image: {{ $comp.image | quote }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          args: ["--config", "/app/config.yaml", "--port", {{ $comp.port | quote }}]
+          ports:
+            - name: http
+              containerPort: {{ $comp.port }}
+          env:
+            - name: TOKENIZER_URL
+              value: {{ printf "http://%s-tokenizer:%v" (include "fuzekeys.fullname" .) .Values.tokenizer.port | quote }}
+            - name: PYTHONPATH
+              value: "/app"
+          envFrom:
+            - secretRef:
+                name: {{ include "fuzekeys.fullname" . }}-tokenizer-secrets
+                optional: true
+          resources:
+            {{- toYaml $comp.resources | nindent 12 }}
+          volumeMounts:
+            - name: litellm-config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+              readOnly: true
+      volumes:
+        - name: litellm-config
+          configMap:
+            name: {{ include "fuzekeys.fullname" . }}-litellm-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fuzekeys.fullname" . }}-litellm
+  labels:
+    {{- include "fuzekeys.labels" . | nindent 4 }}
+    app.kubernetes.io/component: litellm
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "fuzekeys.selectorLabels" (dict "ctx" . "component" "litellm") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ $comp.port }}
+      targetPort: http
+{{- end }}

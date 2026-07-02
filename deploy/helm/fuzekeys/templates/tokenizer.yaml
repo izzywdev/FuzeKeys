@@ -1,0 +1,99 @@
+{{- if .Values.tokenizer.enabled }}
+{{- $comp := .Values.tokenizer -}}
+{{/*
+  Tokenizer FastAPI service (pii_vault wrapper), :8099 /health.
+  FOLLOW-UP (Vault-in-k8s): shares the Vault init file (/init/.vault-init.json)
+  with the vault-bootstrap Job via the RWO PVC below. RWO across pods only works
+  when both land on the SAME node — the multi-node auto-unseal design is the
+  deliberate follow-up gating this whole stack.
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fuzekeys.fullname" . }}-tokenizer
+  labels:
+    {{- include "fuzekeys.labels" . | nindent 4 }}
+    app.kubernetes.io/component: tokenizer
+spec:
+  replicas: {{ $comp.replicas }}
+  selector:
+    matchLabels:
+      {{- include "fuzekeys.selectorLabels" (dict "ctx" . "component" "tokenizer") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fuzekeys.labels" . | nindent 8 }}
+        app.kubernetes.io/component: tokenizer
+    spec:
+      {{- include "fuzekeys.nodeSelector" . | nindent 6 }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: tokenizer
+          image: {{ include "fuzekeys.image" (dict "ctx" . "comp" $comp "default" "pii-tokenizer") }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $comp.port }}
+          env:
+            - name: REDIS_URL
+              value: {{ printf "redis://%s-tokenizer-redis:%v/0" (include "fuzekeys.fullname" .) .Values.tokenizerRedis.port | quote }}
+            - name: VAULT_ADDR
+              value: {{ printf "http://%s-vault:%v" (include "fuzekeys.fullname" .) .Values.vault.port | quote }}
+            - name: VAULT_INIT_FILE
+              value: "/init/.vault-init.json"
+            - name: PRESIDIO_URL
+              value: {{ printf "http://%s-presidio:%v" (include "fuzekeys.fullname" .) .Values.presidio.port | quote }}
+            {{- range $k, $v := $comp.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          envFrom:
+            - secretRef:
+                name: {{ include "fuzekeys.fullname" . }}-tokenizer-secrets
+                optional: true
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            {{- toYaml $comp.resources | nindent 12 }}
+          volumeMounts:
+            - name: vault-init
+              mountPath: /init
+              readOnly: true
+      volumes:
+        - name: vault-init
+          {{- if .Values.vault.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "fuzekeys.fullname" . }}-vault-init
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fuzekeys.fullname" . }}-tokenizer
+  labels:
+    {{- include "fuzekeys.labels" . | nindent 4 }}
+    app.kubernetes.io/component: tokenizer
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "fuzekeys.selectorLabels" (dict "ctx" . "component" "tokenizer") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ $comp.port }}
+      targetPort: http
+{{- end }}

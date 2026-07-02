@@ -1,0 +1,100 @@
+{{- if .Values.backend.enabled }}
+{{- $comp := .Values.backend -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fuzekeys.fullname" . }}-backend
+  labels:
+    {{- include "fuzekeys.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  replicas: {{ $comp.replicas }}
+  selector:
+    matchLabels:
+      {{- include "fuzekeys.selectorLabels" (dict "ctx" . "component" "backend") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fuzekeys.labels" . | nindent 8 }}
+        app.kubernetes.io/component: backend
+      annotations:
+        {{- if $comp.metrics.enabled }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ $comp.port | quote }}
+        prometheus.io/path: {{ $comp.metrics.path | quote }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "fuzekeys.serviceAccountName" . }}
+      {{- include "fuzekeys.nodeSelector" . | nindent 6 }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: backend
+          image: {{ include "fuzekeys.image" (dict "ctx" . "comp" $comp "default" "backend") }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          {{- with $comp.command }}
+          command: {{ toJson . }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ $comp.port }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "fuzekeys.fullname" . }}-config
+            - secretRef:
+                name: {{ include "fuzekeys.secretName" . }}
+          livenessProbe:
+            httpGet:
+              path: {{ $comp.probes.path }}
+              port: http
+            initialDelaySeconds: 45
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: {{ $comp.probes.path }}
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            {{- toYaml $comp.resources | nindent 12 }}
+          volumeMounts:
+            - name: logs
+              mountPath: /app/logs
+            - name: data
+              mountPath: /app/data
+      volumes:
+        - name: logs
+          {{- if .Values.persistence.logs.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "fuzekeys.fullname" . }}-logs
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: data
+          {{- if .Values.persistence.data.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "fuzekeys.fullname" . }}-data
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fuzekeys.fullname" . }}-backend
+  labels:
+    {{- include "fuzekeys.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "fuzekeys.selectorLabels" (dict "ctx" . "component" "backend") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ $comp.port }}
+      targetPort: http
+{{- end }}

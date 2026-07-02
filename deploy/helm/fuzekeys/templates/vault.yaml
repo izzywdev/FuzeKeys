@@ -1,0 +1,116 @@
+{{- if .Values.vault.enabled }}
+{{- $comp := .Values.vault -}}
+{{/*
+  HashiCorp Vault (transit engine) with PERSISTENT file storage.
+  FOLLOW-UP (Vault-in-k8s): Vault is SEALED on every restart; auto-unseal is not
+  wired here (the current design keeps the unseal key in a local volume — NOT
+  acceptable for k8s prod). This whole stack stays disabled until that is
+  redesigned (KMS/transit auto-unseal or an operator) and security-reviewed.
+*/}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "fuzekeys.fullname" . }}-vault
+  labels:
+    {{- include "fuzekeys.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vault
+spec:
+  serviceName: {{ include "fuzekeys.fullname" . }}-vault
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "fuzekeys.selectorLabels" (dict "ctx" . "component" "vault") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fuzekeys.labels" . | nindent 8 }}
+        app.kubernetes.io/component: vault
+    spec:
+      {{- include "fuzekeys.nodeSelector" . | nindent 6 }}
+      containers:
+        - name: vault
+          image: {{ $comp.image | quote }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          args: ["server"]
+          securityContext:
+            capabilities:
+              add: ["IPC_LOCK"]
+          env:
+            - name: VAULT_ADDR
+              value: "http://127.0.0.1:8200"
+          ports:
+            - name: http
+              containerPort: {{ $comp.port }}
+          resources:
+            {{- toYaml $comp.resources | nindent 12 }}
+          volumeMounts:
+            - name: vault-config
+              mountPath: /vault/config
+              readOnly: true
+            - name: vault-file
+              mountPath: /vault/file
+      volumes:
+        - name: vault-config
+          configMap:
+            name: {{ include "fuzekeys.fullname" . }}-vault-config
+        {{- if not $comp.persistence.enabled }}
+        - name: vault-file
+          emptyDir: {}
+        {{- end }}
+  {{- if $comp.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: vault-file
+        labels:
+          {{- include "fuzekeys.labels" . | nindent 10 }}
+      spec:
+        accessModes:
+          - {{ $comp.persistence.accessMode }}
+        {{- if $comp.persistence.storageClass }}
+        storageClassName: {{ $comp.persistence.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $comp.persistence.size }}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fuzekeys.fullname" . }}-vault
+  labels:
+    {{- include "fuzekeys.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vault
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "fuzekeys.selectorLabels" (dict "ctx" . "component" "vault") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ $comp.port }}
+      targetPort: http
+{{- if .Values.tokenizer.enabled }}
+---
+{{/*
+  Shared Vault init-file PVC (crown jewels: unseal key + root token). Written by
+  the vault-bootstrap Job, read by the tokenizer. RWO — only works when both land
+  on the SAME node. FOLLOW-UP: replace with a proper auto-unseal + secret store.
+*/}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "fuzekeys.fullname" . }}-vault-init
+  labels:
+    {{- include "fuzekeys.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vault
+spec:
+  accessModes:
+    - {{ $comp.persistence.accessMode }}
+  {{- if $comp.persistence.storageClass }}
+  storageClassName: {{ $comp.persistence.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: 128Mi
+{{- end }}
+{{- end }}
