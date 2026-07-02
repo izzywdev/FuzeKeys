@@ -1,0 +1,88 @@
+{{- if .Values.tokenizerRedis.enabled }}
+{{- $comp := .Values.tokenizerRedis -}}
+{{/*
+  Redis token store for the pii-tokenizer stack ONLY (token -> Vault ciphertext).
+  This is SEPARATE from FuzeInfra's shared redis (fuzeinfra.redis) that the
+  backend uses — the tokenizer keeps its own single-tenant store.
+*/}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "fuzekeys.fullname" . }}-tokenizer-redis
+  labels:
+    {{- include "fuzekeys.labels" . | nindent 4 }}
+    app.kubernetes.io/component: tokenizer-redis
+spec:
+  serviceName: {{ include "fuzekeys.fullname" . }}-tokenizer-redis
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "fuzekeys.selectorLabels" (dict "ctx" . "component" "tokenizer-redis") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fuzekeys.labels" . | nindent 8 }}
+        app.kubernetes.io/component: tokenizer-redis
+    spec:
+      {{- include "fuzekeys.nodeSelector" . | nindent 6 }}
+      containers:
+        - name: redis
+          image: {{ $comp.image | quote }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          args: ["redis-server", "--appendonly", "yes"]
+          ports:
+            - name: redis
+              containerPort: {{ $comp.port }}
+          livenessProbe:
+            tcpSocket:
+              port: redis
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml $comp.resources | nindent 12 }}
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+      {{- if not $comp.persistence.enabled }}
+      volumes:
+        - name: redis-data
+          emptyDir: {}
+      {{- end }}
+  {{- if $comp.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: redis-data
+        labels:
+          {{- include "fuzekeys.labels" . | nindent 10 }}
+      spec:
+        accessModes:
+          - {{ $comp.persistence.accessMode }}
+        {{- if $comp.persistence.storageClass }}
+        storageClassName: {{ $comp.persistence.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $comp.persistence.size }}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fuzekeys.fullname" . }}-tokenizer-redis
+  labels:
+    {{- include "fuzekeys.labels" . | nindent 4 }}
+    app.kubernetes.io/component: tokenizer-redis
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "fuzekeys.selectorLabels" (dict "ctx" . "component" "tokenizer-redis") | nindent 4 }}
+  ports:
+    - name: redis
+      port: {{ $comp.port }}
+      targetPort: redis
+{{- end }}

@@ -1,0 +1,53 @@
+{{- if .Values.presidio.enabled }}
+{{- $comp := .Values.presidio -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fuzekeys.fullname" . }}-presidio
+  labels:
+    {{- include "fuzekeys.labels" . | nindent 4 }}
+    app.kubernetes.io/component: presidio
+spec:
+  replicas: {{ $comp.replicas }}
+  selector:
+    matchLabels:
+      {{- include "fuzekeys.selectorLabels" (dict "ctx" . "component" "presidio") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fuzekeys.labels" . | nindent 8 }}
+        app.kubernetes.io/component: presidio
+    spec:
+      {{- include "fuzekeys.nodeSelector" . | nindent 6 }}
+      containers:
+        - name: presidio-analyzer
+          image: {{ $comp.image | quote }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $comp.port }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            {{- toYaml $comp.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fuzekeys.fullname" . }}-presidio
+  labels:
+    {{- include "fuzekeys.labels" . | nindent 4 }}
+    app.kubernetes.io/component: presidio
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "fuzekeys.selectorLabels" (dict "ctx" . "component" "presidio") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ $comp.port }}
+      targetPort: http
+{{- end }}

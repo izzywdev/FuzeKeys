@@ -1,0 +1,40 @@
+FuzeKeys "{{ .Release.Name }}" deployed to namespace "{{ .Release.Namespace }}".
+
+Environment : {{ .Values.global.environment }}
+Components  :
+{{- if .Values.backend.enabled }}
+  - backend        (:{{ .Values.backend.port }})
+{{- end }}
+{{- if .Values.migrate.enabled }}
+  - migrate job    (alembic upgrade head, pre-sync)
+{{- end }}
+{{- if .Values.frontend.enabled }}
+  - frontend       (container :{{ .Values.frontend.port }} -> svc :{{ .Values.frontend.servicePort }})
+{{- end }}
+{{- if or .Values.tokenizer.enabled .Values.presidio.enabled .Values.litellm.enabled .Values.vault.enabled .Values.ollama.enabled .Values.tokenizerRedis.enabled }}
+  PII-tokenizer stack:
+{{- if .Values.tokenizer.enabled }}
+    - tokenizer    (:{{ .Values.tokenizer.port }}){{ end }}
+{{- if .Values.presidio.enabled }}
+    - presidio     (:{{ .Values.presidio.port }}){{ end }}
+{{- if .Values.litellm.enabled }}
+    - litellm      (:{{ .Values.litellm.port }}){{ end }}
+{{- if .Values.vault.enabled }}
+    - vault        (:{{ .Values.vault.port }}){{ end }}
+{{- if .Values.ollama.enabled }}
+    - ollama       (:{{ .Values.ollama.port }}){{ end }}
+{{- if .Values.tokenizerRedis.enabled }}
+    - redis        (:{{ .Values.tokenizerRedis.port }}){{ end }}
+{{- else }}
+  PII-tokenizer stack: DISABLED (FOLLOW-UP: enable after Vault-in-k8s design + security review).
+{{- end }}
+
+FuzeInfra wiring (in-cluster DNS, namespace "{{ .Values.fuzeinfra.namespace }}"):
+  Postgres: {{ .Values.fuzeinfra.postgres.host }}:{{ .Values.fuzeinfra.postgres.port }}/{{ .Values.fuzeinfra.postgres.database }}
+  Redis   : {{ .Values.fuzeinfra.redis.host }}:{{ .Values.fuzeinfra.redis.port }}
+
+Secrets: {{ if .Values.secrets.existingSecret }}using existing Secret "{{ .Values.secrets.existingSecret }}" (SealedSecret){{ else }}chart-managed placeholders — set secrets.existingSecret in prod{{ end }}.
+Ingress hosts:
+{{- range .Values.ingress.hosts }}
+  - {{ .host }} -> {{ .service }}:{{ .port }}
+{{- end }}

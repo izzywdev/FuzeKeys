@@ -1,0 +1,35 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fuzekeys-platform
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  # The FuzeKeys workload Helm chart (backend + frontend + migrate; the
+  # pii-tokenizer stack ships in the chart but is gated OFF in values-contabo).
+  project: fuzekeys
+  source:
+    repoURL: https://github.com/izzywdev/FuzeKeys.git
+    targetRevision: master
+    path: deploy/helm/fuzekeys
+    helm:
+      releaseName: fuzekeys
+      valueFiles:
+        - values-contabo.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: fuzekeys
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 5m

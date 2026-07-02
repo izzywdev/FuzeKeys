@@ -1,0 +1,23 @@
+apiVersion: v2
+name: fuzekeys
+description: |
+  FuzeKeys — keys / secrets / PII-tokenization product. Deploys the FastAPI
+  backend (+ Alembic migrate job) and the React/nginx frontend into Kubernetes.
+  The pii-tokenizer stack (tokenizer, presidio, litellm, vault, vault-bootstrap,
+  ollama, redis) ships in this chart but is gated OFF by default pending the
+  Vault-in-k8s auto-unseal design + security review. Datastores (Postgres/Redis)
+  are provided out-of-cluster by the shared FuzeInfra stack and referenced via
+  in-cluster Service DNS.
+type: application
+version: 0.1.0
+# appVersion tracks the platform image tag (image.tag defaults to this). The
+# release/tag-bump mechanism bumps this + the CI build matrix tags images with it.
+appVersion: "0.1.0"
+keywords:
+  - fuzekeys
+  - secrets
+  - pii-tokenization
+  - identity
+maintainers:
+  - name: FuzeKeys
+home: https://github.com/izzywdev/FuzeKeys

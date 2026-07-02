@@ -1,0 +1,76 @@
+{{- if .Values.ollama.enabled }}
+{{- $comp := .Values.ollama -}}
+{{/*
+  Ollama (local Gemma second-stage PII detector). ALWAYS disabled by default —
+  GPU/heavy; enabling it needs a GPU node + model pull. Kept for completeness.
+*/}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "fuzekeys.fullname" . }}-ollama
+  labels:
+    {{- include "fuzekeys.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ollama
+spec:
+  serviceName: {{ include "fuzekeys.fullname" . }}-ollama
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "fuzekeys.selectorLabels" (dict "ctx" . "component" "ollama") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fuzekeys.labels" . | nindent 8 }}
+        app.kubernetes.io/component: ollama
+    spec:
+      {{- include "fuzekeys.nodeSelector" . | nindent 6 }}
+      containers:
+        - name: ollama
+          image: {{ $comp.image | quote }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $comp.port }}
+          resources:
+            {{- toYaml $comp.resources | nindent 12 }}
+          volumeMounts:
+            - name: ollama-data
+              mountPath: /root/.ollama
+      {{- if not $comp.persistence.enabled }}
+      volumes:
+        - name: ollama-data
+          emptyDir: {}
+      {{- end }}
+  {{- if $comp.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: ollama-data
+        labels:
+          {{- include "fuzekeys.labels" . | nindent 10 }}
+      spec:
+        accessModes:
+          - {{ $comp.persistence.accessMode }}
+        {{- if $comp.persistence.storageClass }}
+        storageClassName: {{ $comp.persistence.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $comp.persistence.size }}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fuzekeys.fullname" . }}-ollama
+  labels:
+    {{- include "fuzekeys.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ollama
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "fuzekeys.selectorLabels" (dict "ctx" . "component" "ollama") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ $comp.port }}
+      targetPort: http
+{{- end }}

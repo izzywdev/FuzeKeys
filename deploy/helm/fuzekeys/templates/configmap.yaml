@@ -1,0 +1,66 @@
+{{- $pgHost := include "fuzekeys.fuzeHost" (dict "ctx" . "host" .Values.fuzeinfra.postgres.host) -}}
+{{- $redisHost := include "fuzekeys.fuzeHost" (dict "ctx" . "host" .Values.fuzeinfra.redis.host) -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fuzekeys.fullname" . }}-config
+  labels:
+    {{- include "fuzekeys.labels" . | nindent 4 }}
+data:
+  # ---- Non-secret connection coordinates (credentials come from the Secret) ----
+  POSTGRES_HOST: {{ $pgHost | quote }}
+  POSTGRES_PORT: {{ .Values.fuzeinfra.postgres.port | quote }}
+  POSTGRES_DB: {{ .Values.fuzeinfra.postgres.database | quote }}
+  REDIS_HOST: {{ $redisHost | quote }}
+  REDIS_PORT: {{ .Values.fuzeinfra.redis.port | quote }}
+  # NOTE: DATABASE_URL / DATABASE_URL_ASYNC / REDIS_URL are composed (with creds)
+  # in the Secret, not here, to avoid an env collision where a ConfigMap value
+  # would shadow the credentialed URL.
+  # ---- Application config ----
+  LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  ENVIRONMENT: {{ .Values.config.environment | quote }}
+  OPENAI_MODEL: {{ .Values.config.openaiModel | quote }}
+  BROWSER_HEADLESS: {{ .Values.config.browserHeadless | quote }}
+  REACT_APP_API_URL: {{ .Values.config.apiBaseUrl | quote }}
+  PYTHONPATH: "/app"
+{{- if .Values.vault.enabled }}
+---
+# Vault server config (transit engine, persistent file storage). The image
+# entrypoint auto-loads /vault/config, so this is mounted there.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fuzekeys.fullname" . }}-vault-config
+  labels:
+    {{- include "fuzekeys.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vault
+data:
+  config.hcl: |
+    ui = true
+    disable_mlock = true
+    storage "file" {
+      path = "/vault/file"
+    }
+    listener "tcp" {
+      address     = "0.0.0.0:8200"
+      tls_disable = 1
+    }
+{{- end }}
+{{- if .Values.litellm.enabled }}
+---
+# LiteLLM proxy config. FOLLOW-UP: this is a minimal placeholder; the real
+# guardrail-enabled config + model routing is part of the pii-tokenizer
+# enablement (security review).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fuzekeys.fullname" . }}-litellm-config
+  labels:
+    {{- include "fuzekeys.labels" . | nindent 4 }}
+    app.kubernetes.io/component: litellm
+data:
+  config.yaml: |
+    model_list: []
+    litellm_settings:
+      drop_params: true
+{{- end }}

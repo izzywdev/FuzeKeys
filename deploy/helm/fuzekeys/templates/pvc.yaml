@@ -1,0 +1,42 @@
+{{/*
+  PVCs for application logs/data ONLY. Datastores are provided by FuzeInfra and
+  are NOT provisioned here. These RWO claims are mounted by the backend at
+  /app/logs and /app/data.
+  NOTE: RWO means a single node; the backend runs on the single workload node.
+  For multi-node scale-out replace with an RWX class or scope logs per-pod.
+*/}}
+{{- if .Values.persistence.logs.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "fuzekeys.fullname" . }}-logs
+  labels:
+    {{- include "fuzekeys.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.logs.accessMode }}
+  {{- if .Values.persistence.logs.storageClass }}
+  storageClassName: {{ .Values.persistence.logs.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.logs.size }}
+{{- end }}
+{{- if .Values.persistence.data.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "fuzekeys.fullname" . }}-data
+  labels:
+    {{- include "fuzekeys.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.data.accessMode }}
+  {{- if .Values.persistence.data.storageClass }}
+  storageClassName: {{ .Values.persistence.data.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.data.size }}
+{{- end }}

@@ -1,0 +1,83 @@
+name: Deploy Platform (validate)
+
+# DEFINITIONS-ONLY validation for the FuzeKeys deploy wiring. There is NO live
+# deploy here: prod is GitOps — ArgoCD syncs deploy/helm/fuzekeys + deploy/argocd
+# from master. This workflow only structurally validates the chart + manifests on
+# PRs/pushes that touch deploy/**, so a bad render can never reach Argo.
+
+on:
+  workflow_dispatch: {}
+  pull_request:
+    paths:
+      - 'deploy/**'
+      - '.github/workflows/deploy-platform.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'deploy/**'
+      - '.github/workflows/deploy-platform.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.15.2
+
+      - name: helm lint (values-contabo)
+        run: helm lint deploy/helm/fuzekeys -f deploy/helm/fuzekeys/values-contabo.yaml
+
+      - name: helm template (render sanity check)
+        # secrets.existingSecret is set in values-contabo, so the chart references
+        # the SealedSecret-provided Secret instead of rendering placeholder creds.
+        run: |
+          helm template fuzekeys deploy/helm/fuzekeys \
+            -f deploy/helm/fuzekeys/values-contabo.yaml > /tmp/rendered.yaml
+          test -s /tmp/rendered.yaml
+
+      - name: Install kubeconform
+        run: |
+          KCF_VERSION=v0.6.7
+          curl -fsSL -o /tmp/kubeconform.tar.gz \
+            "https://github.com/yannh/kubeconform/releases/download/${KCF_VERSION}/kubeconform-linux-amd64.tar.gz"
+          tar -xzf /tmp/kubeconform.tar.gz -C /tmp kubeconform
+          sudo install -m 0755 /tmp/kubeconform /usr/local/bin/kubeconform
+          kubeconform -v
+
+      - name: kubeconform (schema-validate rendered manifests)
+        # -ignore-missing-schemas skips CRDs without a public schema (SealedSecret,
+        # Argo Application). -strict rejects unknown/duplicate fields.
+        run: |
+          helm template fuzekeys deploy/helm/fuzekeys \
+            -f deploy/helm/fuzekeys/values-contabo.yaml \
+          | kubeconform -strict -ignore-missing-schemas \
+              -kubernetes-version 1.29.0 -summary -schema-location default
+
+      - name: kubeconform (full stack render — tokenizer gate on)
+        # Prove the gated-off pii-tokenizer components still render+validate when
+        # enabled, so the chart stays complete even while MVP keeps them off.
+        run: |
+          helm template fuzekeys deploy/helm/fuzekeys \
+            -f deploy/helm/fuzekeys/values-contabo.yaml \
+            --set tokenizer.enabled=true --set presidio.enabled=true \
+            --set litellm.enabled=true --set vault.enabled=true \
+            --set vaultBootstrap.enabled=true --set tokenizerRedis.enabled=true \
+            --set ollama.enabled=true \
+          | kubeconform -strict -ignore-missing-schemas \
+              -kubernetes-version 1.29.0 -summary -schema-location default
+
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: actionlint (lint workflow YAML)
+        uses: raven-actions/actionlint@v2
+        with:
+          files: ".github/workflows/*.yml"

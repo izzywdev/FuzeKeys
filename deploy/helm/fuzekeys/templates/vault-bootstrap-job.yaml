@@ -1,0 +1,58 @@
+{{- if and .Values.vaultBootstrap.enabled .Values.vault.enabled }}
+{{- $comp := .Values.vaultBootstrap -}}
+{{/*
+  One-shot Vault bootstrap: init (once) + unseal + ensure the transit key, then
+  exits. Uses the pii-tokenizer image (command overrides the default CMD). Runs
+  as a post-install/post-upgrade hook so the Vault StatefulSet exists first.
+  FOLLOW-UP (Vault-in-k8s): writes the init file to the shared RWO PVC — see the
+  node-affinity caveat in vault.yaml. Gated OFF until the auto-unseal redesign.
+*/}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "fuzekeys.fullname" . }}-vault-bootstrap
+  labels:
+    {{- include "fuzekeys.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vault-bootstrap
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "fuzekeys.labels" . | nindent 8 }}
+        app.kubernetes.io/component: vault-bootstrap
+    spec:
+      restartPolicy: Never
+      {{- include "fuzekeys.nodeSelector" . | nindent 6 }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: vault-bootstrap
+          image: {{ include "fuzekeys.image" (dict "ctx" . "comp" .Values.tokenizer "default" "pii-tokenizer") }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command: {{ toJson $comp.command }}
+          env:
+            - name: VAULT_ADDR
+              value: {{ printf "http://%s-vault:%v" (include "fuzekeys.fullname" .) .Values.vault.port | quote }}
+            - name: VAULT_INIT_FILE
+              value: "/init/.vault-init.json"
+            {{- range $k, $v := $comp.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          resources:
+            {{- toYaml $comp.resources | nindent 12 }}
+          volumeMounts:
+            - name: vault-init
+              mountPath: /init
+      volumes:
+        - name: vault-init
+          persistentVolumeClaim:
+            claimName: {{ include "fuzekeys.fullname" . }}-vault-init
+{{- end }}
