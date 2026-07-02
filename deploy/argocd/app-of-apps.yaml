@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fuzekeys-apps
+  namespace: argocd
+  annotations:
+    fuzekeys.io/owner-repo: izzywdev/FuzeKeys
+spec:
+  # Root "app of apps": Argo watches deploy/argocd/applications/ and reconciles
+  # every child Application it finds there (recurse). Register THIS one manifest
+  # in Argo once; the platform + sealed Applications then flow from git.
+  project: fuzekeys
+  source:
+    repoURL: https://github.com/izzywdev/FuzeKeys.git
+    targetRevision: main
+    path: deploy/argocd/applications
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

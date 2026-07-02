@@ -1,0 +1,32 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: fuzekeys
+  namespace: argocd
+  annotations:
+    fuzekeys.io/owner-repo: izzywdev/FuzeKeys
+spec:
+  description: >-
+    FuzeKeys — keys / secrets / PII-tokenization product — deployed onto the
+    shared FuzeInfra k3s cluster. Datastores (Postgres/Redis) are provided
+    out-of-cluster by FuzeInfra and referenced via in-cluster Service DNS.
+
+  # Only this repo may be a source for Applications in this project.
+  sourceRepos:
+    - https://github.com/izzywdev/FuzeKeys.git
+
+  # The workload lands in `fuzekeys`; the app-of-apps + sealed Applications live
+  # in `argocd`. FuzeKeys NEVER deploys into the shared `fuzeinfra` namespace.
+  destinations:
+    - namespace: fuzekeys
+      server: https://kubernetes.default.svc
+    - namespace: argocd
+      server: https://kubernetes.default.svc
+
+  clusterResourceWhitelist:
+    - group: "*"
+      kind: "*"
+
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
