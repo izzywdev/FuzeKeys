@@ -17,6 +17,19 @@
 #   keys.prod.fuzefront.com      -> frontend  (helm ingress: keys.prod.fuzefront.com)
 #   api.keys.prod.fuzefront.com  -> backend   (helm ingress: api.keys.prod.fuzefront.com)
 
+terraform {
+  required_version = ">= 1.6"
+  required_providers {
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 4"
+    }
+  }
+  # State is FuzeInfra-owned: this DNS is applied over the FuzeInfra
+  # infra-request dispatch path, which shares FuzeInfra's remote (S3) state — no
+  # consumer state backend is declared or needed here.
+}
+
 provider "cloudflare" {
   api_token = var.cloudflare_dns_token
 }
