@@ -11,7 +11,7 @@ spec:
   project: fuzekeys
   source:
     repoURL: https://github.com/izzywdev/FuzeKeys.git
-    targetRevision: main
+    targetRevision: master
     path: deploy/helm/fuzekeys
     helm:
       releaseName: fuzekeys

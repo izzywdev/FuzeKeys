@@ -1,0 +1,110 @@
+name: Build and Push Images
+
+# Builds the FuzeKeys service images to GHCR. Tags each with :latest, the chart
+# appVersion (SemVer), and the commit SHA. The prod values image-tag bump (the
+# release mechanism) points Helm at the appVersion tag; Argo syncs the bump from
+# git — images are never hand-deployed to prod.
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [master]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'pii-tokenizer/**'
+      - 'deploy/helm/**/Chart.yaml'
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # Read the chart appVersion so images are tagged with the exact tag the Helm
+  # chart requests (image.tag defaults to .Chart.AppVersion). Keeps CI tag ==
+  # chart tag automatically — SemVer, no reliance on :latest in prod.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      appversion: ${{ steps.v.outputs.appversion }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read appVersion from Chart.yaml
+        id: v
+        run: |
+          APPV=$(grep -E '^appVersion:' deploy/helm/fuzekeys/Chart.yaml | head -1 | sed -E 's/^appVersion:[[:space:]]*"?([^"]+)"?[[:space:]]*$/\1/')
+          if [ -z "$APPV" ]; then echo "::error::could not read appVersion"; exit 1; fi
+          echo "appversion=$APPV" >> "$GITHUB_OUTPUT"
+          echo "chart appVersion = $APPV"
+
+  build-backend:
+    runs-on: ubuntu-latest
+    needs: version
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/izzywdev/fuzekeys/backend:latest
+            ghcr.io/izzywdev/fuzekeys/backend:${{ needs.version.outputs.appversion }}
+            ghcr.io/izzywdev/fuzekeys/backend:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-frontend:
+    runs-on: ubuntu-latest
+    needs: version
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          file: frontend/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/izzywdev/fuzekeys/frontend:latest
+            ghcr.io/izzywdev/fuzekeys/frontend:${{ needs.version.outputs.appversion }}
+            ghcr.io/izzywdev/fuzekeys/frontend:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-pii-tokenizer:
+    runs-on: ubuntu-latest
+    needs: version
+    steps:
+      - uses: actions/checkout@v4
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push pii-tokenizer
+        uses: docker/build-push-action@v6
+        with:
+          context: pii-tokenizer
+          file: pii-tokenizer/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/izzywdev/fuzekeys/pii-tokenizer:latest
+            ghcr.io/izzywdev/fuzekeys/pii-tokenizer:${{ needs.version.outputs.appversion }}
+            ghcr.io/izzywdev/fuzekeys/pii-tokenizer:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
