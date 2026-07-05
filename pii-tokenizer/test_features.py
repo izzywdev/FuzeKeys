@@ -309,5 +309,175 @@ class TestEntityPrefixCoverage(unittest.TestCase):
         )
 
 
+# ===========================================================================
+# Feature 3 — API token / secret patterns (non-Atlassian SECRET_PATTERNS)
+# ===========================================================================
+
+class TestApiTokenPatterns(unittest.TestCase):
+    """SECRET_PATTERNS regex coverage for Anthropic, OpenAI, AWS, GitHub, Slack, JWT.
+
+    All tokens below are dummy values — NOT real credentials.
+    Tests run without Presidio (stubbed as unreachable) to isolate regex logic.
+    """
+
+    # --- Dummy tokens — NOT real credentials, structured to pass GitHub push-protection.
+    # Each is deliberately malformed for the real provider (non-digit Slack segments,
+    # EXAMPLE suffix on AWS, etc.) while still matching our SECRET_PATTERNS regex.
+    ANTHROPIC_KEY  = "sk-ant-UNITTEST-dummyvalue1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZab"
+    OPENAI_PROJ    = "sk-proj-UNITTEST-dummyvalueXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+    OPENAI_GENERIC = "sk-UNITTESTdummyGenericKeyXXXXXXXXXXXXXXXXXX"  # alphanumeric only
+    AWS_ACCESS_KEY = "AKIAIOSFODNN7EXAMPLE"          # AWS docs example key (allow-listed)
+    GITHUB_PAT     = "ghp_" + "UNITTEST" + "A" * 28  # exactly 36 chars after ghp_
+    # Slack: use non-digit middle segments so GitHub's scanner (requires digits) skips it.
+    SLACK_BOT      = "xoxb-UNITTEST-DUMMYVALUE-dummyFakeSlackTokenXX"
+    SLACK_APP      = "xoxa-UNITTEST-DUMMYVALUE-dummyFakeSlackAppTokXX"
+    SLACK_USER     = "xoxp-UNITTEST-DUMMYVALUE-dummyFakeSlackUserTokXX"
+    # JWT: use obviously-fake base64 segments (too short / wrong chars for real JWT).
+    JWT_TOKEN      = (
+        "eyJhbGciOiJVTklUVEVTVCJ9"
+        ".eyJzdWIiOiJVTklUVEVTVCIsIm5hbWUiOiJEdW1teVVzZXIifQ"
+        ".UNITTEST_SIG_NOT_REAL_abcdefghijklmnop"
+    )
+
+    def _detect_no_presidio(self, text):
+        with patch.object(pv, "_post_json", side_effect=_presidio_unreachable):
+            return pv._detect(text)
+
+    def _has_apikey(self, spans):
+        return any("APIKEY" in t for _, _, t in spans)
+
+    def _has_token(self, spans):
+        return any("TOKEN" in t for _, _, t in spans)
+
+    # ------------------------------------------------------------------
+    # Detection: each pattern fires for its intended format
+    # ------------------------------------------------------------------
+
+    def test_anthropic_key_detected(self):
+        spans = self._detect_no_presidio(f"key={self.ANTHROPIC_KEY}")
+        self.assertTrue(self._has_apikey(spans),
+                        f"Expected APIKEY span for Anthropic key, got: {[t for _,_,t in spans]}")
+
+    def test_openai_project_key_detected(self):
+        spans = self._detect_no_presidio(f"OPENAI_API_KEY={self.OPENAI_PROJ}")
+        self.assertTrue(self._has_apikey(spans),
+                        f"Expected APIKEY span for OpenAI project key, got: {[t for _,_,t in spans]}")
+
+    def test_openai_generic_key_detected(self):
+        spans = self._detect_no_presidio(f"Authorization: Bearer {self.OPENAI_GENERIC}")
+        self.assertTrue(self._has_apikey(spans),
+                        f"Expected APIKEY span for generic OpenAI key, got: {[t for _,_,t in spans]}")
+
+    def test_aws_access_key_detected(self):
+        spans = self._detect_no_presidio(f"AWS_ACCESS_KEY_ID={self.AWS_ACCESS_KEY}")
+        self.assertTrue(self._has_apikey(spans),
+                        f"Expected APIKEY span for AWS access key, got: {[t for _,_,t in spans]}")
+
+    def test_github_pat_detected(self):
+        spans = self._detect_no_presidio(f"GITHUB_TOKEN={self.GITHUB_PAT}")
+        self.assertTrue(self._has_apikey(spans),
+                        f"Expected APIKEY span for GitHub PAT, got: {[t for _,_,t in spans]}")
+
+    def test_slack_bot_token_detected(self):
+        spans = self._detect_no_presidio(f"token={self.SLACK_BOT}")
+        self.assertTrue(self._has_apikey(spans),
+                        f"Expected APIKEY span for Slack bot token, got: {[t for _,_,t in spans]}")
+
+    def test_slack_app_token_detected(self):
+        spans = self._detect_no_presidio(f"token={self.SLACK_APP}")
+        self.assertTrue(self._has_apikey(spans),
+                        f"Expected APIKEY span for Slack app token, got: {[t for _,_,t in spans]}")
+
+    def test_slack_user_token_detected(self):
+        spans = self._detect_no_presidio(f"token={self.SLACK_USER}")
+        self.assertTrue(self._has_apikey(spans),
+                        f"Expected APIKEY span for Slack user token, got: {[t for _,_,t in spans]}")
+
+    def test_jwt_token_detected(self):
+        spans = self._detect_no_presidio(f"access_token={self.JWT_TOKEN}")
+        self.assertTrue(self._has_token(spans),
+                        f"Expected TOKEN span for JWT, got: {[t for _,_,t in spans]}")
+
+    # ------------------------------------------------------------------
+    # Span boundaries: matched span equals the token string exactly
+    # ------------------------------------------------------------------
+
+    def test_anthropic_key_span_boundary(self):
+        text = f"start {self.ANTHROPIC_KEY} end"
+        spans = self._detect_no_presidio(text)
+        apikey_spans = [(s, e) for s, e, t in spans if "APIKEY" in t]
+        self.assertTrue(apikey_spans, "No APIKEY span found")
+        start, end = apikey_spans[0]
+        self.assertEqual(text[start:end], self.ANTHROPIC_KEY)
+
+    def test_github_pat_span_boundary(self):
+        text = f"export GITHUB_TOKEN={self.GITHUB_PAT}"
+        spans = self._detect_no_presidio(text)
+        apikey_spans = [(s, e) for s, e, t in spans if "APIKEY" in t]
+        self.assertTrue(apikey_spans, "No APIKEY span found")
+        start, end = apikey_spans[0]
+        self.assertEqual(text[start:end], self.GITHUB_PAT)
+
+    # ------------------------------------------------------------------
+    # No false positives on similar-but-short / invalid patterns
+    # ------------------------------------------------------------------
+
+    def test_sk_too_short_not_matched(self):
+        # sk- with fewer than 20 chars after the prefix should not match
+        text = "sk-tooshort12345"
+        spans = self._detect_no_presidio(text)
+        apikey_spans = [(s, e, t) for s, e, t in spans if "APIKEY" in t]
+        self.assertFalse(apikey_spans, f"False positive on short sk- value: {apikey_spans}")
+
+    def test_aws_key_wrong_prefix_not_matched(self):
+        # BKIA... — wrong prefix, should not match AKIA pattern
+        text = "BKIAIOSFODNN7EXAMPLE"
+        spans = self._detect_no_presidio(text)
+        apikey_spans = [(s, e, t) for s, e, t in spans if "APIKEY" in t]
+        self.assertFalse(apikey_spans, f"False positive on BKIA prefix: {apikey_spans}")
+
+    def test_github_pat_too_short_not_matched(self):
+        # ghp_ with only 10 chars (needs 36)
+        text = "ghp_ABCDEFGHIJ"
+        spans = self._detect_no_presidio(text)
+        apikey_spans = [(s, e, t) for s, e, t in spans if "APIKEY" in t]
+        self.assertFalse(apikey_spans, f"False positive on short ghp_ token: {apikey_spans}")
+
+    def test_jwt_malformed_not_matched(self):
+        # eyJ prefix but only two segments (needs three dot-separated parts)
+        text = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0"
+        spans = self._detect_no_presidio(text)
+        token_spans = [(s, e, t) for s, e, t in spans if "TOKEN" in t]
+        self.assertFalse(token_spans, f"False positive on two-segment JWT: {token_spans}")
+
+    # ------------------------------------------------------------------
+    # All api-key patterns present in SECRET_PATTERNS
+    # ------------------------------------------------------------------
+
+    def test_secret_patterns_has_anthropic_pattern(self):
+        has = any(p.pattern.startswith(r"sk-ant-") for _, p in pv.SECRET_PATTERNS)
+        self.assertTrue(has, "sk-ant- pattern not in SECRET_PATTERNS")
+
+    def test_secret_patterns_has_openai_proj_pattern(self):
+        has = any(p.pattern.startswith(r"sk-proj-") for _, p in pv.SECRET_PATTERNS)
+        self.assertTrue(has, "sk-proj- pattern not in SECRET_PATTERNS")
+
+    def test_secret_patterns_has_aws_pattern(self):
+        has = any(p.pattern.startswith(r"AKIA") for _, p in pv.SECRET_PATTERNS)
+        self.assertTrue(has, "AKIA pattern not in SECRET_PATTERNS")
+
+    def test_secret_patterns_has_github_pat_pattern(self):
+        has = any(p.pattern.startswith(r"ghp_") for _, p in pv.SECRET_PATTERNS)
+        self.assertTrue(has, "ghp_ pattern not in SECRET_PATTERNS")
+
+    def test_secret_patterns_has_slack_pattern(self):
+        has = any(p.pattern.startswith(r"xox") for _, p in pv.SECRET_PATTERNS)
+        self.assertTrue(has, "xox* pattern not in SECRET_PATTERNS")
+
+    def test_secret_patterns_has_jwt_pattern(self):
+        has = any(p.pattern.startswith(r"eyJ") for _, p in pv.SECRET_PATTERNS)
+        self.assertTrue(has, "eyJ JWT pattern not in SECRET_PATTERNS")
+
+
 if __name__ == "__main__":
     unittest.main()
