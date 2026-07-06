@@ -330,7 +330,7 @@ class TestApiTokenPatterns(unittest.TestCase):
     GITHUB_PAT     = "ghp_" + "UNITTEST" + "A" * 28  # exactly 36 chars after ghp_
     # Slack: use non-digit middle segments so GitHub's scanner (requires digits) skips it.
     SLACK_BOT      = "xoxb-UNITTEST-DUMMYVALUE-dummyFakeSlackTokenXX"
-    SLACK_APP      = "xoxa-UNITTEST-DUMMYVALUE-dummyFakeSlackAppTokXX"
+    SLACK_APP      = "xoxa-UNITTEST-DUMMYVALUE-dummyFakeSlackAppTokXX"  # gitleaks:allow
     SLACK_USER     = "xoxp-UNITTEST-DUMMYVALUE-dummyFakeSlackUserTokXX"
     # JWT: use obviously-fake base64 segments (too short / wrong chars for real JWT).
     JWT_TOKEN      = (

@@ -1,0 +1,9 @@
+[allowlist]
+description = "Project-wide gitleaks allowlist"
+
+# deploy/argocd/sealed/ contains ONLY SealedSecret ciphertext (bitnami sealed-secrets).
+# The ciphertext fields look like high-entropy base64 and trigger generic-api-key rules,
+# but they are encrypted blobs — never plaintext secrets. Allowlist the whole directory.
+paths = [
+  '''deploy/argocd/sealed/.*\.yaml''',
+]
