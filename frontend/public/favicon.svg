@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Background circle -->
+  <circle cx="32" cy="32" r="30" fill="#1e40af" stroke="#1d4ed8" stroke-width="2"/>
+  
+  <!-- Key symbol - main body -->
+  <rect x="12" y="28" width="26" height="8" rx="4" fill="#fbbf24"/>
+  
+  <!-- Key teeth -->
+  <rect x="38" y="24" width="6" height="4" fill="#fbbf24"/>
+  <rect x="38" y="32" width="8" height="4" fill="#fbbf24"/>
+  <rect x="38" y="40" width="4" height="4" fill="#fbbf24"/>
+  
+  <!-- Key ring -->
+  <circle cx="18" cy="32" r="6" fill="none" stroke="#fbbf24" stroke-width="3"/>
+  
+  <!-- Fuze spark effects -->
+  <circle cx="45" cy="18" r="2" fill="#fbbf24">
+    <animate attributeName="opacity" values="1;0.3;1" dur="2s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="50" cy="22" r="1.5" fill="#fbbf24">
+    <animate attributeName="opacity" values="0.3;1;0.3" dur="2.5s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="46" cy="48" r="1.8" fill="#fbbf24">
+    <animate attributeName="opacity" values="1;0.2;1" dur="1.8s" repeatCount="indefinite"/>
+  </circle>
+  
+  <!-- Text "FK" for FuzeKeys -->
+  <text x="32" y="52" font-family="Arial, sans-serif" font-size="8" font-weight="bold" text-anchor="middle" fill="#e5e7eb">FK</text>
+</svg> 
