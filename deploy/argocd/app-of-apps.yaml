@@ -8,8 +8,16 @@ metadata:
 spec:
   # Root "app of apps": Argo watches deploy/argocd/applications/ and reconciles
   # every child Application it finds there (recurse). Register THIS one manifest
-  # in Argo once; the platform + sealed Applications then flow from git.
-  project: fuzekeys
+  # in Argo once; the AppProject + platform + sealed Applications then flow from
+  # git.
+  #
+  # The root runs in the built-in `default` project (NOT `fuzekeys`) on purpose:
+  # it is now responsible for CREATING the `fuzekeys` AppProject (see
+  # applications/project.yaml). If the root referenced `fuzekeys` it would be
+  # InvalidSpec until that project exists and could never create it — the
+  # chicken-and-egg that left `fuzekeys-apps` OutOfSync/Missing. The workloads
+  # stay isolated under the `fuzekeys` project via the child Applications.
+  project: default
   source:
     repoURL: https://github.com/izzywdev/FuzeKeys.git
     targetRevision: master
