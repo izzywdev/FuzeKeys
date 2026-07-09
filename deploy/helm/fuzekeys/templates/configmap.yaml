@@ -6,6 +6,8 @@ metadata:
   name: {{ include "fuzekeys.fullname" . }}-config
   labels:
     {{- include "fuzekeys.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
 data:
   # ---- Non-secret connection coordinates (credentials come from the Secret) ----
   POSTGRES_HOST: {{ $pgHost | quote }}
