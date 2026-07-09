@@ -1,14 +1,28 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 from typing import Dict, List, Optional, Any
 import logging
 from pydantic import BaseModel
 
 from ..llm_scraper_service.llm_integration.code_generator import code_generator, ScraperCode
 from ..llm_scraper_service.llm_integration.prompt_templates import SiteInfo
+from app.models.user import User
+from app.routers.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/llm-scraper", tags=["LLM Scraper"])
+# SECURITY (CRITICAL-2 / appsec #18): this router was public-by-default. Every
+# route invoked the LLM (cost/abuse, prompt-injection) or exposed/deleted
+# generated scraper source with NO auth. We now require the application JWT
+# (`get_current_user`) on EVERY route in this router via a router-level
+# dependency, so an unauthenticated caller gets 401 before any handler runs. The
+# destructive DELETE and the LLM-invoking POSTs are therefore all gated. There is
+# no public `/health` route here; if one is added later it can be exempted by
+# declaring it on a separate, unauthenticated router.
+router = APIRouter(
+    prefix="/api/llm-scraper",
+    tags=["LLM Scraper"],
+    dependencies=[Depends(get_current_user)],
+)
 
 # Request/Response Models
 class GenerateScraperRequest(BaseModel):

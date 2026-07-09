@@ -5,7 +5,7 @@ This router provides API endpoints for managing automated site integrations
 including signup, signin, and API key creation for various platforms.
 """
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 from pydantic import BaseModel, EmailStr
 from typing import Dict, Any, List, Optional
 import logging
@@ -13,6 +13,8 @@ import logging
 from app.integrations.site import get_available_sites, get_site_capabilities
 from app.integrations.site.permit_io import PermitIOIntegration
 from app.integrations.site.permit_io.models import PermitIOCredentials, PermitIOResult
+from app.models.user import User
+from app.routers.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -79,12 +81,20 @@ async def get_site_capabilities_endpoint(site_name: str):
 
 # Site Integration Operations
 @router.post("/signup", response_model=IntegrationResponse)
-async def create_account(request: SignupRequest, background_tasks: BackgroundTasks):
+async def create_account(
+    request: SignupRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+):
     """
     Create a new account on the specified site.
-    
+
     This endpoint handles automated account signup for supported sites.
     The operation runs in the background for long-running automations.
+
+    SECURITY (HIGH-1 / appsec #18): requires auth. This drives credential-bearing
+    browser automation against external sites; an unauthenticated caller must not
+    be able to trigger it (abuse / resource exhaustion).
     """
     try:
         if request.site.lower() == "permit.io":
@@ -101,11 +111,19 @@ async def create_account(request: SignupRequest, background_tasks: BackgroundTas
         raise HTTPException(status_code=500, detail="Account creation failed")
 
 @router.post("/signin", response_model=IntegrationResponse)
-async def authenticate_account(request: SigninRequest):
+async def authenticate_account(
+    request: SigninRequest,
+    current_user: User = Depends(get_current_user),
+):
     """
     Authenticate with an existing account on the specified site.
-    
+
     This endpoint handles automated authentication for supported sites.
+
+    SECURITY (HIGH-1 / appsec #18): requires auth. This accepts raw email+password
+    and drives credential-bearing browser automation against external sites; an
+    unauthenticated caller must not be able to trigger it (abuse / resource
+    exhaustion / credential-stuffing surface).
     """
     try:
         if request.site.lower() == "permit.io":
@@ -122,11 +140,18 @@ async def authenticate_account(request: SigninRequest):
         raise HTTPException(status_code=500, detail="Authentication failed")
 
 @router.post("/apikey", response_model=IntegrationResponse)
-async def create_api_key(request: ApiKeyRequest):
+async def create_api_key(
+    request: ApiKeyRequest,
+    current_user: User = Depends(get_current_user),
+):
     """
     Create an API key for the specified site account.
-    
+
     This endpoint handles automated API key creation for supported sites.
+
+    SECURITY (HIGH-1 / appsec #18): requires auth. This accepts raw email+password
+    and drives credential-bearing browser automation against external sites; an
+    unauthenticated caller must not be able to trigger it.
     """
     try:
         if request.site.lower() == "permit.io":

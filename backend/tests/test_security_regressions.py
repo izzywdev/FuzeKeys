@@ -172,6 +172,19 @@ class TestVerifyApiKeyFailsClosed:
 # filter (i.e. looking up by account_id alone), which is the IDOR.
 # ===========================================================================
 class TestIdorOwnershipScoping:
+    @pytest.fixture(autouse=True)
+    def _grant_full_identity_scope(self):
+        """These tests isolate the per-IDENTITY IDOR layer (Account.identity_id
+        scoping). The newer per-KEY scope gate (HIGH-2, require_identity_scope)
+        sits in FRONT of it, so we grant the calling service a wildcard scope here
+        and restore it afterwards; otherwise the request would 403 on key-scope
+        before ever reaching the IDOR check under test. The key-scope behaviour is
+        covered independently in TestServiceKeyIdentityScoping."""
+        original = credentials_mod.SERVICE_IDENTITY_SCOPES
+        credentials_mod.SERVICE_IDENTITY_SCOPES = {"scraper-service": "*"}
+        yield
+        credentials_mod.SERVICE_IDENTITY_SCOPES = original
+
     @pytest.fixture
     def db_session(self):
         """A synchronous in-memory SQLite session with the User/Identity/Account
@@ -535,3 +548,197 @@ class TestOtpDeviceAuthAndBinding:
         assert sms_mod.registered_device_keys["dev-new"] == issued
         assert sms_mod._verify_device("dev-new", issued) is True
         assert sms_mod._verify_device("dev-new", "not-the-key") is False
+
+
+# ===========================================================================
+# AREA 4: Per-tenant service-key scoping  (HIGH-2 / appsec #18)
+#
+# Fix under test (credentials.require_identity_scope + _load_service_identity_scopes
+# + its enforcement on get_identity_accounts / request_account_credentials /
+# store_account_credentials / request_identity_credentials):
+#   - A service key may only act for identities it is explicitly scoped to via
+#     <SERVICE>_ALLOWED_IDENTITY_IDS. Unset/blank => NO identities (fail closed).
+#   - "*" is an explicit operator opt-in to act for ANY identity.
+#   - A scoped list ("1,2") admits only those ids; anything else -> 403.
+#   - get_identity_accounts now calls require_identity_scope BEFORE any lookup, so
+#     a valid key can no longer enumerate an arbitrary identity's accounts (the
+#     cross-tenant BOLA the old TODO left open).
+#
+# Reversion this would catch: removing require_identity_scope, defaulting an
+# unconfigured service to "allow all", or dropping the scope check on
+# get_identity_accounts (re-opening cross-tenant enumeration).
+#
+# Same cv2-free style as the rest of this file: drive the real functions directly.
+# ===========================================================================
+class TestServiceKeyIdentityScoping:
+    @pytest.fixture(autouse=True)
+    def _isolate_scopes(self):
+        """Snapshot/restore the module-level SERVICE_IDENTITY_SCOPES around each
+        test so we never leak scope config between tests."""
+        original = credentials_mod.SERVICE_IDENTITY_SCOPES
+        yield
+        credentials_mod.SERVICE_IDENTITY_SCOPES = original
+
+    # --- require_identity_scope unit behaviour --------------------------------
+    def test_unconfigured_service_denies_all_identities_403(self):
+        """Fail closed: a service with NO configured scope may act for no identity."""
+        credentials_mod.SERVICE_IDENTITY_SCOPES = {}
+        with pytest.raises(HTTPException) as exc:
+            credentials_mod.require_identity_scope("scraper-service", 1)
+        assert exc.value.status_code == 403
+
+    def test_identity_outside_scope_denied_403(self):
+        """A scoped key naming an identity NOT in its allow-list -> 403."""
+        credentials_mod.SERVICE_IDENTITY_SCOPES = {"scraper-service": {1, 2}}
+        with pytest.raises(HTTPException) as exc:
+            credentials_mod.require_identity_scope("scraper-service", 99)
+        assert exc.value.status_code == 403
+
+    def test_identity_in_scope_allowed(self):
+        """An identity within the key's allow-list is permitted (no raise)."""
+        credentials_mod.SERVICE_IDENTITY_SCOPES = {"scraper-service": {1, 2}}
+        assert credentials_mod.require_identity_scope("scraper-service", 2) is None
+
+    def test_wildcard_scope_allows_any_identity(self):
+        """Explicit "*" opt-in permits any identity."""
+        credentials_mod.SERVICE_IDENTITY_SCOPES = {"mobile-service": "*"}
+        assert credentials_mod.require_identity_scope("mobile-service", 12345) is None
+
+    # --- _load_service_identity_scopes env parsing ----------------------------
+    def test_loader_fail_closed_and_wildcard_and_list(self, monkeypatch):
+        monkeypatch.delenv("SCRAPER_ALLOWED_IDENTITY_IDS", raising=False)
+        monkeypatch.delenv("MOBILE_ALLOWED_IDENTITY_IDS", raising=False)
+        monkeypatch.delenv("AUTOMATION_ALLOWED_IDENTITY_IDS", raising=False)
+        # All unset -> empty map (every service denied at request time).
+        assert credentials_mod._load_service_identity_scopes() == {}
+
+        # Blank -> still omitted (fail closed).
+        monkeypatch.setenv("SCRAPER_ALLOWED_IDENTITY_IDS", "   ")
+        assert credentials_mod._load_service_identity_scopes() == {}
+
+        # Wildcard + explicit list, with junk ids ignored.
+        monkeypatch.setenv("SCRAPER_ALLOWED_IDENTITY_IDS", "*")
+        monkeypatch.setenv("MOBILE_ALLOWED_IDENTITY_IDS", "1, 2 ,bad, 3")
+        loaded = credentials_mod._load_service_identity_scopes()
+        assert loaded["scraper-service"] == "*"
+        assert loaded["mobile-service"] == {1, 2, 3}
+
+    # --- get_identity_accounts enforces the scope BEFORE any DB lookup --------
+    def test_get_identity_accounts_out_of_scope_denied_403(self):
+        """The endpoint must 403 an out-of-scope identity WITHOUT touching the DB
+        (so a bad db would not even be queried). Closes the enumeration BOLA."""
+        credentials_mod.SERVICE_IDENTITY_SCOPES = {"scraper-service": {1}}
+
+        class _ExplodingDb:
+            def query(self, *a, **k):
+                raise AssertionError("DB must not be queried for an out-of-scope identity")
+
+        with pytest.raises(HTTPException) as exc:
+            _run(credentials_mod.get_identity_accounts(
+                identity_id=99,                 # not in {1}
+                service_name="scraper-service",
+                db=_ExplodingDb(),
+            ))
+        assert exc.value.status_code == 403
+
+    def test_request_account_credentials_out_of_scope_denied_403(self):
+        """The IDOR-hardened retrieval path now ALSO fails closed on key scope:
+        an out-of-scope identity is rejected 403 before any account lookup."""
+        credentials_mod.SERVICE_IDENTITY_SCOPES = {"scraper-service": {1}}
+
+        class _ExplodingDb:
+            def query(self, *a, **k):
+                raise AssertionError("DB must not be queried for an out-of-scope identity")
+
+        req = credentials_mod.AccountCredentialRequest(
+            identity_id=99, account_id=5, credential_types=[],
+        )
+        with pytest.raises(HTTPException) as exc:
+            _run(credentials_mod.request_account_credentials(req, "scraper-service", _ExplodingDb()))
+        assert exc.value.status_code == 403
+
+
+# ===========================================================================
+# AREA 5: Auth coverage on site_integrations + llm_scraper routes
+#         (HIGH-1 / CRITICAL-2 — appsec #18)
+#
+# Rather than spin up the app (cv2-broken locally), we introspect the registered
+# FastAPI routes/dependencies of the specific routers — importing these router
+# modules is cv2-free (verified). We assert that get_current_user gates the routes
+# the audit flagged. A reversion that drops the dependency makes these fail.
+#
+#   - site_integrations: POST /signup, /signin, /apikey each depend on
+#     get_current_user (the HIGH-1 abuse/credential-stuffing surface).
+#   - llm_scraper: get_current_user is a ROUTER-LEVEL dependency, so EVERY route
+#     (incl. the destructive DELETE and the LLM-invoking POSTs) is gated.
+# ===========================================================================
+import app.routers.site_integrations as site_mod  # cv2-free
+import app.routers.llm_scraper as llm_mod          # cv2-free
+from app.routers.auth import get_current_user
+
+
+def _route_dependency_calls(route):
+    """Return the set of dependency callables attached to a route (its own
+    dependant + nested sub-dependencies)."""
+    calls = set()
+    dependant = getattr(route, "dependant", None)
+    if dependant is None:
+        return calls
+    if getattr(dependant, "call", None) is not None:
+        calls.add(dependant.call)
+    for sub in getattr(dependant, "dependencies", []):
+        if getattr(sub, "call", None) is not None:
+            calls.add(sub.call)
+        for subsub in getattr(sub, "dependencies", []):
+            if getattr(subsub, "call", None) is not None:
+                calls.add(subsub.call)
+    return calls
+
+
+class TestRouteAuthCoverage:
+    @pytest.mark.parametrize(
+        "method,path",
+        [
+            ("POST", "/api/v1/integrations/signup"),
+            ("POST", "/api/v1/integrations/signin"),
+            ("POST", "/api/v1/integrations/apikey"),
+        ],
+    )
+    def test_site_integrations_operational_routes_require_auth(self, method, path):
+        """HIGH-1: signup/signin/apikey must be gated by get_current_user."""
+        matched = [
+            r for r in site_mod.router.routes
+            if getattr(r, "path", None) == path and method in getattr(r, "methods", set())
+        ]
+        assert matched, f"route {method} {path} not found"
+        for route in matched:
+            assert get_current_user in _route_dependency_calls(route), (
+                f"{method} {path} is not gated by get_current_user"
+            )
+
+    def test_llm_scraper_router_level_auth_gates_every_route(self):
+        """CRITICAL-2: get_current_user is a router-level dependency, so every
+        route (DELETE + LLM POSTs + reads) inherits it."""
+        # Router-level dependency present.
+        router_dep_calls = {
+            d.dependency for d in llm_mod.router.dependencies
+            if getattr(d, "dependency", None) is not None
+        }
+        assert get_current_user in router_dep_calls, (
+            "llm_scraper router is missing the router-level get_current_user dependency"
+        )
+        # And it actually propagates to the routes (spot-check the destructive DELETE
+        # and an LLM-invoking POST).
+        for method, path in [
+            ("DELETE", "/api/llm-scraper/scrapers/{site_name}/{action_type}"),
+            ("POST", "/api/llm-scraper/generate"),
+        ]:
+            matched = [
+                r for r in llm_mod.router.routes
+                if getattr(r, "path", None) == path and method in getattr(r, "methods", set())
+            ]
+            assert matched, f"route {method} {path} not found"
+            for route in matched:
+                assert get_current_user in _route_dependency_calls(route), (
+                    f"{method} {path} is not gated by get_current_user"
+                )

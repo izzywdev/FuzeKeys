@@ -132,6 +132,95 @@ def _load_service_api_keys() -> Dict[str, str]:
 # API key storage for microservice authentication (no hardcoded defaults).
 VALID_API_KEYS = _load_service_api_keys()
 
+
+# --- SECURITY (HIGH-2 / appsec #18): per-tenant service-key scoping. ---
+# Previously the unresolved TODO meant a valid service key was trusted to act on
+# behalf of ANY identity it named: get_identity_accounts (and the credential
+# routes) bound the lookup to a raw identity_id with no relationship to the
+# calling key, so any holder of a service key could enumerate/operate on ANY
+# identity's accounts (cross-tenant BOLA via a trusted key).
+#
+# We now bind each service key to the explicit set of identity ids it is allowed
+# to act for, configured per service via env, e.g.:
+#     SCRAPER_ALLOWED_IDENTITY_IDS="1,2,3"
+#     MOBILE_ALLOWED_IDENTITY_IDS="*"          # explicit wildcard = all identities
+#     AUTOMATION_ALLOWED_IDENTITY_IDS=""       # unset/blank = NO identities (deny)
+#
+# Semantics (fail closed):
+#   - unset / blank  -> the key may act for NO identity (every scoped request 403).
+#   - "*"            -> explicit operator opt-in to act for ANY identity.
+#   - "1,2,3"        -> only those identity ids; anything else 403.
+# This closes the cross-tenant enumeration gap: a key can only reach identities an
+# operator has explicitly granted it, instead of every identity in the system.
+_ALLOWED_IDS_ENV = {
+    "scraper-service": "SCRAPER_ALLOWED_IDENTITY_IDS",
+    "mobile-service": "MOBILE_ALLOWED_IDENTITY_IDS",
+    "automation-service": "AUTOMATION_ALLOWED_IDENTITY_IDS",
+}
+
+
+def _load_service_identity_scopes() -> Dict[str, Any]:
+    """Build the service -> allowed-identity-scope map from env.
+
+    Returns a dict where each value is either the string "*" (wildcard) or a
+    set[int] of explicitly allowed identity ids. A service with an unset/blank
+    var is omitted entirely, which means it is allowed NO identities (fail
+    closed in _key_may_access_identity).
+    """
+    scopes: Dict[str, Any] = {}
+    for service, env_var in _ALLOWED_IDS_ENV.items():
+        raw = os.getenv(env_var)
+        if raw is None or not raw.strip():
+            continue  # omitted -> deny all (fail closed)
+        value = raw.strip()
+        if value == "*":
+            scopes[service] = "*"
+            continue
+        allowed_ids = set()
+        for part in value.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            try:
+                allowed_ids.add(int(part))
+            except ValueError:
+                logger.warning(
+                    "Ignoring non-integer identity id %r in %s for %s",
+                    part, env_var, service,
+                )
+        if allowed_ids:
+            scopes[service] = allowed_ids
+    return scopes
+
+
+# service_name -> "*" | set[int]; absent service => allowed no identities.
+SERVICE_IDENTITY_SCOPES = _load_service_identity_scopes()
+
+
+def require_identity_scope(service_name: str, identity_id: int) -> None:
+    """Fail closed unless ``service_name``'s key is scoped to ``identity_id``.
+
+    SECURITY (HIGH-2): raises HTTPException(403) when the calling service key is
+    not permitted to act for the given identity (including when no scope is
+    configured for the service at all). Closes the IDOR/BOLA TODO so a valid key
+    can no longer enumerate or operate on arbitrary identities.
+    """
+    scope = SERVICE_IDENTITY_SCOPES.get(service_name)
+    allowed = scope == "*" or (isinstance(scope, set) and identity_id in scope)
+    if not allowed:
+        log_security_event(
+            "identity_scope_denied",
+            details={
+                "service": service_name,
+                "identity_id": identity_id,
+                "reason": "service_not_scoped_for_identity",
+            },
+        )
+        raise HTTPException(
+            status_code=403,
+            detail="Service key is not authorized for this identity",
+        )
+
 # Request/Response Models with enhanced documentation
 class CredentialRequest(BaseModel):
     """Request model for generating credentials for an identity"""
@@ -459,11 +548,16 @@ async def request_identity_credentials(
     """Request credentials for an identity to sign up for a specific site"""
     
     try:
+        # SECURITY (HIGH-2 / appsec #18): per-tenant key scoping — the calling key
+        # must be authorized for this identity before we generate credentials from
+        # its PII.
+        require_identity_scope(service_name, request.identity_id)
+
         # Get identity
         identity = db.query(Identity).filter(Identity.id == request.identity_id).first()
         if not identity:
             raise HTTPException(status_code=404, detail="Identity not found")
-        
+
         logger.info(f"Generating credentials for identity {identity.name} on {request.site_name} by {service_name}")
         
         # Generate credentials based on identity and site requirements
@@ -540,9 +634,13 @@ async def request_account_credentials(
         # so a valid service key is trusted to act on behalf of any identity it
         # names. This closes cross-account IDOR via raw id but does NOT yet bind a
         # key to a specific set of identities.
-        # TODO: introduce per-tenant key scoping (map each service key to the
-        # tenant/identities it may act for) once a tenant model exists, and verify
-        # request.identity_id is within that key's allowed scope.
+        # SECURITY (HIGH-2 / appsec #18 — RESOLVED): per-tenant key scoping. The
+        # calling key must be authorized for request.identity_id before we look up
+        # (and decrypt) the account's credentials. Combined with the identity-scoped
+        # account filter below, a key can neither name an arbitrary identity nor
+        # reach an account outside the identity it was granted.
+        require_identity_scope(service_name, request.identity_id)
+
         account = (
             db.query(Account)
             .join(Identity, Account.identity_id == Identity.id)
@@ -647,10 +745,14 @@ async def store_account_credentials(
     """Store/update credentials for an account after successful signup"""
 
     try:
+        # SECURITY (HIGH-2 / appsec #18): per-tenant key scoping — the calling key
+        # must be authorized for request.identity_id before mutating any of its
+        # accounts' stored credentials.
+        require_identity_scope(service_name, request.identity_id)
+
         # SECURITY (VULN 2 - IDOR): scope the mutation to the supplied owning
-        # identity (see request_account_credentials for the full rationale and the
-        # residual per-tenant-scoping TODO). 404 (not 403) avoids leaking the
-        # existence of accounts owned by a different identity.
+        # identity. 404 (not 403) here avoids leaking the existence of accounts
+        # owned by a different identity within the key's allowed scope.
         account = (
             db.query(Account)
             .join(Identity, Account.identity_id == Identity.id)
@@ -761,11 +863,18 @@ async def get_identity_accounts(
     """Get all accounts for an identity"""
     
     try:
+        # SECURITY (HIGH-2 / appsec #18): enforce per-tenant key scoping BEFORE any
+        # lookup, so a valid key cannot enumerate an identity it is not scoped for.
+        # 403 (not 404) here is intentional: scope is a property of the calling key,
+        # not of whether the identity exists, so denying out-of-scope access does
+        # not leak identity existence (we never query for it).
+        require_identity_scope(service_name, identity_id)
+
         # Get identity
         identity = db.query(Identity).filter(Identity.id == identity_id).first()
         if not identity:
             raise HTTPException(status_code=404, detail="Identity not found")
-        
+
         # Get accounts for this identity
         accounts = db.query(Account).filter(Account.identity_id == identity_id).all()
         

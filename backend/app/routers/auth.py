@@ -21,9 +21,51 @@ router = APIRouter()
 security = HTTPBearer()
 
 # JWT Configuration
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key")
+# SECURITY (MEDIUM-2 / appsec #18): the JWT signing key must come from the
+# environment with NO insecure default. The previous default ("your-secret-key")
+# made tokens forgeable by anyone who knew the public source, which undermines
+# EVERY `get_current_user` object-level check downstream. We fail CLOSED:
+#   - A blank/unset SECRET_KEY leaves the module importable (other routers import
+#     this module at startup) but `_require_secret_key()` raises HTTP 503 at
+#     request time on any token issue/verify, so no token is ever signed or
+#     accepted with an absent/weak key.
+#   - In a non-test environment we additionally reject the known-insecure legacy
+#     placeholder value so it can never be reintroduced via env.
+SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+
+# Known-insecure placeholder values that must never be used to sign/verify tokens.
+_INSECURE_SECRET_VALUES = {"your-secret-key", "your-super-secret-key-here-change-this-in-production"}
+
+if not SECRET_KEY or not SECRET_KEY.strip():
+    logger.warning(
+        "SECRET_KEY is not set. JWT issuance/verification will fail closed with "
+        "HTTP 503 until a strong SECRET_KEY is configured. No insecure default is used."
+    )
+elif SECRET_KEY.strip() in _INSECURE_SECRET_VALUES:
+    logger.error(
+        "SECRET_KEY is set to a known-insecure placeholder value. JWT issuance/"
+        "verification will fail closed with HTTP 503 until a strong SECRET_KEY is "
+        "configured."
+    )
+
+
+def _require_secret_key() -> str:
+    """Return a usable JWT signing key or fail closed.
+
+    SECURITY: raises HTTPException(503) when SECRET_KEY is missing/blank or is the
+    known-insecure placeholder, so tokens can never be signed or validated with a
+    forgeable key. Every create/verify path routes through here.
+    """
+    key = SECRET_KEY
+    if not key or not key.strip() or key.strip() in _INSECURE_SECRET_VALUES:
+        logger.error("Refusing JWT operation: SECRET_KEY is unset, blank, or insecure.")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication is not configured",
+        )
+    return key.strip()
 
 
 # Pydantic models
@@ -66,7 +108,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     else:
         expire = datetime.utcnow() + timedelta(minutes=15)
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    encoded_jwt = jwt.encode(to_encode, _require_secret_key(), algorithm=ALGORITHM)
     return encoded_jwt
 
 
@@ -82,7 +124,7 @@ async def get_current_user(
     )
     
     try:
-        payload = jwt.decode(credentials.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(credentials.credentials, _require_secret_key(), algorithms=[ALGORITHM])
         user_id: int = payload.get("sub")
         if user_id is None:
             raise credentials_exception
