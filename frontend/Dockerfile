@@ -1,38 +1,35 @@
-# Build stage
-FROM node:18-alpine as build
-
+# Build stage — standalone CRA build (direct access / standalone mode)
+FROM node:18-alpine AS build-standalone
 WORKDIR /app
-
-# Copy package files
 COPY package*.json ./
-
-# Install dependencies
 RUN npm install --legacy-peer-deps
-
-# Copy source code
 COPY . .
-
-# Build the application
 RUN npm run build
+
+# Build stage — MFE build (served as FuzeFront remote via module federation)
+FROM node:18-alpine AS build-mfe
+WORKDIR /app
+COPY package*.json ./
+RUN npm install --legacy-peer-deps
+COPY . .
+RUN npm run build:mfe
 
 # Production stage
 FROM nginx:alpine
 
-# Install curl for health checks
 RUN apk add --no-cache curl
 
-# Copy built app to nginx
-COPY --from=build /app/build /usr/share/nginx/html
+# Standalone app at /
+COPY --from=build-standalone /app/build /usr/share/nginx/html
 
-# Copy nginx configuration
+# MFE assets at /apps/fuzekeys/ (FuzeFront fetches remoteEntry.js from here)
+COPY --from=build-mfe /app/dist-mfe /usr/share/nginx/html/apps/fuzekeys
+
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Expose port
 EXPOSE 3000
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:3000 || exit 1
+    CMD curl -f http://localhost:3000/health || exit 1
 
-# Start nginx
-CMD ["nginx", "-g", "daemon off;"] 
+CMD ["nginx", "-g", "daemon off;"]
