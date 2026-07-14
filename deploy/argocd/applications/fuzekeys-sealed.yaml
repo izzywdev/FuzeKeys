@@ -3,6 +3,16 @@ kind: Application
 metadata:
   name: fuzekeys-sealed
   namespace: argocd
+  annotations:
+    # Sync BEFORE the platform app (wave 0). The platform's PreSync migrate Job
+    # hard-depends on the Secrets this app provides — `ghcr-pull-secret` (to pull
+    # the private GHCR image) and `fuzekeys-secrets` (envFrom). Without ordering,
+    # app-of-apps reconciles both concurrently; on a cold cluster the platform's
+    # PreSync hook races ahead of these SealedSecrets materializing, the Job wedges
+    # in ImagePullBackOff/CreateContainerConfigError, PreSync never completes, and
+    # the whole platform app stays Missing/OutOfSync. This wave makes Argo wait for
+    # the sealed app to go Healthy first.
+    argocd.argoproj.io/sync-wave: "-1"
 spec:
   # GitOps-applies the SealedSecrets in deploy/argocd/sealed/ so prod secrets are
   # reconciled by Argo (not a one-off kubectl apply) and survive a from-scratch
