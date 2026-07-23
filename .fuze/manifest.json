@@ -23,5 +23,32 @@
     "ruleset": true,
     "requireSignatures": true,
     "deployOnPush": false
-  }
+  },
+  "providesTo": [
+    "FuzeAgent",
+    "FuzeBI",
+    "FuzeCall",
+    "FuzeContact",
+    "FuzeDeploy",
+    "FuzeExecutive",
+    "FuzeFront",
+    "FuzeHub",
+    "FuzeMarket",
+    "FuzeMerchandize",
+    "FuzePicker",
+    "FuzePlan",
+    "FuzeSales",
+    "FuzeService",
+    "FuzeSocial",
+    "FuzeX",
+    "MendysRobotics",
+    "MendysRoboticsWP"
+  ],
+  "dependsOn": [
+    "FuzeAgent",
+    "FuzeBI",
+    "FuzeDeploy",
+    "FuzeFront",
+    "FuzePlan"
+  ]
 }
