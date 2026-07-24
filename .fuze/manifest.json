@@ -17,7 +17,8 @@
     "agile-manager",
     "security",
     "fuzefront-expert",
-    "fuzeinfra-expert"
+    "fuzeinfra-expert",
+    "a2a-maintainer"
   ],
   "hardening": {
     "ruleset": true,
