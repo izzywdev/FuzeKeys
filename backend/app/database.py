@@ -10,11 +10,13 @@ from sqlalchemy import text
 import os
 from pathlib import Path
 
-# PostgreSQL database URL - FuzeKeys database on FuzeInfra
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", 
-    "postgresql+asyncpg://fuzekeys_user:fuzekeys_password@localhost:5432/fuzekeys"
+# Async engine requires asyncpg driver. Prefer DATABASE_URL_ASYNC; fall back to
+# DATABASE_URL (normalising the scheme if needed) for local-dev compatibility.
+_raw_url = (
+    os.getenv("DATABASE_URL_ASYNC")
+    or os.getenv("DATABASE_URL", "postgresql+asyncpg://fuzekeys_user:fuzekeys_password@localhost:5432/fuzekeys")
 )
+DATABASE_URL = _raw_url.replace("postgresql://", "postgresql+asyncpg://", 1) if _raw_url.startswith("postgresql://") else _raw_url
 
 # Create async engine
 engine = create_async_engine(
