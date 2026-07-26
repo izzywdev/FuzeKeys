@@ -151,25 +151,37 @@ def verify_handle(
 
 
 def _narrow_scope(current: Optional[dict], incoming: dict) -> dict:
-    """Intersect two scope dicts (attenuation = intersection, never union)."""
+    """Attenuate a scope by an appended ``scope <=`` caveat: SUBSET INTERSECTION only.
+
+    An attenuating caveat may only NARROW — never add a key or a value (this is the
+    "caveats can only NARROW" invariant at the top of this module). Concretely, the
+    result is a subset of ``current``:
+      - the FIRST caveat (``current is None``) establishes the authoritative ceiling
+        (the grant's own scope) verbatim;
+      - a key present ONLY in the appended caveat is DROPPED (never injected) — this
+        is the privilege-escalation the adversarial tests exercise;
+      - a key present in ``current`` but omitted by the caveat stays constrained to
+        its current (narrower-or-equal) value;
+      - list values are INTERSECTED (keep only members already present);
+      - a scalar the caveat tries to CHANGE is ignored — the current value stands,
+        so an attenuation can never swap a capability for a different one.
+    """
     if current is None:
+        # First scope caveat = the grant's authoritative ceiling, taken verbatim.
         return dict(incoming)
     narrowed = {}
     for key, cur_val in current.items():
         if key not in incoming:
-            # a key dropped from the incoming ceiling stays constrained
+            # caveat omits this key -> it cannot widen it; keep the current value.
             narrowed[key] = cur_val
             continue
         inc_val = incoming[key]
         if isinstance(cur_val, list) and isinstance(inc_val, list):
+            # intersection: only members already authorized survive.
             narrowed[key] = [x for x in cur_val if x in inc_val]
         else:
-            narrowed[key] = inc_val if inc_val == cur_val else _INCOMPATIBLE
-    # keys only present in the incoming ceiling further constrain
-    for key, inc_val in incoming.items():
-        if key not in narrowed:
-            narrowed[key] = inc_val
+            # a scalar can only stay equal; any attempted change is ignored.
+            narrowed[key] = cur_val
+    # NOTE: keys present ONLY in ``incoming`` are intentionally NOT added — adding
+    # them was the scope-widening defect. Attenuation can never introduce a key.
     return narrowed
-
-
-_INCOMPATIBLE = object()

@@ -82,6 +82,34 @@ class RedeemResult:
     grant_id: str
 
 
+def _clamp_scope_to_grant(effective: dict, authoritative: dict) -> dict:
+    """Return the subset of ``effective`` that is within the grant's ``authoritative``
+    scope — the released scope can never EXCEED what the grantor authorized.
+
+    Iterating the authoritative ceiling guarantees the result is a subset of it:
+      - a key only in ``effective`` (holder-injected) is dropped — it is not in the
+        ceiling, so it can never be released;
+      - a key the holder narrowed away (absent from ``effective``) stays dropped;
+      - list values are intersected with the ceiling (⊆ authoritative);
+      - a scalar the holder tried to change is clamped back to the grant's value.
+    This is the deterministic guard behind macaroon attenuation (defense in depth).
+    """
+    clamped: dict = {}
+    for key, auth_val in authoritative.items():
+        if key not in effective:
+            # holder narrowed by dropping the key -> honour the narrowing.
+            continue
+        eff_val = effective[key]
+        if isinstance(auth_val, list) and isinstance(eff_val, list):
+            clamped[key] = [x for x in auth_val if x in eff_val]
+        elif eff_val == auth_val:
+            clamped[key] = auth_val
+        else:
+            # holder tried to change a scalar -> clamp to the grant's own value.
+            clamped[key] = auth_val
+    return clamped
+
+
 def _sha256_hex(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
@@ -243,7 +271,13 @@ class BrokerService:
         # Effective scope honours macaroon attenuation: an A->B->C hop that added a
         # narrowing `scope <=` caveat gets the INTERSECTED (narrowed) scope, never
         # the original grant's wider scope.
-        scope = bounds.scope if bounds.scope is not None else json.loads(row.scope or "{}")
+        authoritative_scope = json.loads(row.scope or "{}")
+        effective_scope = bounds.scope if bounds.scope is not None else authoritative_scope
+        # DEFENSE IN DEPTH (privilege-escalation guard): regardless of what caveats
+        # were appended, clamp the released scope to a SUBSET of the grantor's
+        # original scope. A holder can never redeem more than was granted, even if
+        # macaroon-layer attenuation were bypassed. Applied to BOTH release paths.
+        scope = _clamp_scope_to_grant(effective_scope, authoritative_scope)
 
         # 7) Release. NEVER the root: either a derived secret or an operation token.
         if row.secret_ref:
