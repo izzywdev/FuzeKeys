@@ -231,6 +231,17 @@ def test_macaroon_attenuation_narrows_and_cannot_widen(service, db):
         )
 
 
+def test_redeem_attenuated_handle_uses_narrowed_scope(service):
+    # B grants A a 2-repo scope; A (or an intermediary) attenuates to 1 repo before
+    # redeeming. The released credential must carry the NARROWED scope.
+    g = _grant(service, scope={"repos": ["FuzeAgent", "FuzeBI"], "action": "read"})
+    narrowed = macaroons.attenuate(
+        g.handle, caveat='scope <= {"action":"read","repos":["FuzeAgent"]}'
+    )
+    res = service.redeem(ctx=_ctx(AGENT_A), handle=narrowed)
+    assert res.scope["repos"] == ["FuzeAgent"]
+
+
 def test_tampered_handle_fails(service, db):
     g = _grant(service)
     row = db.query(Grant).filter(Grant.grant_id == g.grant_id).one()

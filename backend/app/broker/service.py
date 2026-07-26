@@ -214,10 +214,10 @@ class BrokerService:
             self.db.commit()
             raise BrokerDenied("macaroon verification failed")
 
-        # 4) Defense-in-depth DB checks (independent of the caveats).
-        if _sha256_hex(handle) != row.handle_fingerprint and bounds.single_use is None:
-            # single_use is None only when no caveat present -> tampered handle.
-            self._deny(grant_id, caller.principal, "handle fingerprint mismatch")
+        # 4) Defense-in-depth DB checks (independent of the caveats). NB: we do NOT
+        #    gate on handle_fingerprint here — a legitimately ATTENUATED handle has
+        #    a different serialization; the macaroon signature (verified above) is
+        #    the integrity guarantee. The fingerprint column is for lookup/audit.
         if row.redeemer_identity != caller.principal:
             self._deny(grant_id, caller.principal, "redeemer mismatch")
         if row.revoked_at is not None:
@@ -240,7 +240,10 @@ class BrokerService:
         if row.sensitivity == "high":
             self._enforce_approval(row, caller.principal)
 
-        scope = json.loads(row.scope or "{}")
+        # Effective scope honours macaroon attenuation: an A->B->C hop that added a
+        # narrowing `scope <=` caveat gets the INTERSECTED (narrowed) scope, never
+        # the original grant's wider scope.
+        scope = bounds.scope if bounds.scope is not None else json.loads(row.scope or "{}")
 
         # 7) Release. NEVER the root: either a derived secret or an operation token.
         if row.secret_ref:
