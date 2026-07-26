@@ -134,8 +134,13 @@ def verify_handle(
     m = Macaroon.deserialize(handle)
     v = Verifier()
     v.satisfy_general(satisfy)
-    # Raises MacaroonInvalidSignatureException / returns False on failure.
-    ok = v.verify(m, root_key)
+    # pymacaroons raises MacaroonInvalidSignatureException / MacaroonUnmetCaveat...
+    # on any failure (bad sig, unsatisfiable caveat). Normalize ALL of these into
+    # a single ValueError so the broker can map it to a non-disclosing denial.
+    try:
+        ok = v.verify(m, root_key)
+    except Exception as exc:  # noqa: BLE001 - intentional: collapse to one signal
+        raise ValueError(f"macaroon verification failed: {type(exc).__name__}")
     if not ok:
         raise ValueError("macaroon verification failed")
     if bounds.grant != grant_id:
