@@ -12,6 +12,7 @@ from .organization import Organization, OrganizationMember
 from .vault_assets import IdentityCard, ApiCredential
 from .agent import Agent, AgentScope
 from .approval import ApprovalRequest, AuditLog
+from .grant import Grant
 
 __all__ = [
     "User",
@@ -30,4 +31,5 @@ __all__ = [
     "AgentScope",
     "ApprovalRequest",
     "AuditLog",
+    "Grant",
 ] 
