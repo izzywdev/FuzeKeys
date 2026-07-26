@@ -11,6 +11,8 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from app.database import Base
 from app.models import user, identity, account, signup_script, api_key
+# Ensure every table is registered on Base.metadata for autogenerate/offline runs.
+import app.models  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

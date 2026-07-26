@@ -25,6 +25,13 @@
     "requireSignatures": true,
     "deployOnPush": false
   },
+  "a2a": {
+    "enabled": false,
+    "servingRoles": ["keys-broker"],
+    "entryRole": "keys-broker",
+    "external": false,
+    "_note": "Secret-broker serving role scaffold. enabled:false until a2a-maintainer validates card projection against the frozen contracts/a2a/v1 and the tenant is registered in the shared A2A server. The broker CORE (backend/app/broker) is deterministic and usable now via MCP tools + REST; this A2A block is the policy-mediated/human-gated surface."
+  },
   "providesTo": [
     "FuzeAgent",
     "FuzeBI",
