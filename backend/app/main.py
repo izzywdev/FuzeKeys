@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from app.routers import auth, identities, accounts, automation, chat, sms, infrastructure, llm_scraper, credentials, google_integration, site_integrations
+from app.routers import broker as broker_router
 # Temporarily use mock sites router
 # from app.routers import sites
 from app.utils.logging import setup_logging
@@ -469,6 +470,7 @@ app.include_router(llm_scraper.router, tags=["LLM Scraper"])
 app.include_router(credentials.router, tags=["Credentials"])
 app.include_router(google_integration.router, tags=["Google Integration"])
 app.include_router(site_integrations.router, tags=["Site Integrations"])
+app.include_router(broker_router.router, tags=["Secret Broker"])
 app.include_router(sites_router, tags=["Sites Management"])
 
 
