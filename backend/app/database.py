@@ -12,7 +12,12 @@ from pathlib import Path
 
 # Async engine requires asyncpg driver. Prefer DATABASE_URL_ASYNC; fall back to
 # DATABASE_URL (normalising the scheme if needed) for local-dev compatibility.
-_raw_url = (
+# Strip BOM (﻿) that may be embedded by editors or Windows clipboard when
+# secrets were stored in GitHub Secrets.
+def _clean_url(url: str) -> str:
+    return url.replace("﻿", "")
+
+_raw_url = _clean_url(
     os.getenv("DATABASE_URL_ASYNC")
     or os.getenv("DATABASE_URL", "postgresql+asyncpg://fuzekeys_user:fuzekeys_password@localhost:5432/fuzekeys")
 )

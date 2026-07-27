@@ -43,6 +43,9 @@ def get_url():
     # Prefer DATABASE_URL_SYNC if set explicitly; fall back to DATABASE_URL.
     url = os.getenv("DATABASE_URL_SYNC") or os.getenv("DATABASE_URL")
     if url:
+        # Strip BOM (U+FEFF) that may be embedded when secrets are copy-pasted
+        # from Windows editors or stored via GitHub Secrets with BOM encoding.
+        url = url.replace("﻿", "")
         # Strip the asyncpg driver variant so Alembic uses psycopg2.
         url = url.replace("postgresql+asyncpg://", "postgresql://")
         return url
