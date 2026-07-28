@@ -17,6 +17,13 @@ export default defineConfig({
       },
     }),
   ],
+  // Shim CRA-style env vars so existing source files don't need changing.
+  // VITE_API_URL is passed as a Docker build-arg; falls back to the prod URL.
+  define: {
+    'process.env.REACT_APP_API_URL': JSON.stringify(
+      process.env.VITE_API_URL ?? 'https://api.keys.prod.fuzefront.com'
+    ),
+  },
   base: '/apps/fuzekeys/',
   server: {
     host: '0.0.0.0',
