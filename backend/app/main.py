@@ -453,9 +453,10 @@ app.add_middleware(
 )
 
 # Add trusted host middleware for security
+_allowed_hosts = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,*.localhost").split(",")
 app.add_middleware(
-    TrustedHostMiddleware, 
-    allowed_hosts=["localhost", "127.0.0.1", "*.localhost"]
+    TrustedHostMiddleware,
+    allowed_hosts=[h.strip() for h in _allowed_hosts],
 )
 
 # Include routers

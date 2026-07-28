@@ -24,6 +24,7 @@ data:
   OPENAI_MODEL: {{ .Values.config.openaiModel | quote }}
   BROWSER_HEADLESS: {{ .Values.config.browserHeadless | quote }}
   REACT_APP_API_URL: {{ .Values.config.apiBaseUrl | quote }}
+  ALLOWED_HOSTS: {{ .Values.config.allowedHosts | default "localhost,127.0.0.1,*.localhost" | quote }}
   PYTHONPATH: "/app"
 {{- if .Values.vault.enabled }}
 ---
