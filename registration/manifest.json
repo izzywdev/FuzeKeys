@@ -1,0 +1,21 @@
+{
+  "manifestVersion": "1",
+  "slug": "fuzekeys",
+  "name": "FuzeKeys",
+  "menuLabel": "Keys",
+  "description": "Identity and credential vault — managed digital identities, per-site accounts, encrypted credentials, and automated signup workflows.",
+  "icon": { "kind": "emoji", "value": "🔑" },
+  "mode": "portal",
+  "builtin": false,
+  "integration": {
+    "type": "module-federation",
+    "remoteEntry": "https://keys.prod.fuzefront.com/apps/fuzekeys/remoteEntry.js",
+    "scope": "fuzeKeysApp",
+    "module": "./FuzeKeysApp"
+  },
+  "nav": { "section": "platform", "order": 10 },
+  "chrome": { "menu": "host", "topbar": "host" },
+  "routing": { "path": "/app/fuzekeys" },
+  "visibility": "organization",
+  "roles": []
+}
