@@ -6,6 +6,7 @@
   "description": "Identity and credential vault — managed digital identities, per-site accounts, encrypted credentials, and automated signup workflows.",
   "icon": { "kind": "emoji", "value": "🔑" },
   "mode": "portal",
+  "modes": ["portal", "standalone"],
   "builtin": false,
   "integration": {
     "type": "module-federation",
@@ -15,7 +16,7 @@
   },
   "nav": { "section": "platform", "order": 10 },
   "chrome": { "menu": "host", "topbar": "host" },
-  "routing": { "path": "/app/fuzekeys" },
+  "routing": { "path": "/app/fuzekeys", "host": "fuzekeys.fuzefront.com" },
   "visibility": "organization",
   "roles": []
 }
