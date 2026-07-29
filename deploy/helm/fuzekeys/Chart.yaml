@@ -9,10 +9,10 @@ description: |
   are provided out-of-cluster by the shared FuzeInfra stack and referenced via
   in-cluster Service DNS.
 type: application
-version: 0.1.8
+version: 0.1.9
 # appVersion tracks the platform image tag (image.tag defaults to this). The
 # release/tag-bump mechanism bumps this + the CI build matrix tags images with it.
-appVersion: "0.1.7"
+appVersion: "0.1.8"
 keywords:
   - fuzekeys
   - secrets
