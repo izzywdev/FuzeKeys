@@ -76,6 +76,19 @@ config:
   # for the pre-built image; the real value must be baked at image build.
   apiBaseUrl: "https://api.keys.prod.fuzefront.com"
 
+  # FuzeFront Security API — the single source of AuthN and AuthZ for FuzeKeys.
+  #
+  # This is FuzeFront's own in-cluster service. It is legitimately platform-side
+  # config: FuzeKeys must know where FuzeFront is, and nothing more. It must
+  # NEVER be pointed at an identity provider or a policy-decision point
+  # directly — that would rebuild exactly the coupling this replaced.
+  fuzefrontSecurityBaseUrl: "http://fuzefront-backend.fuzefront.svc.cluster.local:3001"
+  fuzefrontSecurityTimeoutSeconds: 5
+  # Optional, single-tenant deployments only. Unset means tenant-scoped
+  # authorization fails closed when a session carries no tenant — the behaviour
+  # the security contract requires. Do not set it "to make things work".
+  fuzefrontDefaultTenant: ""
+
 # -----------------------------------------------------------------------------
 # Secrets — FUZEKEYS-OWNED credentials (NOT FuzeInfra's).
 #

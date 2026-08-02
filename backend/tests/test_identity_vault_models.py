@@ -28,8 +28,8 @@ def session():
 
 
 def _make_user(session, email="john@acme.test", username="john"):
-    user = User(email=email, username=username, hashed_password="x",
-                master_key_hash="y")
+    user = User(email=email, username=username,
+                fuzefront_user_id=f"ff-{username}", master_key_hash="y")
     session.add(user)
     session.commit()
     return user

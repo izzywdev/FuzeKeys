@@ -1,11 +1,13 @@
 # Fuze appsec/authz seed rules for gate-authz. High-signal BOLA/IDOR heuristics;
+# Messages are provider-neutral on purpose: FuzeKeys knows only the FuzeFront
+# Security API, never which identity provider or policy engine sits behind it.
 # appsec-reviewer adjudicates, security ratchets to ERROR/required per repo once tuned.
 # The gate-authz job also runs registry packs (p/owasp-top-ten, p/secrets).
 rules:
   - id: fuze-bola-object-by-id-no-ownership
     languages: [javascript, typescript]
     severity: WARNING
-    message: "Resource loaded by client-supplied id. Confirm an ownership/permission check (permit.check / requireOwnership) gates this BEFORE it is returned or mutated (BOLA/IDOR - governance/architecture-guidelines.md section 2)."
+    message: "Resource loaded by client-supplied id. Confirm an ownership/permission check gates this BEFORE it is returned or mutated — the authorization decision comes from FuzeFront (POST /v1/security/authz/check, e.g. app.security.require_permission), never from a policy engine wired up here (BOLA/IDOR - governance/architecture-guidelines.md section 2)."
     pattern-either:
       - pattern: "$M.findById(req.params.$X)"
       - pattern: "$M.findByPk(req.params.$X)"
@@ -24,7 +26,7 @@ rules:
   - id: fuze-auth-self-minted-user-token
     languages: [javascript, typescript, python]
     severity: WARNING
-    message: "Minting an auth/session token locally? AuthN is provided by FuzeFront (Authentik OIDC SSO) — products VERIFY FuzeFront-issued tokens, they do not issue their own user tokens. If this signs a user/session JWT, replace it with FuzeFront token verification (@fuzefront/auth). Service-to-service tokens are exempt. See governance/architecture-guidelines.md section 1 (auth via FuzeFront)."
+    message: "Minting an auth/session token locally? AuthN is provided by the FuzeFront Security API — products VERIFY FuzeFront-issued sessions, they do not issue their own user tokens. If this signs a user/session JWT, replace it with a GET /v1/security/session call (app.security.require_identity). Service-to-service and RFC 8693 broker tokens are exempt. See governance/architecture-guidelines.md section 1 (auth via FuzeFront)."
     pattern-either:
       - pattern: "jwt.sign(...)"
       - pattern: "jsonwebtoken.sign(...)"
@@ -34,7 +36,7 @@ rules:
   - id: fuze-auth-local-password-store
     languages: [javascript, typescript, python]
     severity: WARNING
-    message: "Local password authentication detected. AuthN is FuzeFront's (Authentik OIDC) — products do not store or verify user passwords. Remove local login/password handling and verify FuzeFront-issued identity tokens instead. See governance/architecture-guidelines.md section 1 (auth via FuzeFront)."
+    message: "Local password authentication detected. AuthN belongs to the FuzeFront Security API — products do not store or verify user passwords. Remove local login/password handling and resolve the caller via GET /v1/security/session instead. NOTE: the FuzeKeys vault master key is NOT a password — it is a domain secret that decrypts the vault and is verified in app/utils/encryption.py. See governance/architecture-guidelines.md section 1 (auth via FuzeFront)."
     pattern-either:
       - pattern: "bcrypt.compare(...)"
       - pattern: "bcrypt.hash(...)"

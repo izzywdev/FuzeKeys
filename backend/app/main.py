@@ -475,7 +475,15 @@ app.include_router(broker_router.router, tags=["Secret Broker"])
 app.include_router(sites_router, tags=["Sites Management"])
 
 
-@app.get("/", 
+@app.on_event("shutdown")
+async def _close_security_client():
+    """Release the pooled connection to the FuzeFront Security API."""
+    from app.security import close_security_client
+
+    await close_security_client()
+
+
+@app.get("/",
          summary="API Health Check",
          description="Root endpoint that returns API status and basic information",
          response_description="API status and version information")

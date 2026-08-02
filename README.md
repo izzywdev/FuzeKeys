@@ -172,7 +172,12 @@ PORT=8002
 
 - **End-to-End Encryption**: All sensitive data is encrypted before storage
 - **Master Key Control**: Users control their own encryption keys
-- **Secure Authentication**: JWT-based authentication with bcrypt password hashing
+- **Delegated Authentication**: sign-in, sign-up, MFA and session revocation are
+  handled by the FuzeFront Security API (`/v1/security/*`). FuzeKeys stores no
+  user password and mints no session token of its own.
+- **Delegated Authorization**: every decision comes from
+  `POST /v1/security/authz/check` using the bare resource/action keys in
+  `registration/policy.json`. Fail-closed on any error.
 - **SQL Injection Protection**: Parameterized queries and ORM protection
 - **CORS Configuration**: Properly configured cross-origin resource sharing
 

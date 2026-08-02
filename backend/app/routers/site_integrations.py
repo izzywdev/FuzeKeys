@@ -3,6 +3,15 @@ Site integrations router for FuzeKeys.
 
 This router provides API endpoints for managing automated site integrations
 including signup, signin, and API key creation for various platforms.
+
+NOTE ON `permit.io` IN THIS FILE — it is a TARGET SITE, not FuzeKeys' auth.
+FuzeKeys is a credential-vault product whose job is driving browser automation
+to create and manage accounts on third-party SaaS sites; `permit.io` is one such
+site, exactly like `google.com` is in `app/integrations/google/`. These
+references are FuzeKeys' DOMAIN (which sites it can automate) and are unrelated
+to how FuzeKeys authenticates its own users — that is delegated wholly to the
+FuzeFront Security API (see `app.security`). Removing them would delete a
+product capability, not a coupling.
 """
 
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
@@ -15,10 +24,18 @@ from app.integrations.site.permit_io import PermitIOIntegration
 from app.integrations.site.permit_io.models import PermitIOCredentials, PermitIOResult
 from app.models.user import User
 from app.routers.auth import get_current_user
+from app.security import require_permission
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/integrations", tags=["Site Integrations"])
+
+# Driving a real signup/signin against a third-party site is `SignupScript:run`
+# in `registration/policy.json`; minting an API key there is `ApiKey:create`.
+# Both decisions come from FuzeFront (`POST /v1/security/authz/check`),
+# fail-closed, and sit on top of the existing `get_current_user` gate.
+_CAN_RUN_SCRIPT = Depends(require_permission("SignupScript", "run"))
+_CAN_CREATE_APIKEY = Depends(require_permission("ApiKey", "create"))
 
 # Request/Response Models
 class SignupRequest(BaseModel):
@@ -80,7 +97,7 @@ async def get_site_capabilities_endpoint(site_name: str):
         raise HTTPException(status_code=404, detail=f"Site '{site_name}' not found")
 
 # Site Integration Operations
-@router.post("/signup", response_model=IntegrationResponse)
+@router.post("/signup", response_model=IntegrationResponse, dependencies=[_CAN_RUN_SCRIPT])
 async def create_account(
     request: SignupRequest,
     background_tasks: BackgroundTasks,
@@ -110,7 +127,7 @@ async def create_account(
         logger.error(f"Signup failed for {request.site}: {str(e)}")
         raise HTTPException(status_code=500, detail="Account creation failed")
 
-@router.post("/signin", response_model=IntegrationResponse)
+@router.post("/signin", response_model=IntegrationResponse, dependencies=[_CAN_RUN_SCRIPT])
 async def authenticate_account(
     request: SigninRequest,
     current_user: User = Depends(get_current_user),
@@ -139,7 +156,7 @@ async def authenticate_account(
         logger.error(f"Signin failed for {request.site}: {str(e)}")
         raise HTTPException(status_code=500, detail="Authentication failed")
 
-@router.post("/apikey", response_model=IntegrationResponse)
+@router.post("/apikey", response_model=IntegrationResponse, dependencies=[_CAN_CREATE_APIKEY])
 async def create_api_key(
     request: ApiKeyRequest,
     current_user: User = Depends(get_current_user),

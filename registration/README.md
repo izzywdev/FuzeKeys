@@ -5,7 +5,7 @@ FuzeKeys self-registers with the FuzeFront portal at deploy time.
 | File | Purpose |
 |---|---|
 | `manifest.json` | App identity, Module-Federation contract, `nav` placement |
-| `policy.json` | FuzeKeys' own Permit resources/roles, bare keys |
+| `policy.json` | FuzeKeys' own resources/roles, BARE keys — no engine-specific identifiers |
 | `register.sh` | Idempotent registration script from `@fuzefront/onboarding-kit` |
 
 ## Module Federation contract
@@ -33,6 +33,12 @@ consume (its `providesTo` lists 18 repos), not a step in the plan → build → 
 flow.
 
 ## Policy — reading a secret is not a read
+
+These keys are consumed by FuzeFront's authorization API
+(`POST /v1/security/authz/check`, `resource: { type }` + `action`). They are
+deliberately BARE — FuzeKeys names a resource and an action and nothing else.
+Which policy engine evaluates them is FuzeFront's private implementation detail
+and never appears in this repo.
 
 Derived from `backend/app/models/`: `Identity`, `Account`, `VaultAsset` (the
 `identity_cards` + `api_credentials` tables), `Site`, `SignupScript`, `ApiKey`.

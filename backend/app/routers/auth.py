@@ -1,94 +1,69 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from datetime import datetime, timedelta
+"""Session + vault-unlock routes.
+
+FuzeKeys does NOT authenticate users. Authentication — password login, social
+login, signup, MFA, password reset, session revocation — is owned end-to-end by
+the FuzeFront Security API, which the frontend calls directly on the
+same-origin API base. This router therefore no longer exposes `/login` or
+`/register`; there is nothing left here to log in *to*.
+
+What remains is the seam, plus the one thing that is genuinely FuzeKeys':
+
+  GET  /api/v1/auth/me            the caller's identity, resolved via FuzeFront
+  POST /api/v1/auth/logout        delegates to `DELETE /v1/security/session`
+  GET  /api/v1/auth/vault         vault (master-key) status for this user
+  POST /api/v1/auth/vault/setup   set the vault master key the first time
+  POST /api/v1/auth/vault/unlock  unlock the vault for this process
+
+The master key is a DOMAIN secret, not a login factor. Before this migration it
+was smuggled into the login request, which conflated "prove who you are" with
+"decrypt my vault" and made it impossible to delegate authentication without
+also losing the vault. Splitting them PRESERVES the capability — you still
+cannot read a secret without the master key — while letting FuzeFront own
+identity.
+
+`get_current_user` is re-exported from `app.security`, so every router doing
+`from app.routers.auth import get_current_user` keeps working unchanged.
+"""
+
+from datetime import datetime
 from typing import Optional
-import os
-from jose import JWTError, jwt
-from pydantic import BaseModel, EmailStr
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.user import User
+from app.security import (  # noqa: F401  (re-exported for existing routers)
+    Identity,
+    check_permission,
+    get_current_user,
+    get_security_client,
+    require_identity,
+    require_permission,
+)
 from app.utils.encryption import (
-    hash_password, verify_password, generate_master_key_hash, 
-    verify_master_key, set_global_encryption_manager
+    generate_master_key_hash,
+    get_global_encryption_manager,
+    set_global_encryption_manager,
+    verify_master_key,
 )
 from app.utils.logging import get_logger, log_security_event
 
 logger = get_logger(__name__)
 router = APIRouter()
-security = HTTPBearer()
 
-# JWT Configuration
-# SECURITY (MEDIUM-2 / appsec #18): the JWT signing key must come from the
-# environment with NO insecure default. The previous default ("your-secret-key")
-# made tokens forgeable by anyone who knew the public source, which undermines
-# EVERY `get_current_user` object-level check downstream. We fail CLOSED:
-#   - A blank/unset SECRET_KEY leaves the module importable (other routers import
-#     this module at startup) but `_require_secret_key()` raises HTTP 503 at
-#     request time on any token issue/verify, so no token is ever signed or
-#     accepted with an absent/weak key.
-#   - In a non-test environment we additionally reject the known-insecure legacy
-#     placeholder value so it can never be reintroduced via env.
-SECRET_KEY = os.getenv("SECRET_KEY")
-ALGORITHM = os.getenv("ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
-
-# Known-insecure placeholder values that must never be used to sign/verify tokens.
-_INSECURE_SECRET_VALUES = {"your-secret-key", "your-super-secret-key-here-change-this-in-production"}
-
-if not SECRET_KEY or not SECRET_KEY.strip():
-    logger.warning(
-        "SECRET_KEY is not set. JWT issuance/verification will fail closed with "
-        "HTTP 503 until a strong SECRET_KEY is configured. No insecure default is used."
-    )
-elif SECRET_KEY.strip() in _INSECURE_SECRET_VALUES:
-    logger.error(
-        "SECRET_KEY is set to a known-insecure placeholder value. JWT issuance/"
-        "verification will fail closed with HTTP 503 until a strong SECRET_KEY is "
-        "configured."
-    )
+__all__ = [
+    "router",
+    "get_current_user",
+    "require_identity",
+    "require_permission",
+    "check_permission",
+    "Identity",
+]
 
 
-def _require_secret_key() -> str:
-    """Return a usable JWT signing key or fail closed.
-
-    SECURITY: raises HTTPException(503) when SECRET_KEY is missing/blank or is the
-    known-insecure placeholder, so tokens can never be signed or validated with a
-    forgeable key. Every create/verify path routes through here.
-    """
-    key = SECRET_KEY
-    if not key or not key.strip() or key.strip() in _INSECURE_SECRET_VALUES:
-        logger.error("Refusing JWT operation: SECRET_KEY is unset, blank, or insecure.")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Authentication is not configured",
-        )
-    return key.strip()
-
-
-# Pydantic models
-class UserCreate(BaseModel):
-    username: str
-    email: EmailStr
-    password: str
-    master_key: str
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-
-
-class UserLogin(BaseModel):
-    email: EmailStr
-    password: str
-    master_key: str
-
-
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-
-
+# ── Request / response models ────────────────────────────────────────────────
 class UserResponse(BaseModel):
     id: int
     username: str
@@ -97,190 +72,137 @@ class UserResponse(BaseModel):
     last_name: Optional[str]
     is_active: bool
     is_verified: bool
-    created_at: datetime
+    created_at: Optional[datetime]
+    # Whether this user has completed vault setup. Lets the UI prompt for
+    # "set up your vault" instead of failing on the first encrypted read.
+    vault_initialized: bool
 
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
-    """Create JWT access token."""
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, _require_secret_key(), algorithm=ALGORITHM)
-    return encoded_jwt
+class VaultStatus(BaseModel):
+    vault_initialized: bool
+    vault_unlocked: bool
 
 
-async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: AsyncSession = Depends(get_db)
-) -> User:
-    """Get current authenticated user."""
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
+class MasterKeyRequest(BaseModel):
+    master_key: str = Field(..., min_length=8)
+
+
+def _to_user_response(user: User) -> UserResponse:
+    return UserResponse(
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        is_active=user.is_active,
+        is_verified=user.is_verified,
+        created_at=user.created_at,
+        vault_initialized=bool(user.master_key_hash),
     )
-    
-    try:
-        payload = jwt.decode(credentials.credentials, _require_secret_key(), algorithms=[ALGORITHM])
-        user_id: int = payload.get("sub")
-        if user_id is None:
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
-    
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    if user is None:
-        raise credentials_exception
-    
-    return user
 
 
-@router.post("/register", response_model=UserResponse)
-async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
-    """Register a new user."""
-    try:
-        # Check if user already exists
-        result = await db.execute(
-            select(User).where(
-                (User.email == user_data.email) | (User.username == user_data.username)
-            )
-        )
-        existing_user = result.scalar_one_or_none()
-        
-        if existing_user:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="User with this email or username already exists"
-            )
-        
-        # Create new user
-        hashed_password = hash_password(user_data.password)
-        master_key_hash = generate_master_key_hash(user_data.master_key)
-        
-        new_user = User(
-            username=user_data.username,
-            email=user_data.email,
-            hashed_password=hashed_password,
-            master_key_hash=master_key_hash,
-            first_name=user_data.first_name,
-            last_name=user_data.last_name,
-        )
-        
-        db.add(new_user)
-        await db.commit()
-        await db.refresh(new_user)
-        
-        log_security_event("user_registered", user_id=new_user.id, 
-                          details={"email": user_data.email, "username": user_data.username})
-        
-        return UserResponse(
-            id=new_user.id,
-            username=new_user.username,
-            email=new_user.email,
-            first_name=new_user.first_name,
-            last_name=new_user.last_name,
-            is_active=new_user.is_active,
-            is_verified=new_user.is_verified,
-            created_at=new_user.created_at
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error registering user: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
-        )
+def _bearer(request: Request) -> Optional[str]:
+    header = request.headers.get("authorization") or ""
+    if header.lower().startswith("bearer "):
+        return header[7:].strip() or None
+    return None
 
 
-@router.post("/login", response_model=Token)
-async def login(user_data: UserLogin, db: AsyncSession = Depends(get_db)):
-    """Authenticate user and return access token."""
-    try:
-        # Find user by email
-        result = await db.execute(select(User).where(User.email == user_data.email))
-        user = result.scalar_one_or_none()
-        
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect email or password"
-            )
-        
-        # Verify password
-        if not verify_password(user_data.password, user.hashed_password):
-            log_security_event("failed_login_attempt", user_id=user.id, 
-                              details={"reason": "invalid_password"})
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect email or password"
-            )
-        
-        # Verify master key
-        if not verify_master_key(user_data.master_key, user.master_key_hash):
-            log_security_event("failed_login_attempt", user_id=user.id, 
-                              details={"reason": "invalid_master_key"})
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect master key"
-            )
-        
-        # Check if user is active
-        if not user.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Account is deactivated"
-            )
-        
-        # Set up encryption manager for this session
-        set_global_encryption_manager(user_data.master_key)
-        
-        # Update last login
-        user.last_login = datetime.utcnow()
-        await db.commit()
-        
-        # Create access token
-        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-        access_token = create_access_token(
-            data={"sub": str(user.id)}, expires_delta=access_token_expires
-        )
-        
-        log_security_event("successful_login", user_id=user.id)
-        
-        return {"access_token": access_token, "token_type": "bearer"}
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error during login: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
-        )
-
-
+# ── Session ──────────────────────────────────────────────────────────────────
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_info(current_user: User = Depends(get_current_user)):
-    """Get current user information."""
-    return UserResponse(
-        id=current_user.id,
-        username=current_user.username,
-        email=current_user.email,
-        first_name=current_user.first_name,
-        last_name=current_user.last_name,
-        is_active=current_user.is_active,
-        is_verified=current_user.is_verified,
-        created_at=current_user.created_at
+    """The caller, as FuzeKeys sees them.
+
+    The identity itself comes from `GET /v1/security/session`; this adds the
+    FuzeKeys-local projection (the integer id every vault relation points at,
+    plus vault status).
+    """
+    return _to_user_response(current_user)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(request: Request):
+    """Revoke the session via FuzeFront (`DELETE /v1/security/session`).
+
+    Previously a no-op that merely told the client to forget its token, leaving
+    a stolen token valid until expiry. Delegating to FuzeFront makes logout
+    actually revoke.
+    """
+    token = _bearer(request)
+    if token:
+        await get_security_client().delete_session(token)
+    return None
+
+
+# ── Vault (FuzeKeys domain) ──────────────────────────────────────────────────
+@router.get("/vault", response_model=VaultStatus)
+async def vault_status(current_user: User = Depends(get_current_user)):
+    """Whether this user has a vault master key, and whether it is unlocked."""
+    return VaultStatus(
+        vault_initialized=bool(current_user.master_key_hash),
+        vault_unlocked=get_global_encryption_manager() is not None,
     )
 
 
-@router.post("/logout")
-async def logout():
-    """Logout user (client should discard token)."""
-    # In a more sophisticated setup, you might want to blacklist the token
-    return {"message": "Successfully logged out"} 
+@router.post("/vault/setup", response_model=VaultStatus)
+async def vault_setup(
+    body: MasterKeyRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set the vault master key for the first time.
+
+    409 if one already exists — re-keying an existing vault would orphan every
+    ciphertext already stored under the old key, so it is deliberately not a
+    silent overwrite.
+    """
+    if current_user.master_key_hash:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A vault master key already exists for this account",
+        )
+
+    current_user.master_key_hash = generate_master_key_hash(body.master_key)
+    await db.commit()
+
+    set_global_encryption_manager(body.master_key)
+    log_security_event("vault_master_key_set", user_id=current_user.id)
+
+    return VaultStatus(vault_initialized=True, vault_unlocked=True)
+
+
+@router.post("/vault/unlock", response_model=VaultStatus)
+async def vault_unlock(
+    body: MasterKeyRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Unlock the vault with the master key.
+
+    This is the capability that used to ride along on `POST /auth/login`. Its
+    effect is unchanged — a wrong master key still yields no plaintext — but it
+    is now an explicitly authenticated action rather than part of sign-in.
+    """
+    if not current_user.master_key_hash:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No vault master key has been set for this account",
+        )
+
+    if not verify_master_key(body.master_key, current_user.master_key_hash):
+        log_security_event(
+            "failed_vault_unlock",
+            user_id=current_user.id,
+            details={"reason": "invalid_master_key"},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect master key",
+        )
+
+    set_global_encryption_manager(body.master_key)
+    current_user.last_login = datetime.utcnow()
+    await db.commit()
+
+    log_security_event("vault_unlocked", user_id=current_user.id)
+    return VaultStatus(vault_initialized=True, vault_unlocked=True)

@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """
 Standalone seed script: creates the fuzekeys DB tables (via SQLAlchemy create_all)
-and inserts the demo user (demo_user / demo123, sha256-hashed password).
+and inserts the demo user.
+
+The demo user has NO password. FuzeKeys does not authenticate users — the
+FuzeFront Security API does — so the seeded row is a local projection keyed by
+a placeholder FuzeFront subject id, carrying only the vault master key, which
+is FuzeKeys domain state rather than a login credential.
 
 Run from backend/ with:
     DATABASE_URL=postgresql://fuzekeys_user:fuzekeys_dev_password@localhost:5433/fuzekeys \
@@ -52,7 +57,7 @@ from app.models.identity import Identity
 from app.models.account import Account, AccountStage, StageType, StageStatus
 from app.models.signup_script import SignupScript
 from app.models.api_key import ApiKey
-from app.utils.encryption import EncryptionManager
+from app.utils.encryption import EncryptionManager, generate_master_key_hash
 
 
 async def seed():
@@ -65,20 +70,21 @@ async def seed():
         existing = await session.get(User, 1)
         if existing:
             print(f"Demo user already exists: id={existing.id} username={existing.username}")
-            # Verify password hash matches
-            expected_hash = hashlib.sha256("demo123".encode()).hexdigest()
-            if existing.hashed_password == expected_hash:
-                print("Password hash matches demo123 — login will work.")
+            if existing.fuzefront_user_id:
+                print(f"Linked to FuzeFront subject: {existing.fuzefront_user_id}")
             else:
-                print("WARNING: password hash does not match demo123!")
+                print(
+                    "WARNING: no fuzefront_user_id — it will be adopted by email "
+                    "on the first FuzeFront-authenticated request."
+                )
             return
 
         print("Seeding demo user...")
         demo_user = User(
+            fuzefront_user_id="demo-fuzefront-subject",
             email="demo@fuzekeys.local",
             username="demo_user",
-            hashed_password=hashlib.sha256("demo123".encode()).hexdigest(),
-            master_key_hash=hashlib.sha256("masterkey123".encode()).hexdigest(),
+            master_key_hash=generate_master_key_hash("masterkey123"),
             is_active=True,
         )
         session.add(demo_user)
