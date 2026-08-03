@@ -296,3 +296,94 @@ tokenizerRedis:
   resources:
     requests: { cpu: 50m, memory: 64Mi }
     limits: { cpu: 250m, memory: 256Mi }
+
+# -----------------------------------------------------------------------------
+# MCP SSE gateway — FuzeKeys' THIRD pod.
+#
+# Runs the shared @fuzefront/mcp-gateway image (one image, one pod per product),
+# configured with THIS product's OpenAPI document and API base URL. It holds no
+# credential of its own and forwards the caller's Authorization header upstream,
+# so every per-user check the backend makes still applies.
+#
+# Disabled by default: the gateway image must exist in the registry and the
+# backend must be reachable at mcp.upstreamBaseUrl before this is worth
+# scheduling. Enable it in the environment overlay (values-contabo.yaml).
+# -----------------------------------------------------------------------------
+mcp:
+  enabled: false
+  replicas: 1
+  port: 8081
+  # MCP server name reported to clients. Uses the DE-PREFIXED product slug, to
+  # match registration/manifest.json.
+  product: keys
+  image:
+    repository: ghcr.io/izzywdev/fuze-mcp-gateway
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  # Base URL of the FuzeKeys REST API. Empty = derive it from the in-cluster
+  # backend Service (<fullname>-backend:<backend.port>), which is correct for
+  # every normal deployment. The paths in contracts/openapi.yaml are absolute
+  # (/api/v1/...), so this URL carries NO path prefix.
+  upstreamBaseUrl: ""
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 500m, memory: 256Mi }
+
+# -----------------------------------------------------------------------------
+# A2A server — FuzeKeys' FOURTH pod.
+#
+# Runs the pre-built ghcr.io/izzywdev/fuzeagent-a2a image against a single-tenant
+# values document. The keys below mirror FuzeAgent's FROZEN values interface
+# (agent-templates/contracts/a2a/v1/schema/values-interface.schema.json); the
+# deployment-mechanics keys (replicas/resources/gitImage) are chart-internal and
+# are NOT part of that interface.
+#
+# DISABLED BY DEFAULT, and it must stay that way until the blockers documented at
+# the top of templates/a2a.yaml are resolved by their owners:
+#   * the family contract says ONE SHARED A2A server (FuzeAgent deploy/helm/
+#     a2a-shared) with per-product `tenants[]` entries — a dedicated pod per
+#     product is a deliberate divergence the owner must accept;
+#   * agent-templates/roles/keys-broker/role.json has no `description`, so the
+#     card projection fails by design rather than shipping a placeholder;
+#   * auth.oidcIssuerUrl and cardSigning.keySecretRef are cluster facts that
+#     cannot be derived from this repo — they are `required` in the template so
+#     an under-configured enable fails at `helm template`, not at 03:00.
+# -----------------------------------------------------------------------------
+a2a:
+  enabled: false
+  replicas: 1
+  # Routing key clients echo; MUST equal the card's AgentInterface.tenant.
+  tenant: FuzeKeys
+  # Projection source: the repo whose .fuze/manifest.json + agent-templates/roles
+  # the card is derived from, and the git ref it is read at (GitOps).
+  repo: izzywdev/FuzeKeys
+  ref: master
+  protocolVersion: "1.0"
+  image:
+    repository: ghcr.io/izzywdev/fuzeagent-a2a
+    # Immutable tag; never `latest` in prod.
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  service:
+    # MUST be ClusterIP — the external surface is Cloudflare-tunnel-only.
+    port: 8080
+  # REQUIRED to enable. Left null so `helm template` fails loudly rather than
+  # rendering a server that trusts nothing and denies everyone.
+  auth: null
+  #   oidcIssuerUrl: ""    # issuer the callee validates every request against
+  #   audience: ""         # expected `aud`
+  #   callerClaim: sub     # the ONLY trusted caller identity (authz.md §2)
+  # JWS signing key for the Agent Card (the Fuze profile requires a non-empty
+  # signatures[]). SealedSecret-provisioned; the VALUE never appears in git.
+  cardSigning: null
+  #   keySecretRef: { name: fuzekeys-a2a-card-signing, key: jws.key }
+  #   keyId: fuzekeys-a2a-v1
+  provider:
+    name: anthropic
+  # Optional {name,key} ref to a Secret holding the Managed-Agents API key.
+  providerApiKeySecretRef: null
+  # Init-container image used to check the tenant repo out into /repos.
+  gitImage: alpine/git:latest
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: 500m, memory: 512Mi }

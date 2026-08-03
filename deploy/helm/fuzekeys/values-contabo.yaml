@@ -109,3 +109,36 @@ tokenizerRedis:
   enabled: false
   persistence:
     storageClass: local-path
+
+# ---- MCP SSE gateway: ON ---------------------------------------------------
+# FuzeKeys' third pod. Matches the sibling that already deploys correctly
+# (FuzeService helm/fuzeservice/values-contabo.yaml), which enables the same
+# shared image in the same way.
+#
+# ASSUMPTION (flagged): ghcr.io/izzywdev/fuze-mcp-gateway:0.1.0 is expected to be
+# published from FuzeFront packages/mcp-gateway. That package was still in flight
+# at the time this was written and the tag could not be confirmed from here (an
+# anonymous GHCR manifest probe returns 403 for a private package, which is
+# indistinguishable from "does not exist"). If the tag is not there yet, this pod
+# sits in ImagePullBackOff and NOTHING ELSE in the release is affected — flip
+# `enabled: false` until it is published.
+mcp:
+  enabled: true
+  replicas: 1
+  image:
+    repository: ghcr.io/izzywdev/fuze-mcp-gateway
+    tag: "0.1.0"
+    pullPolicy: Always
+  # Empty = derive from the in-cluster backend Service, i.e.
+  # http://fuzekeys-backend:8002. Set explicitly only to override.
+  upstreamBaseUrl: ""
+
+# ---- A2A: OFF --------------------------------------------------------------
+# Deliberately not enabled. See the header of templates/a2a.yaml: the family
+# contract specifies ONE shared A2A server with per-product `tenants[]` entries
+# rather than a pod per product, the keys-broker role has no `description` (so
+# card projection fails by design), and neither the OIDC issuer nor the JWS
+# card-signing key exists for FuzeKeys yet. Enabling this would need decisions
+# that belong to the owner and to a2a-maintainer, not to a chart change.
+a2a:
+  enabled: false
