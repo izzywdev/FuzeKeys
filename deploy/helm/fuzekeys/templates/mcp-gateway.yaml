@@ -1,0 +1,128 @@
+{{- if .Values.mcp.enabled }}
+{{/*
+FuzeKeys MCP SSE gateway — the product's THIRD pod (backend, frontend, MCP, A2A).
+
+It runs the shared @fuzefront/mcp-gateway image, which contains no FuzeKeys logic
+whatsoever: everything that makes this pod "the FuzeKeys gateway" is the OpenAPI
+document and the upstream URL below. Every other product deploys the SAME image
+with its own spec.
+
+The spec and the mutation overrides are mounted from a ConfigMap rendered out of
+deploy/helm/fuzekeys/files/, which are COPIES of contracts/openapi.yaml and
+mcp/tools.overrides.yaml. Helm cannot read files outside the chart directory, so
+the copies are unavoidable — `scripts/sync-mcp-spec.sh --check` exits non-zero if
+they have drifted.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fuzekeys.fullname" . }}-mcp-spec
+  labels:
+    {{- include "fuzekeys.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp-gateway
+data:
+  openapi.yaml: |-
+{{ .Files.Get "files/openapi.yaml" | indent 4 }}
+  tools.overrides.yaml: |-
+{{ .Files.Get "files/tools.overrides.yaml" | indent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fuzekeys.fullname" . }}-mcp
+  labels:
+    {{- include "fuzekeys.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp-gateway
+spec:
+  replicas: {{ .Values.mcp.replicas }}
+  selector:
+    matchLabels:
+      {{- include "fuzekeys.selectorLabels" (dict "ctx" . "component" "mcp-gateway") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fuzekeys.labels" . | nindent 8 }}
+        app.kubernetes.io/component: mcp-gateway
+      annotations:
+        # Roll the pod when the spec or the overrides change. Without this a
+        # contract change would leave a stale tool surface serving indefinitely —
+        # including a stale mutation classification, which is the dangerous half.
+        checksum/spec: {{ .Files.Get "files/openapi.yaml" | sha256sum }}
+        checksum/overrides: {{ .Files.Get "files/tools.overrides.yaml" | sha256sum }}
+    spec:
+      {{- include "fuzekeys.nodeSelector" . | nindent 6 }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: mcp-gateway
+          image: "{{ .Values.mcp.image.repository }}:{{ .Values.mcp.image.tag }}"
+          imagePullPolicy: {{ .Values.mcp.image.pullPolicy | default .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.mcp.port }}
+          env:
+            - name: MCP_PRODUCT
+              value: {{ .Values.mcp.product | quote }}
+            # In-cluster base URL of the FuzeKeys REST API. Every upstream call
+            # goes here carrying the CALLER'S bearer token.
+            - name: MCP_UPSTREAM_BASE_URL
+              value: {{ .Values.mcp.upstreamBaseUrl | default (printf "http://%s-backend:%v" (include "fuzekeys.fullname" .) .Values.backend.port) | quote }}
+            - name: MCP_OPENAPI_SPEC
+              value: /spec/openapi.yaml
+            - name: MCP_TOOL_OVERRIDES
+              value: /spec/tools.overrides.yaml
+            - name: PORT
+              value: {{ .Values.mcp.port | quote }}
+          # DELIBERATELY no credential env var. The gateway forwards the caller's
+          # identity and holds none of its own; it refuses to start if a service
+          # token is present. On a credential vault that property is the whole
+          # point — a shared token would make every request look like the gateway
+          # instead of like the user, collapsing per-user authorization.
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.mcp.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: spec
+              mountPath: /spec
+              readOnly: true
+      volumes:
+        - name: spec
+          configMap:
+            name: {{ include "fuzekeys.fullname" . }}-mcp-spec
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "fuzekeys.fullname" . }}-mcp
+  labels:
+    {{- include "fuzekeys.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp-gateway
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "fuzekeys.selectorLabels" (dict "ctx" . "component" "mcp-gateway") | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.mcp.port }}
+      targetPort: http
+{{- end }}

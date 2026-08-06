@@ -1,7 +1,7 @@
 {
   "manifestVersion": "1",
-  "slug": "fuzekeys",
-  "name": "FuzeKeys",
+  "slug": "keys",
+  "name": "Keys",
   "menuLabel": "Keys",
   "description": "Identity and credential vault — managed digital identities, per-site accounts, encrypted credentials, and automated signup workflows.",
   "icon": { "kind": "emoji", "value": "🔑" },
