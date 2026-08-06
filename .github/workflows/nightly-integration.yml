@@ -104,7 +104,7 @@ jobs:
           gh issue create --repo "$GITHUB_REPOSITORY" --label integration --title "$title" --body "$(cat <<'EOF'
           @claude — this repo has no nightly integration suite / bounded local-up yet, so **Nightly Integration** is a no-op here. Please build it (contract-first), per the FuzeSDLC standard, landing a **DRAFT PR** (do not merge):
 
-          - **devops-engineer** — vendor FuzeInfra as a submodule; wire `docker-compose.consumer-test.yml` + `versions.env` + the external-service mock matrix (MailHog / Twilio-mock / Permit-offline / Stripe-test / Prism-MSW / LocalStack); enforce no prod egress.
+          - **devops-engineer** — vendor FuzeInfra as a submodule; wire `docker-compose.consumer-test.yml` + `versions.env` + the external-service mock matrix (MailHog / Twilio-mock / FuzeFront-security-stub / Stripe-test / Prism-MSW / LocalStack); enforce no prod egress.
           - **test-engineer** — author the integration/contract suite against that bounded stack; expose it as `test:integration` (npm) or `pytest -m integration`, or declare `integrationTest` in `.fuze/manifest.json`.
           - **local-env-verifier** — verify the boundary (stack stands up, mocks are hit, no real external host contacted).
 

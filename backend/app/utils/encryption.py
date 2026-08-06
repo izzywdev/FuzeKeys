@@ -102,30 +102,41 @@ class EncryptionManager:
             return None
 
 
-def hash_password(password: str) -> str:
-    """Hash a password using bcrypt."""
-    return pwd_context.hash(password)
+def _hash_secret(secret: str) -> str:
+    """Hash a FuzeKeys-domain secret (the vault master key) using bcrypt.
+
+    PRIVATE on purpose. There used to be public `hash_password` /
+    `verify_password` helpers here and they were used to authenticate users
+    locally. User authentication now belongs to the FuzeFront Security API —
+    FuzeKeys stores no user password at all — so exposing a general-purpose
+    password hasher would only invite that mistake back in. The one remaining
+    caller is the vault master-key verifier below, which is domain state, not a
+    login credential.
+    """
+    return pwd_context.hash(secret)
 
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against its hash."""
-    return pwd_context.verify(plain_password, hashed_password)
+def _verify_secret(plain_secret: str, stored_hash: str) -> bool:
+    """Verify a FuzeKeys-domain secret against its stored hash. PRIVATE."""
+    return pwd_context.verify(plain_secret, stored_hash)
 
 
 def generate_master_key_hash(master_key: str, salt: Optional[str] = None) -> str:
-    """Generate a hash of the master key for storage."""
+    """Generate a hash of the vault master key for storage."""
     if salt is None:
         salt = os.getenv("MASTER_KEY_SALT", "default_salt")
-    
-    return hash_password(master_key + salt)
+
+    return _hash_secret(master_key + salt)
 
 
 def verify_master_key(master_key: str, stored_hash: str, salt: Optional[str] = None) -> bool:
-    """Verify a master key against its stored hash."""
+    """Verify a vault master key against its stored hash. Fail-closed."""
     if salt is None:
         salt = os.getenv("MASTER_KEY_SALT", "default_salt")
-    
-    return verify_password(master_key + salt, stored_hash)
+    if not stored_hash:
+        return False
+
+    return _verify_secret(master_key + salt, stored_hash)
 
 
 def create_encryption_manager(master_key: str) -> EncryptionManager:

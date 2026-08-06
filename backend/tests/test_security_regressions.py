@@ -218,11 +218,11 @@ class TestIdorOwnershipScoping:
         """Create two users, each with one identity owning one account."""
         user_a = User(
             email="<EMAIL_a>", username="user_a",
-            hashed_password="h", master_key_hash="m",
+            fuzefront_user_id="ff-user-a", master_key_hash="m",
         )
         user_b = User(
             email="<EMAIL_b>", username="user_b",
-            hashed_password="h", master_key_hash="m",
+            fuzefront_user_id="ff-user-b", master_key_hash="m",
         )
         session.add_all([user_a, user_b])
         session.flush()

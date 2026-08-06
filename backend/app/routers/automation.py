@@ -6,11 +6,17 @@ from typing import List, Optional
 from app.database import get_db
 from app.models.user import User
 from app.routers.auth import get_current_user
+from app.security import require_permission
 from app.automation.web_scraper import analyze_website_signup
 from app.utils.logging import get_logger, log_automation_event
 
 logger = get_logger(__name__)
 router = APIRouter()
+
+# Driving a real signup against a third-party site is `SignupScript:run` in
+# `registration/policy.json` — deliberately separate from write permissions.
+# The decision is FuzeFront's (`POST /v1/security/authz/check`), fail-closed.
+_CAN_RUN_SCRIPT = Depends(require_permission("SignupScript", "run"))
 
 
 class AnalyzeWebsiteRequest(BaseModel):
@@ -23,7 +29,7 @@ class AnalysisResponse(BaseModel):
     details: Optional[dict] = None
 
 
-@router.post("/analyze", response_model=AnalysisResponse)
+@router.post("/analyze", response_model=AnalysisResponse, dependencies=[_CAN_RUN_SCRIPT])
 async def analyze_website(
     request: AnalyzeWebsiteRequest,
     current_user: User = Depends(get_current_user),

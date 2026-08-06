@@ -9,11 +9,24 @@ from app.database import get_db
 from app.models.user import User
 from app.models.identity import Identity
 from app.routers.auth import get_current_user
+from app.security import require_permission
 from app.utils.encryption import encrypt_field, decrypt_field, decrypt_json_field
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter()
+
+# Authorization is decided by FuzeFront (`POST /v1/security/authz/check`) using
+# the BARE resource/action keys FuzeKeys declares in `registration/policy.json`.
+# FuzeKeys evaluates no policy of its own; it asks and obeys, fail-closed.
+#
+# This runs IN ADDITION to the per-row ownership filter each handler already
+# applies (`Identity.user_id == current_user.id`). Role check and ownership
+# check answer different questions and neither replaces the other.
+_CAN_READ = Depends(require_permission("Identity", "read"))
+_CAN_CREATE = Depends(require_permission("Identity", "create"))
+_CAN_UPDATE = Depends(require_permission("Identity", "update"))
+_CAN_DELETE = Depends(require_permission("Identity", "delete"))
 
 
 class IdentityCreate(BaseModel):
@@ -123,7 +136,7 @@ def decrypt_identity_data(identity: Identity) -> IdentityResponse:
         )
 
 
-@router.post("/", response_model=IdentityResponse)
+@router.post("/", response_model=IdentityResponse, dependencies=[_CAN_CREATE])
 async def create_identity(
     identity_data: IdentityCreate,
     current_user: User = Depends(get_current_user),
@@ -170,7 +183,7 @@ async def create_identity(
         )
 
 
-@router.get("/", response_model=List[IdentityListResponse])
+@router.get("/", response_model=List[IdentityListResponse], dependencies=[_CAN_READ])
 async def list_identities(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -200,7 +213,7 @@ async def list_identities(
         )
 
 
-@router.get("/{identity_id}", response_model=IdentityResponse)
+@router.get("/{identity_id}", response_model=IdentityResponse, dependencies=[_CAN_READ])
 async def get_identity(
     identity_id: int,
     current_user: User = Depends(get_current_user),
@@ -233,7 +246,7 @@ async def get_identity(
         )
 
 
-@router.put("/{identity_id}", response_model=IdentityResponse)
+@router.put("/{identity_id}", response_model=IdentityResponse, dependencies=[_CAN_UPDATE])
 async def update_identity(
     identity_id: int,
     identity_data: IdentityUpdate,
@@ -310,7 +323,7 @@ async def update_identity(
         )
 
 
-@router.delete("/{identity_id}")
+@router.delete("/{identity_id}", dependencies=[_CAN_DELETE])
 async def delete_identity(
     identity_id: int,
     current_user: User = Depends(get_current_user),

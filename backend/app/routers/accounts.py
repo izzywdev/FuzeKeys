@@ -11,11 +11,19 @@ from app.models.user import User
 from app.models.account import Account, AccountStage, StageType, StageStatus
 from app.models.identity import Identity
 from app.routers.auth import get_current_user
+from app.security import require_permission
 from app.utils.logging import get_logger
 from app.utils.encryption import encrypt_field, decrypt_field
 
 logger = get_logger(__name__)
 router = APIRouter()
+
+# Authorization is decided by FuzeFront (`POST /v1/security/authz/check`) using
+# the BARE resource/action keys FuzeKeys declares in `registration/policy.json`.
+# Runs in addition to the per-row ownership filter, not instead of it.
+_CAN_READ = Depends(require_permission("Account", "read"))
+_CAN_CREATE = Depends(require_permission("Account", "create"))
+_CAN_UPDATE = Depends(require_permission("Account", "update"))
 
 
 class StageStatusResponse(BaseModel):
@@ -92,7 +100,7 @@ def get_default_stages_for_site(website_name: str) -> List[Dict]:
     return result
 
 
-@router.get("/", response_model=List[AccountResponse])
+@router.get("/", response_model=List[AccountResponse], dependencies=[_CAN_READ])
 async def list_accounts(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -145,7 +153,7 @@ async def list_accounts(
         )
 
 
-@router.post("/", response_model=AccountResponse)
+@router.post("/", response_model=AccountResponse, dependencies=[_CAN_CREATE])
 async def create_account(
     account_data: AccountCreate,
     current_user: User = Depends(get_current_user),
@@ -255,7 +263,7 @@ async def create_account(
         )
 
 
-@router.patch("/{account_id}/stages/{stage_id}")
+@router.patch("/{account_id}/stages/{stage_id}", dependencies=[_CAN_UPDATE])
 async def update_account_stage(
     account_id: int,
     stage_id: int,
@@ -346,7 +354,7 @@ async def update_account_stage(
     return result
 
 
-@router.get("/", response_model=List[AccountResponse])
+@router.get("/", response_model=List[AccountResponse], dependencies=[_CAN_READ])
 async def list_accounts(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -399,7 +407,7 @@ async def list_accounts(
         )
 
 
-@router.post("/", response_model=AccountResponse)
+@router.post("/", response_model=AccountResponse, dependencies=[_CAN_CREATE])
 async def create_account(
     account_data: AccountCreate,
     current_user: User = Depends(get_current_user),
@@ -509,7 +517,7 @@ async def create_account(
         )
 
 
-@router.patch("/{account_id}/stages/{stage_id}")
+@router.patch("/{account_id}/stages/{stage_id}", dependencies=[_CAN_UPDATE])
 async def update_account_stage(
     account_id: int,
     stage_id: int,

@@ -84,21 +84,25 @@ async def init_database():
         # Add sample data for demo
         async with async_session_maker() as session:
             from app.models import User, Identity, Account, AccountStage, StageType, StageStatus
-            from app.utils.encryption import EncryptionManager, hash_password, generate_master_key_hash
+            from app.utils.encryption import EncryptionManager, generate_master_key_hash
             import hashlib
             from datetime import datetime
-            
+
             # Check if data already exists
             existing_user = await session.get(User, 1)
             if existing_user:
                 print("✅ Database already initialized with sample data")
                 return
-            
-            # Create demo user
+
+            # Create demo user.
+            # No password: FuzeKeys does not authenticate anybody — the
+            # FuzeFront Security API does. The demo row is linked to a
+            # placeholder FuzeFront subject so `resolve_local_user` can adopt
+            # it; only the vault master key (domain state) is seeded here.
             demo_user = User(
+                fuzefront_user_id="demo-fuzefront-subject",
                 email="demo@fuzekeys.io",
                 username="demo_user",
-                hashed_password=hash_password("demo123"),
                 master_key_hash=generate_master_key_hash("masterkey123"),
                 is_active=True
             )

@@ -26,6 +26,18 @@ data:
   REACT_APP_API_URL: {{ .Values.config.apiBaseUrl | quote }}
   ALLOWED_HOSTS: {{ .Values.config.allowedHosts | default "localhost,127.0.0.1,*.localhost" | quote }}
   PYTHONPATH: "/app"
+  # ---- FuzeFront Security API ----
+  # This addresses FUZEFRONT'S OWN service. FuzeKeys delegates every AuthN and
+  # AuthZ decision to it and knows nothing about which identity provider or
+  # policy engine sits behind it — that is FuzeFront's private implementation.
+  FUZEFRONT_SECURITY_BASE_URL: {{ .Values.config.fuzefrontSecurityBaseUrl | quote }}
+  FUZEFRONT_SECURITY_TIMEOUT_SECONDS: {{ .Values.config.fuzefrontSecurityTimeoutSeconds | default 5 | quote }}
+  {{- with .Values.config.fuzefrontDefaultTenant }}
+  # Single-tenant deployments only. Leaving this unset means tenant-scoped
+  # authorization fails CLOSED when a session carries no tenant, which is the
+  # behaviour the security contract mandates.
+  FUZEFRONT_DEFAULT_TENANT: {{ . | quote }}
+  {{- end }}
 {{- if .Values.vault.enabled }}
 ---
 # Vault server config (transit engine, persistent file storage). The image
