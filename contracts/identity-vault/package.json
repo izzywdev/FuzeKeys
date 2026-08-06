@@ -1,0 +1,36 @@
+{
+  "name": "@fuzekeys/secrets-broker-client",
+  "version": "0.1.0",
+  "description": "Generated types + contract artifacts for the FuzeKeys Secrets-Broker (Identity-Vault MCP) API. The frozen contract every consumer (backend, UI, tests) imports.",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "client/types.ts",
+  "types": "client/types.ts",
+  "files": [
+    "openapi.yaml",
+    "mcp-tools.json",
+    "client",
+    "CHANGELOG.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/izzywdev/FuzeKeys.git",
+    "directory": "contracts/identity-vault"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
+  "scripts": {
+    "lint": "spectral lint openapi.yaml --ruleset .spectral.yaml",
+    "mock": "prism mock openapi.yaml",
+    "gen:types": "openapi-typescript openapi.yaml -o client/types.ts",
+    "validate:yaml": "node -e \"require('yaml').parse(require('fs').readFileSync('openapi.yaml','utf8')); console.log('openapi.yaml parses')\""
+  },
+  "devDependencies": {
+    "@stoplight/spectral-cli": "^6.14.2",
+    "@stoplight/prism-cli": "^5.12.1",
+    "openapi-typescript": "^7.6.1"
+  }
+}

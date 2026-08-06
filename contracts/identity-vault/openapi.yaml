@@ -1,0 +1,1349 @@
+openapi: 3.1.0
+info:
+  title: FuzeKeys Secrets-Broker API
+  version: 0.1.0
+  summary: REST contract for the Identity-Vault Secrets-Broker MCP service.
+  description: |
+    Contract for the **Secrets-Broker** microservice (design
+    `docs/superpowers/specs/2026-06-24-identity-vault-mcp-design.md`).
+
+    The broker is the ONLY thing LLM agents (and the approval UI) talk to. It federates
+    to Vaultwarden (identity PII / cards / logins) and OpenBao (API tokens), enforcing
+    scope + sensitivity policy and writing audit records. **No endpoint returns secret
+    material outside the policy/approval semantics described here.**
+
+    ## Sensitivity tiers -> release policy (design Section 7)
+    - **LOW**  (metadata, display name, discovery listings) — auto-released, audited.
+    - **MEDIUM** (site username/password, current TOTP code) — auto in-scope, audited.
+    - **HIGH** (API tokens, full card, SSN/passport & other sensitive PII, service
+      secrets) — **human approval required**. The first call returns `202` with an
+      `ApprovalPending` body; the value is fetched once, short-TTL, via
+      `GET /approvals/{request_id}` after a human approves.
+
+    ## Auth & tenancy boundary (design Section 7)
+    All agent-facing calls require a bearer **agent token** (stored hashed server-side,
+    bound to a `user_id` + scopes). Every call resolves agent -> user and asserts the
+    target identity is owned by that user AND falls within the agent's `agent_scopes`.
+    - `401` — missing / blank / unknown / inactive agent token (fail-closed).
+    - `403` — authenticated but out of scope, or cross-user / cross-tenant.
+    - `404` — resource not found *under the supplied owner* (avoids existence oracle).
+    - `202` — sensitive resource: approval required.
+
+    Admin/management endpoints (`/organizations`, `/agents`, `/approvals/*/approve|deny`,
+    `/audit-log`) are operated by human org admins, authenticated with the same bearer
+    scheme but an **admin-scoped** token; scope semantics are noted per-operation.
+
+    ## Versioning
+    Spec is explicitly versioned (`info.version`, semver). Bump on every change and
+    record it in `CHANGELOG.md`. Breaking changes bump the major and ripple to all
+    generated clients deliberately (the contract PR is the single change point).
+  license:
+    name: Proprietary - FuzeKeys internal
+  contact:
+    name: FuzeKeys contract-designer
+
+servers:
+  - url: https://broker.fuzekeys.local/v1
+    description: Secrets-Broker (versioned base path)
+
+tags:
+  - name: discovery
+    description: Metadata-only listings. LOW sensitivity, auto-released.
+  - name: secrets
+    description: Policy-gated secret retrieval (MEDIUM auto, HIGH -> approval).
+  - name: write
+    description: Agent write surface (store a newly-created login).
+  - name: approvals
+    description: Sensitive-release approval workflow.
+  - name: management
+    description: Admin CRUD-lite for tenancy graph, agents, scopes, audit.
+
+security:
+  - agentBearer: []
+
+paths:
+  # ---------------------------------------------------------------- discovery
+  /identities:
+    get:
+      tags: [discovery]
+      operationId: listIdentities
+      summary: List personas in the agent's scope (metadata only).
+      description: |
+        Returns id + display name + status for each identity the agent may reach.
+        LOW sensitivity. No secret or sensitive-PII values are returned.
+      parameters:
+        - $ref: '#/components/parameters/PageCursor'
+        - $ref: '#/components/parameters/PageLimit'
+      responses:
+        '200':
+          description: Identities in scope.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IdentityListResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /identities/{id}/site-logins:
+    get:
+      tags: [discovery]
+      operationId: listSiteLogins
+      summary: List a persona's site logins (metadata only, no passwords).
+      parameters:
+        - $ref: '#/components/parameters/IdentityId'
+        - $ref: '#/components/parameters/PageCursor'
+        - $ref: '#/components/parameters/PageLimit'
+      responses:
+        '200':
+          description: Site-login metadata.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteLoginListResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [write]
+      operationId: storeSiteLogin
+      summary: Store a newly-created site login (the only agent write).
+      description: |
+        Persists a credential the agent just created: creates the Vaultwarden Login
+        item and the Postgres `site_logins` metadata row, returning only the metadata
+        handle (never echoing the password back). Policy-gated and audited.
+      parameters:
+        - $ref: '#/components/parameters/IdentityId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StoreSiteLoginRequest' }
+      responses:
+        '201':
+          description: Login stored; metadata returned (no secret echoed).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteLogin' }
+        '202':
+          description: Write requires approval per org policy.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApprovalPending' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /identities/{id}/api-tokens:
+    get:
+      tags: [discovery]
+      operationId: listApiTokens
+      summary: List a persona's API tokens (metadata only, no token values).
+      parameters:
+        - $ref: '#/components/parameters/IdentityId'
+        - $ref: '#/components/parameters/PageCursor'
+        - $ref: '#/components/parameters/PageLimit'
+      responses:
+        '200':
+          description: API-token metadata.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiCredentialListResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ------------------------------------------------------------ secret access
+  /identities/{id}/profile:
+    get:
+      tags: [secrets]
+      operationId: getIdentityProfile
+      summary: Retrieve persona profile PII (non-sensitive auto; SSN/passport -> approval).
+      description: |
+        Non-sensitive PII fields (name, address, phone, etc.) are LOW/MEDIUM and
+        auto-released in scope. Requesting any HIGH field (`ssn`, `passport`, and other
+        fields the org classifies as sensitive) yields a `202 ApprovalPending`; the
+        approved value is collected once via `GET /approvals/{request_id}`.
+        Use the `fields` query param to request a subset.
+      parameters:
+        - $ref: '#/components/parameters/IdentityId'
+        - name: fields
+          in: query
+          required: false
+          description: Comma-separated profile field names to return (default = all non-sensitive).
+          schema:
+            type: array
+            items: { type: string }
+          style: form
+          explode: false
+      responses:
+        '200':
+          description: Non-sensitive profile fields released.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IdentityProfile' }
+        '202':
+          description: One or more requested fields are HIGH sensitivity; approval required.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApprovalPending' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /identities/{id}/site-logins/{site}:
+    get:
+      tags: [secrets]
+      operationId: getSiteLogin
+      summary: Retrieve a site login's username + password (MEDIUM, auto in-scope).
+      parameters:
+        - $ref: '#/components/parameters/IdentityId'
+        - $ref: '#/components/parameters/Site'
+        - name: fields
+          in: query
+          required: false
+          description: Subset of {username,password} to return; default both.
+          schema:
+            type: array
+            items: { type: string, enum: [username, password] }
+          style: form
+          explode: false
+      responses:
+        '200':
+          description: Credential released (MEDIUM, audited).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteLoginSecret' }
+        '202':
+          description: Org policy elevated this credential to HIGH; approval required.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApprovalPending' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /identities/{id}/site-logins/{site}/totp:
+    get:
+      tags: [secrets]
+      operationId: getTotpCode
+      summary: Retrieve the CURRENT TOTP code for a site login (never the seed).
+      description: |
+        Returns the current one-time code computed by the broker from the seed held in
+        Vaultwarden. **The TOTP seed is never exposed.** MEDIUM sensitivity, audited.
+      parameters:
+        - $ref: '#/components/parameters/IdentityId'
+        - $ref: '#/components/parameters/Site'
+      responses:
+        '200':
+          description: Current TOTP code.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TotpCode' }
+        '202':
+          description: Org policy elevated TOTP to HIGH; approval required.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApprovalPending' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /identities/{id}/cards/{cardId}:
+    get:
+      tags: [secrets]
+      operationId: getCard
+      summary: Retrieve a stored card's full details (HIGH -> approval required).
+      description: |
+        HIGH sensitivity. Always returns `202 ApprovalPending` on first request; the
+        full card (number/CVV) is released once, short-TTL, via the approval endpoint.
+      parameters:
+        - $ref: '#/components/parameters/IdentityId'
+        - $ref: '#/components/parameters/CardId'
+      responses:
+        '202':
+          description: Approval required (HIGH).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApprovalPending' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /identities/{id}/api-tokens/{service}:
+    get:
+      tags: [secrets]
+      operationId: getApiToken
+      summary: Retrieve an API token / service secret (HIGH -> approval required).
+      description: |
+        HIGH sensitivity (configurable per org). Returns `202 ApprovalPending`; the token
+        value is released once, short-TTL, via the approval endpoint.
+      parameters:
+        - $ref: '#/components/parameters/IdentityId'
+        - $ref: '#/components/parameters/Service'
+      responses:
+        '202':
+          description: Approval required (HIGH).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApprovalPending' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # --------------------------------------------------------------- approvals
+  /approvals/{request_id}:
+    get:
+      tags: [approvals]
+      operationId: checkApproval
+      summary: Poll an approval request; on approval returns the one-time short-TTL value.
+      description: |
+        While `pending` -> `202` with the pending body. When `approved` -> `200` with the
+        released value (one-time, short-TTL; subsequent reads return `410 Gone`). When
+        `denied`/`expired` -> `200` with that status and no value.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: Decision reached (approved with one-time value, or denied/expired).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApprovalResult' }
+        '202':
+          description: Still pending.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApprovalPending' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410': { $ref: '#/components/responses/Gone' }
+
+  /approvals:
+    get:
+      tags: [approvals, management]
+      operationId: listApprovals
+      summary: (Admin) List approval requests in the org queue.
+      description: Admin-scoped. Powers the in-app approval queue UI.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/ApprovalStatus' }
+        - $ref: '#/components/parameters/PageCursor'
+        - $ref: '#/components/parameters/PageLimit'
+      responses:
+        '200':
+          description: Approval requests.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApprovalRequestListResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /approvals/{request_id}/approve:
+    post:
+      tags: [approvals, management]
+      operationId: approveRequest
+      summary: (Admin) Approve a pending sensitive-release request.
+      description: |
+        Admin-scoped. Transitions `pending` -> `approved`, arming a one-time short-TTL
+        release the requesting agent collects via `GET /approvals/{request_id}`.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApprovalDecisionRequest' }
+      responses:
+        '200':
+          description: Approved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApprovalRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /approvals/{request_id}/deny:
+    post:
+      tags: [approvals, management]
+      operationId: denyRequest
+      summary: (Admin) Deny a pending sensitive-release request.
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApprovalDecisionRequest' }
+      responses:
+        '200':
+          description: Denied.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApprovalRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  # -------------------------------------------------------------- management
+  /organizations:
+    get:
+      tags: [management]
+      operationId: listOrganizations
+      summary: (Admin) List organizations the caller administers.
+      parameters:
+        - $ref: '#/components/parameters/PageCursor'
+        - $ref: '#/components/parameters/PageLimit'
+      responses:
+        '200':
+          description: Organizations.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationListResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [management]
+      operationId: createOrganization
+      summary: (Admin) Create an organization.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrganizationCreate' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Organization' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /organizations/{org_id}:
+    get:
+      tags: [management]
+      operationId: getOrganization
+      summary: (Admin) Get one organization.
+      parameters:
+        - $ref: '#/components/parameters/OrgId'
+      responses:
+        '200':
+          description: Organization.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Organization' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [management]
+      operationId: updateOrganization
+      summary: (Admin) Update an organization.
+      parameters:
+        - $ref: '#/components/parameters/OrgId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrganizationUpdate' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Organization' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /organizations/{org_id}/members:
+    get:
+      tags: [management]
+      operationId: listOrganizationMembers
+      summary: (Admin) List organization members + roles.
+      parameters:
+        - $ref: '#/components/parameters/OrgId'
+        - $ref: '#/components/parameters/PageCursor'
+        - $ref: '#/components/parameters/PageLimit'
+      responses:
+        '200':
+          description: Members.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationMemberListResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [management]
+      operationId: addOrganizationMember
+      summary: (Admin) Add a member with a role.
+      parameters:
+        - $ref: '#/components/parameters/OrgId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OrganizationMemberCreate' }
+      responses:
+        '201':
+          description: Member added.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrganizationMember' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /management/identities:
+    get:
+      tags: [management]
+      operationId: adminListIdentities
+      summary: (Admin) List identities in an org (metadata only).
+      parameters:
+        - name: org_id
+          in: query
+          required: true
+          schema: { type: integer, format: int64 }
+        - $ref: '#/components/parameters/PageCursor'
+        - $ref: '#/components/parameters/PageLimit'
+      responses:
+        '200':
+          description: Identities.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IdentityListResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [management]
+      operationId: createIdentity
+      summary: (Admin/owner) Create a persona (metadata + vault collection handle).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IdentityCreate' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Identity' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /management/identities/{id}:
+    get:
+      tags: [management]
+      operationId: adminGetIdentity
+      summary: (Admin/owner) Get one persona's metadata.
+      parameters:
+        - $ref: '#/components/parameters/IdentityId'
+      responses:
+        '200':
+          description: Identity metadata.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Identity' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [management]
+      operationId: updateIdentity
+      summary: (Admin/owner) Update persona metadata.
+      parameters:
+        - $ref: '#/components/parameters/IdentityId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IdentityUpdate' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Identity' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /agents:
+    get:
+      tags: [management]
+      operationId: listAgents
+      summary: (Admin) List MCP agents bound to users in the org.
+      parameters:
+        - $ref: '#/components/parameters/PageCursor'
+        - $ref: '#/components/parameters/PageLimit'
+      responses:
+        '200':
+          description: Agents.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentListResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [management]
+      operationId: createAgent
+      summary: (Admin) Create an MCP agent; returns the plaintext token ONCE.
+      description: |
+        The agent token is shown exactly once in the creation response and stored only
+        as a hash server-side. It cannot be retrieved again — rotate to get a new one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AgentCreate' }
+      responses:
+        '201':
+          description: Agent created; `token` present once only.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentCreated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /agents/{agent_id}:
+    get:
+      tags: [management]
+      operationId: getAgent
+      summary: (Admin) Get an agent (never returns its token).
+      parameters:
+        - $ref: '#/components/parameters/AgentId'
+      responses:
+        '200':
+          description: Agent.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Agent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [management]
+      operationId: updateAgent
+      summary: (Admin) Update an agent (name / active flag).
+      parameters:
+        - $ref: '#/components/parameters/AgentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AgentUpdate' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Agent' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /agents/{agent_id}/rotate:
+    post:
+      tags: [management]
+      operationId: rotateAgentToken
+      summary: (Admin) Rotate an agent's token; returns the new plaintext token ONCE.
+      parameters:
+        - $ref: '#/components/parameters/AgentId'
+      responses:
+        '200':
+          description: Rotated; new `token` present once only.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentCreated' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /agents/{agent_id}/scopes:
+    get:
+      tags: [management]
+      operationId: listAgentScopes
+      summary: (Admin) List an agent's scope grants.
+      parameters:
+        - $ref: '#/components/parameters/AgentId'
+      responses:
+        '200':
+          description: Scopes.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentScopeListResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [management]
+      operationId: addAgentScope
+      summary: (Admin) Grant an agent a scope (identity / site / secret_type).
+      parameters:
+        - $ref: '#/components/parameters/AgentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AgentScopeCreate' }
+      responses:
+        '201':
+          description: Scope granted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentScope' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /agents/{agent_id}/scopes/{scope_id}:
+    delete:
+      tags: [management]
+      operationId: revokeAgentScope
+      summary: (Admin) Revoke a scope grant.
+      parameters:
+        - $ref: '#/components/parameters/AgentId'
+        - name: scope_id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '204':
+          description: Revoked.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /audit-log:
+    get:
+      tags: [management]
+      operationId: listAuditLog
+      summary: (Admin) Read the append-only access-decision audit log (no secret values).
+      parameters:
+        - name: agent_id
+          in: query
+          required: false
+          schema: { type: integer, format: int64 }
+        - name: identity_id
+          in: query
+          required: false
+          schema: { type: integer, format: int64 }
+        - name: decision
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/AuditDecision' }
+        - $ref: '#/components/parameters/PageCursor'
+        - $ref: '#/components/parameters/PageLimit'
+      responses:
+        '200':
+          description: Audit entries.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditLogListResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+components:
+  securitySchemes:
+    agentBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-agent-token
+      description: |
+        Opaque agent (or admin) bearer token. Stored hashed server-side, bound to a
+        `user_id` + `agent_scopes`. Fail-closed: blank/unknown/inactive -> 401. The
+        broker resolves the token to its user and enforces owner + scope on every call;
+        out-of-scope or cross-tenant -> 403.
+
+  parameters:
+    IdentityId:
+      name: id
+      in: path
+      required: true
+      description: Identity (persona) id.
+      schema: { type: integer, format: int64 }
+    OrgId:
+      name: org_id
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+    AgentId:
+      name: agent_id
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+    CardId:
+      name: cardId
+      in: path
+      required: true
+      description: IdentityCard id.
+      schema: { type: integer, format: int64 }
+    Site:
+      name: site
+      in: path
+      required: true
+      description: Site/domain key identifying the site login (e.g. github.com).
+      schema: { type: string }
+    Service:
+      name: service
+      in: path
+      required: true
+      description: Service key identifying the API credential (e.g. stripe).
+      schema: { type: string }
+    RequestId:
+      name: request_id
+      in: path
+      required: true
+      description: Approval request id (opaque).
+      schema: { type: string }
+    PageCursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque pagination cursor from a previous response's `next_cursor`.
+      schema: { type: string }
+    PageLimit:
+      name: limit
+      in: query
+      required: false
+      description: Max items per page.
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+
+  responses:
+    Unauthorized:
+      description: Missing / blank / unknown / inactive agent token (fail-closed).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Authenticated but out of scope, or cross-user / cross-tenant.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Resource not found under the supplied owner.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    BadRequest:
+      description: Malformed request body or parameters.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: State conflict (e.g. duplicate, already-decided approval).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Gone:
+      description: One-time value already consumed or expired.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    # ----------------------------------------------------------- enums
+    SensitivityTier:
+      type: string
+      description: |
+        Release-policy tier. LOW/MEDIUM auto-release in scope; HIGH requires approval.
+      enum: [LOW, MEDIUM, HIGH]
+    OrgRole:
+      type: string
+      enum: [owner, admin, member]
+    ScopeType:
+      type: string
+      enum: [identity, site, secret_type]
+    ApprovalStatus:
+      type: string
+      enum: [pending, approved, denied, expired]
+    AuditDecision:
+      type: string
+      enum: [auto_release, approved, denied, scope_denied]
+    SiteLoginStatus:
+      type: string
+      enum: [active, inactive, unverified]
+
+    # ----------------------------------------------------------- core entities
+    Organization:
+      type: object
+      required: [id, name, slug]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string, maxLength: 200 }
+        slug: { type: string, maxLength: 100 }
+        created_at: { type: string, format: date-time }
+      additionalProperties: false
+
+    OrganizationCreate:
+      type: object
+      required: [name, slug]
+      properties:
+        name: { type: string, maxLength: 200 }
+        slug: { type: string, maxLength: 100, pattern: '^[a-z0-9-]+$' }
+      additionalProperties: false
+
+    OrganizationUpdate:
+      type: object
+      properties:
+        name: { type: string, maxLength: 200 }
+      additionalProperties: false
+
+    OrganizationMember:
+      type: object
+      required: [id, organization_id, user_id, role]
+      properties:
+        id: { type: integer, format: int64 }
+        organization_id: { type: integer, format: int64 }
+        user_id: { type: integer, format: int64 }
+        role: { $ref: '#/components/schemas/OrgRole' }
+        created_at: { type: string, format: date-time }
+      additionalProperties: false
+
+    OrganizationMemberCreate:
+      type: object
+      required: [user_id, role]
+      properties:
+        user_id: { type: integer, format: int64 }
+        role: { $ref: '#/components/schemas/OrgRole' }
+      additionalProperties: false
+
+    Identity:
+      type: object
+      description: Persona metadata only. No PII values; the vault holds those.
+      required: [id, user_id, name]
+      properties:
+        id: { type: integer, format: int64 }
+        user_id:
+          type: integer
+          format: int64
+          description: Owning user (owner_user_id). Personas are private to this user.
+        org_id: { type: integer, format: int64, nullable: true }
+        name: { type: string, maxLength: 200, description: Display name for this persona. }
+        description: { type: string, nullable: true }
+        vault_collection_ref:
+          type: string
+          nullable: true
+          description: Handle to the Vaultwarden collection holding this persona's encrypted PII/cards/logins.
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time, nullable: true }
+      additionalProperties: false
+
+    IdentityCreate:
+      type: object
+      required: [user_id, name]
+      properties:
+        user_id: { type: integer, format: int64 }
+        org_id: { type: integer, format: int64, nullable: true }
+        name: { type: string, maxLength: 200 }
+        description: { type: string, nullable: true }
+      additionalProperties: false
+
+    IdentityUpdate:
+      type: object
+      properties:
+        name: { type: string, maxLength: 200 }
+        description: { type: string, nullable: true }
+      additionalProperties: false
+
+    IdentitySummary:
+      type: object
+      description: LOW-sensitivity discovery view of a persona.
+      required: [id, name]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        status: { type: string, nullable: true }
+      additionalProperties: false
+
+    IdentityProfile:
+      type: object
+      description: |
+        Released profile PII. Only the requested non-sensitive fields are present.
+        HIGH fields (ssn, passport) are NEVER inlined here — they come one-time via the
+        approval endpoint. `released_fields` lists what was actually returned.
+      required: [identity_id, released_fields, fields]
+      properties:
+        identity_id: { type: integer, format: int64 }
+        released_fields:
+          type: array
+          items: { type: string }
+        fields:
+          type: object
+          description: Map of field name -> released value (non-sensitive only).
+          additionalProperties: { type: string }
+      additionalProperties: false
+
+    SiteLogin:
+      type: object
+      description: Per-site login metadata. No password/secret here.
+      required: [id, identity_id, site, status]
+      properties:
+        id: { type: integer, format: int64 }
+        identity_id: { type: integer, format: int64 }
+        site: { type: string, description: Site/domain key (e.g. github.com). }
+        website_name: { type: string, nullable: true }
+        website_url: { type: string, nullable: true }
+        username_hint:
+          type: string
+          nullable: true
+          description: Non-secret display hint (e.g. masked username), never the password.
+        has_totp: { type: boolean, default: false }
+        status: { $ref: '#/components/schemas/SiteLoginStatus' }
+        vault_item_ref: { type: string, nullable: true, description: Vaultwarden Login item handle. }
+        created_at: { type: string, format: date-time }
+      additionalProperties: false
+
+    StoreSiteLoginRequest:
+      type: object
+      description: |
+        Store a newly-created login. The secret material (`password`, optional `totp_seed`)
+        is written into Vaultwarden by the broker and never persisted in Postgres nor
+        echoed back. This is the ONLY field set carrying secret-at-write material and it
+        is write-only.
+      required: [site, username, password]
+      properties:
+        site: { type: string }
+        website_name: { type: string, nullable: true }
+        website_url: { type: string, nullable: true }
+        username: { type: string }
+        password: { type: string, writeOnly: true }
+        totp_seed:
+          type: string
+          writeOnly: true
+          nullable: true
+          description: Optional TOTP seed to store; the broker only ever returns codes, never this seed.
+      additionalProperties: false
+
+    SiteLoginSecret:
+      type: object
+      description: One-time MEDIUM credential release. Returned only on a passing policy check.
+      required: [identity_id, site, released_fields]
+      properties:
+        identity_id: { type: integer, format: int64 }
+        site: { type: string }
+        username: { type: string, nullable: true }
+        password: { type: string, nullable: true, writeOnly: false }
+        released_fields:
+          type: array
+          items: { type: string, enum: [username, password] }
+      additionalProperties: false
+
+    TotpCode:
+      type: object
+      description: Current TOTP code (computed by the broker). Seed is never returned.
+      required: [identity_id, site, code, expires_at]
+      properties:
+        identity_id: { type: integer, format: int64 }
+        site: { type: string }
+        code: { type: string, description: Current one-time code. }
+        period_seconds: { type: integer, default: 30 }
+        expires_at: { type: string, format: date-time, description: When this code rolls over. }
+      additionalProperties: false
+
+    IdentityCard:
+      type: object
+      description: Card metadata. Last4/brand/exp only; PAN & CVV NEVER appear in metadata.
+      required: [id, identity_id, vault_item_ref]
+      properties:
+        id: { type: integer, format: int64 }
+        identity_id: { type: integer, format: int64 }
+        brand: { type: string, nullable: true, maxLength: 40 }
+        last4: { type: string, nullable: true, maxLength: 4 }
+        exp_month: { type: integer, nullable: true, minimum: 1, maximum: 12 }
+        exp_year: { type: integer, nullable: true }
+        vault_item_ref: { type: string, description: Vaultwarden Card item handle. }
+        created_at: { type: string, format: date-time }
+      additionalProperties: false
+
+    CardSecret:
+      type: object
+      description: |
+        Full card detail. Released ONLY one-time via the approval endpoint after a HIGH
+        approval. Never returned by a discovery or direct-GET path.
+      required: [card_id, number, exp_month, exp_year]
+      properties:
+        card_id: { type: integer, format: int64 }
+        cardholder_name: { type: string, nullable: true }
+        number: { type: string, description: Full PAN; one-time, short-TTL. }
+        cvv: { type: string, nullable: true }
+        exp_month: { type: integer, minimum: 1, maximum: 12 }
+        exp_year: { type: integer }
+      additionalProperties: false
+
+    ApiCredential:
+      type: object
+      description: API token / service-secret metadata. The value lives in OpenBao.
+      required: [id, identity_id, service, name, openbao_path]
+      properties:
+        id: { type: integer, format: int64 }
+        identity_id: { type: integer, format: int64 }
+        service: { type: string, maxLength: 120 }
+        name: { type: string, maxLength: 120 }
+        openbao_path: { type: string, description: KV v2 path; value never inlined here. }
+        sensitivity: { $ref: '#/components/schemas/SensitivityTier' }
+        created_at: { type: string, format: date-time }
+      additionalProperties: false
+
+    ApiTokenSecret:
+      type: object
+      description: |
+        API token value. Released ONLY one-time via the approval endpoint after a HIGH
+        approval. Never returned by a discovery or direct-GET path.
+      required: [credential_id, service, token]
+      properties:
+        credential_id: { type: integer, format: int64 }
+        service: { type: string }
+        token: { type: string, description: Token value; one-time, short-TTL. }
+      additionalProperties: false
+
+    Agent:
+      type: object
+      description: MCP machine identity. The token is never returned here (hashed only).
+      required: [id, name, user_id, is_active]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string, maxLength: 120 }
+        user_id: { type: integer, format: int64, description: User the agent acts on behalf of. }
+        is_active: { type: boolean }
+        created_at: { type: string, format: date-time }
+      additionalProperties: false
+
+    AgentCreate:
+      type: object
+      required: [name, user_id]
+      properties:
+        name: { type: string, maxLength: 120 }
+        user_id: { type: integer, format: int64 }
+        scopes:
+          type: array
+          description: Optional initial scope grants.
+          items: { $ref: '#/components/schemas/AgentScopeCreate' }
+      additionalProperties: false
+
+    AgentUpdate:
+      type: object
+      properties:
+        name: { type: string, maxLength: 120 }
+        is_active: { type: boolean }
+      additionalProperties: false
+
+    AgentCreated:
+      allOf:
+        - $ref: '#/components/schemas/Agent'
+        - type: object
+          required: [token]
+          properties:
+            token:
+              type: string
+              writeOnly: true
+              description: Plaintext agent token, shown ONCE. Stored hashed; not retrievable again.
+
+    AgentScope:
+      type: object
+      required: [id, agent_id, scope_type, scope_ref]
+      properties:
+        id: { type: integer, format: int64 }
+        agent_id: { type: integer, format: int64 }
+        scope_type: { $ref: '#/components/schemas/ScopeType' }
+        scope_ref:
+          type: string
+          maxLength: 120
+          description: |
+            Target reference; meaning depends on scope_type — identity id, site key, or
+            a secret_type value (e.g. site_login, card, api_token, profile).
+      additionalProperties: false
+
+    AgentScopeCreate:
+      type: object
+      required: [scope_type, scope_ref]
+      properties:
+        scope_type: { $ref: '#/components/schemas/ScopeType' }
+        scope_ref: { type: string, maxLength: 120 }
+      additionalProperties: false
+
+    ApprovalRequest:
+      type: object
+      description: Sensitive-release workflow record. Never carries the secret value.
+      required: [id, request_id, agent_id, resource_ref, status, requested_at]
+      properties:
+        id: { type: integer, format: int64 }
+        request_id: { type: string, description: Opaque external id used on the approval endpoints. }
+        agent_id: { type: integer, format: int64 }
+        on_behalf_user_id: { type: integer, format: int64, nullable: true }
+        identity_id: { type: integer, format: int64, nullable: true }
+        resource_ref:
+          type: string
+          maxLength: 300
+          description: 'e.g. identity:42:card:7'
+        sensitivity: { $ref: '#/components/schemas/SensitivityTier' }
+        status: { $ref: '#/components/schemas/ApprovalStatus' }
+        requested_at: { type: string, format: date-time }
+        decided_by: { type: integer, format: int64, nullable: true }
+        decided_at: { type: string, format: date-time, nullable: true }
+        expires_at: { type: string, format: date-time, nullable: true }
+      additionalProperties: false
+
+    ApprovalDecisionRequest:
+      type: object
+      properties:
+        reason: { type: string, nullable: true, description: Optional admin note recorded in audit. }
+      additionalProperties: false
+
+    ApprovalPending:
+      type: object
+      description: Returned (HTTP 202) when a sensitive resource needs approval, or is still pending.
+      required: [status, request_id, expires_at]
+      properties:
+        status: { type: string, enum: [approval_required] }
+        request_id: { type: string }
+        resource_ref: { type: string, nullable: true }
+        sensitivity: { $ref: '#/components/schemas/SensitivityTier' }
+        expires_at: { type: string, format: date-time }
+        poll_url:
+          type: string
+          nullable: true
+          description: Relative URL (GET /approvals/{request_id}) the caller polls.
+      additionalProperties: false
+
+    ApprovalResult:
+      type: object
+      description: |
+        Terminal result of an approval poll. When `status=approved`, exactly one of the
+        `*_value` members carries the ONE-TIME, short-TTL released value (consumed on
+        read; later reads -> 410). When denied/expired, no value is present.
+      required: [request_id, status]
+      properties:
+        request_id: { type: string }
+        status: { $ref: '#/components/schemas/ApprovalStatus' }
+        resource_ref: { type: string, nullable: true }
+        value_ttl_seconds:
+          type: integer
+          nullable: true
+          description: Lifetime of the released value (present only when approved).
+        profile_value: { $ref: '#/components/schemas/IdentityProfile' }
+        card_value: { $ref: '#/components/schemas/CardSecret' }
+        api_token_value: { $ref: '#/components/schemas/ApiTokenSecret' }
+      additionalProperties: false
+
+    AuditLogEntry:
+      type: object
+      description: One access-decision record. Never contains a secret value.
+      required: [id, resource_ref, decision, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        agent_id: { type: integer, format: int64, nullable: true }
+        on_behalf_user_id: { type: integer, format: int64, nullable: true }
+        identity_id: { type: integer, format: int64, nullable: true }
+        resource_ref: { type: string, maxLength: 300 }
+        decision: { $ref: '#/components/schemas/AuditDecision' }
+        created_at: { type: string, format: date-time }
+      additionalProperties: false
+
+    # ----------------------------------------------------------- list envelopes
+    PageInfo:
+      type: object
+      required: [next_cursor]
+      properties:
+        next_cursor: { type: string, nullable: true, description: Cursor for the next page, or null at end. }
+      additionalProperties: false
+
+    IdentityListResponse:
+      type: object
+      required: [items, page]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/IdentitySummary' } }
+        page: { $ref: '#/components/schemas/PageInfo' }
+      additionalProperties: false
+
+    SiteLoginListResponse:
+      type: object
+      required: [items, page]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/SiteLogin' } }
+        page: { $ref: '#/components/schemas/PageInfo' }
+      additionalProperties: false
+
+    ApiCredentialListResponse:
+      type: object
+      required: [items, page]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ApiCredential' } }
+        page: { $ref: '#/components/schemas/PageInfo' }
+      additionalProperties: false
+
+    OrganizationListResponse:
+      type: object
+      required: [items, page]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Organization' } }
+        page: { $ref: '#/components/schemas/PageInfo' }
+      additionalProperties: false
+
+    OrganizationMemberListResponse:
+      type: object
+      required: [items, page]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/OrganizationMember' } }
+        page: { $ref: '#/components/schemas/PageInfo' }
+      additionalProperties: false
+
+    AgentListResponse:
+      type: object
+      required: [items, page]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Agent' } }
+        page: { $ref: '#/components/schemas/PageInfo' }
+      additionalProperties: false
+
+    AgentScopeListResponse:
+      type: object
+      required: [items, page]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AgentScope' } }
+        page: { $ref: '#/components/schemas/PageInfo' }
+      additionalProperties: false
+
+    ApprovalRequestListResponse:
+      type: object
+      required: [items, page]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ApprovalRequest' } }
+        page: { $ref: '#/components/schemas/PageInfo' }
+      additionalProperties: false
+
+    AuditLogListResponse:
+      type: object
+      required: [items, page]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AuditLogEntry' } }
+        page: { $ref: '#/components/schemas/PageInfo' }
+      additionalProperties: false
+
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+          description: Stable machine code (e.g. unauthorized, forbidden, not_found, conflict, gone, bad_request).
+        message: { type: string, description: Human-readable detail (never includes secret values). }
+        request_id: { type: string, nullable: true }
+      additionalProperties: false
