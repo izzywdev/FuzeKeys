@@ -5,6 +5,14 @@ metadata:
   namespace: argocd
   annotations:
     fuzekeys.io/owner-repo: izzywdev/FuzeKeys
+    # Created FIRST within the root app-of-apps sync so the child Applications
+    # (which reference `project: fuzekeys`) never hit InvalidSpecError for a
+    # missing project — the failure mode that left `fuzekeys-apps` Missing.
+    argocd.argoproj.io/sync-wave: "-1"
+    # NEVER auto-prune the AppProject: if this manifest transiently fails to
+    # render, prune would delete the project and cascade every child app into
+    # InvalidSpec. Pinned off regardless of the root app-of-apps prune policy.
+    argocd.argoproj.io/sync-options: Prune=false
 spec:
   description: >-
     FuzeKeys — keys / secrets / PII-tokenization product — deployed onto the
