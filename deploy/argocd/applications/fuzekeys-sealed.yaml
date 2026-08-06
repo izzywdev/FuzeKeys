@@ -24,3 +24,22 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      # ServerSideApply avoids the client-side last-applied-configuration
+      # annotation on the large encryptedData blobs — that annotation both blows
+      # past the 262 KiB metadata limit and leaves kubeseal's `creationTimestamp:
+      # null` diffing forever, which pins the app OutOfSync even once the
+      # SealedSecrets exist. SSA also matches fuzekeys-platform.
+      - ServerSideApply=true
+    # Parity with fuzekeys-platform: retry a FAILED apply on a backoff. On a
+    # from-scratch cluster Argo can attempt the first sync before FuzeInfra's
+    # sealed-secrets controller has registered the bitnami.com/SealedSecret CRD;
+    # that apply fails ("no matches for kind SealedSecret"), the error lands in
+    # .status.operationState (NOT .status.conditions — hence the empty
+    # conditions in the alert), and without retry the app latches OutOfSync /
+    # Missing until a manual sync. The backoff lets it self-recover.
+    retry:
+      limit: 5
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 5m
