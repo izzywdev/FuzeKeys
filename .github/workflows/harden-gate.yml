@@ -24,7 +24,7 @@ jobs:
   gate-lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with: { node-version: '20' }
       - uses: actions/setup-python@v5
@@ -47,7 +47,7 @@ jobs:
   gate-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with: { node-version: '20' }
       - uses: actions/setup-python@v5
@@ -67,7 +67,7 @@ jobs:
   gate-build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with: { node-version: '20' }
       - name: Build (adaptive, report-only)
@@ -82,7 +82,7 @@ jobs:
   gate-sast:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Semgrep (report-only, SARIF)
         shell: bash
         run: |
@@ -99,7 +99,7 @@ jobs:
   gate-secret-scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { fetch-depth: 0 }
       - name: gitleaks (gates new secrets)
         uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7  # v2
@@ -109,7 +109,7 @@ jobs:
   gate-dependency-scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Trivy filesystem scan (report-only, SARIF)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
@@ -131,7 +131,7 @@ jobs:
     # ratchets to enforcing per-repo once the rules are tuned green (see architecture-guidelines.md).
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { fetch-depth: 0 }
       - name: Semgrep authz/appsec scan (report-only, SARIF)
         shell: bash
@@ -154,7 +154,7 @@ jobs:
     # to enforcing per-repo (see local-environment.md).
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { submodules: recursive }
       - name: Consumer-test bounded up + smoke
         shell: bash
@@ -184,7 +184,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { fetch-depth: 0 }
       - name: SemVer bump check (packages + API contracts, report-only)
         shell: bash
