@@ -25,7 +25,33 @@ from app.integrations.site.permit_io.models import (
 )
 from app.main import app
 
-client = TestClient(app)
+# TrustedHostMiddleware only allows localhost/127.0.0.1; TestClient's default
+# base_url ("http://testserver") is rejected with 400 before any route runs.
+client = TestClient(app, base_url="http://localhost")
+
+
+@pytest.fixture
+def authed():
+    """Satisfy the router's get_current_user dependency.
+
+    The signup/signin/apikey routes are auth-gated (appsec #18), so without an
+    override every request short-circuits to 403 and never reaches the request
+    validation or handler these tests are about. The gate itself is covered by
+    tests/test_security_regressions.py.
+    """
+    from app.models.user import User
+    from app.routers.auth import get_current_user
+
+    user = User(
+        id=1,
+        username="testuser",
+        email="testuser@example.com",
+        hashed_password="not-a-real-hash",
+        master_key_hash="not-a-real-master-key-hash",
+    )
+    app.dependency_overrides[get_current_user] = lambda: user
+    yield user
+    app.dependency_overrides.pop(get_current_user, None)
 
 
 # Test data
@@ -276,7 +302,7 @@ class TestSiteIntegrationsAPI:
         assert response.status_code == 404
 
     @patch("app.routers.site_integrations.handle_permit_io_signup")
-    def test_signup_endpoint(self, mock_handler):
+    def test_signup_endpoint(self, mock_handler, authed):
         """Test signup endpoint."""
         mock_handler.return_value = {
             "success": True,
@@ -314,7 +340,7 @@ class TestSiteIntegrationsAPI:
 class TestErrorHandling:
     """Test error handling in site integrations."""
 
-    def test_invalid_email(self):
+    def test_invalid_email(self, authed):
         """Test signup with invalid email."""
         signup_data = {
             "site": "permit.io",
@@ -327,7 +353,7 @@ class TestErrorHandling:
         response = client.post("/api/v1/integrations/signup", json=signup_data)
         assert response.status_code == 422  # Validation error
 
-    def test_missing_required_fields(self):
+    def test_missing_required_fields(self, authed):
         """Test signup with missing required fields."""
         signup_data = {
             "site": "permit.io",

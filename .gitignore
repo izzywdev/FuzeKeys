@@ -155,4 +155,6 @@ backend/*_form_data.json
 *.png
 *.backup
 backend/*_page_source.html
-backend/initial_page_source.html 
+backend/initial_page_source.html htmlcov/
+coverage.xml
+test.db

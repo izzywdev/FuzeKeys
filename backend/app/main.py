@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -549,6 +550,7 @@ async def health_check():
 
     return {
         "status": "healthy",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "database": db_status,
         "services": {
             "automation": "available",
@@ -562,6 +564,20 @@ async def health_check():
             "llm_scraper": "enabled",
             "infrastructure": "enabled",
         },
+    }
+
+
+@app.get(
+    "/api/info",
+    summary="API Metadata",
+    description="Name and version of this API, for clients and smoke checks",
+    response_description="API name and version",
+)
+async def api_info():
+    """Return the API's identifying metadata."""
+    return {
+        "name": app.title,
+        "version": app.version,
     }
 
 

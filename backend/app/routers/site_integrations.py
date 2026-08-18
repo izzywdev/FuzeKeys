@@ -11,7 +11,11 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, EmailStr
 
-from app.integrations.site import get_available_sites, get_site_capabilities
+from app.integrations.site import (
+    get_available_sites,
+    get_site_capabilities,
+    get_site_integration,
+)
 from app.integrations.site.permit_io import PermitIOIntegration
 from app.integrations.site.permit_io.models import PermitIOCredentials, PermitIOResult
 from app.models.user import User
@@ -50,6 +54,11 @@ class ApiKeyRequest(BaseModel):
     headless: bool = True
 
 
+class AvailableSitesResponse(BaseModel):
+    sites: List[str]
+    count: int
+
+
 class IntegrationResponse(BaseModel):
     success: bool
     message: str
@@ -59,7 +68,7 @@ class IntegrationResponse(BaseModel):
 
 
 # Available Sites Endpoints
-@router.get("/sites", response_model=Dict[str, List[str]])
+@router.get("/sites", response_model=AvailableSitesResponse)
 async def list_available_sites():
     """Get a list of all available site integrations."""
     try:
@@ -76,11 +85,21 @@ async def list_available_sites():
 async def get_site_capabilities_endpoint(site_name: str):
     """Get the capabilities of a specific site integration."""
     try:
+        # Resolve the integration first: get_site_capabilities() reports an
+        # all-False capability set for a site that does not exist, which would
+        # otherwise be returned as a 200 for any unknown name.
+        get_site_integration(site_name)
+    except ImportError:
+        raise HTTPException(status_code=404, detail=f"Site '{site_name}' not found")
+
+    try:
         capabilities = get_site_capabilities(site_name)
         return {"site": site_name, "capabilities": capabilities}
     except Exception as e:
         logger.error(f"Failed to get capabilities for {site_name}: {str(e)}")
-        raise HTTPException(status_code=404, detail=f"Site '{site_name}' not found")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to read capabilities for '{site_name}'"
+        )
 
 
 # Site Integration Operations

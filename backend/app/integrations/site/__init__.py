@@ -38,8 +38,12 @@ def get_site_integration(site_name: str) -> Any:
     Raises:
         ImportError: If the site integration is not found
     """
+    # Site identifiers are published with dots/hyphens ("permit.io") while the
+    # package is a Python module ("permit_io"). Normalise before importing so
+    # both spellings resolve to the same integration.
+    module_name = site_name.replace(".", "_").replace("-", "_")
     try:
-        return importlib.import_module(f"app.integrations.site.{site_name}")
+        return importlib.import_module(f"app.integrations.site.{module_name}")
     except ImportError:
         raise ImportError(f"Site integration '{site_name}' not found")
 

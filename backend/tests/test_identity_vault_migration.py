@@ -7,6 +7,7 @@ every Phase 1 table/column op is present.
 """
 import importlib.util
 import os
+import re
 
 MIG_PATH = os.path.abspath(
     os.path.join(
@@ -46,8 +47,10 @@ def test_all_phase1_tables_and_columns_present():
         "audit_log",
     ]:
         assert f'"{table}"' in src, f"missing create_table for {table}"
-    assert 'add_column("identities"' in src
-    assert 'add_column("accounts"' in src
+    # Matched with a whitespace-tolerant pattern: black wraps these calls across
+    # lines, and a plain substring check would assert on formatting, not content.
+    assert re.search(r'add_column\(\s*"identities"', src)
+    assert re.search(r'add_column\(\s*"accounts"', src)
     # No secret-bearing columns introduced by the migration.
     for forbidden in ["password", "secret", "token_value", "card_number", "cvv"]:
         assert forbidden not in src.lower()

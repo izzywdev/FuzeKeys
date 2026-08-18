@@ -55,7 +55,47 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
 
     app.dependency_overrides[get_db] = override_get_db
 
-    async with AsyncClient(app=app, base_url="http://test") as ac:
+    # base_url must present a host that TrustedHostMiddleware accepts. The app
+    # allows localhost/127.0.0.1 by default; "http://test" was rejected before
+    # reaching any route, so every request in this suite came back 400
+    # "Invalid host header" instead of hitting the endpoint under test.
+    async with AsyncClient(app=app, base_url="http://localhost") as ac:
+        yield ac
+
+    app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def authed_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
+    """A client whose requests are already authenticated.
+
+    Most routers depend on get_current_user, so an unauthenticated client gets
+    403 from the bearer-token security scheme before the route body ever runs.
+    Tests that are exercising route behaviour (rather than the auth gate itself)
+    override the dependency with a fixed user. The auth gate has its own
+    coverage in tests/test_security_regressions.py.
+    """
+    from app.models.user import User
+    from app.routers.auth import get_current_user
+
+    user = User(
+        username="testuser",
+        email="testuser@example.com",
+        hashed_password="not-a-real-hash",
+        master_key_hash="not-a-real-master-key-hash",
+        is_active=True,
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
+    async def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = lambda: user
+
+    async with AsyncClient(app=app, base_url="http://localhost") as ac:
         yield ac
 
     app.dependency_overrides.clear()
