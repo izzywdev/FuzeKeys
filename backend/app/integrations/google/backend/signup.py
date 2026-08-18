@@ -4,7 +4,7 @@ Google signup automation service.
 
 import asyncio
 import logging
-import random
+import secrets
 import string
 import time
 from typing import Any, Dict, Optional
@@ -187,16 +187,14 @@ class GoogleSignupService:
             username = pattern.replace("{first}", first_name.lower())
             username = username.replace("{last}", last_name.lower())
             username = username.replace(
-                "{random}", "".join(random.choices(string.digits, k=4))
+                "{random}", "".join(secrets.choice(string.digits) for _ in range(4))
             )
         elif email:
             # Use email prefix if available
             username = email.split("@")[0]
         else:
             # Default pattern: firstlast + random numbers
-            username = (
-                f"{first_name.lower()}{last_name.lower()}{random.randint(1000, 9999)}"
-            )
+            username = f"{first_name.lower()}{last_name.lower()}{secrets.randbelow(9000) + 1000}"
 
         # Ensure it meets Google requirements
         username = username.replace(" ", "").replace("-", "")[:30]
@@ -215,15 +213,19 @@ class GoogleSignupService:
         if include_symbols:
             chars += "!@#$%^&*"
 
-        password = "".join(random.choices(chars, k=length))
+        # Seed one letter and one digit up front, then fill the rest and
+        # shuffle. The previous approach patched the *same* trailing character
+        # for both requirements, so a password missing both ended up still
+        # missing one of them.
+        required = [
+            secrets.choice(string.ascii_letters),
+            secrets.choice(string.digits),
+        ]
+        remainder = [secrets.choice(chars) for _ in range(length - len(required))]
+        characters = required + remainder
+        secrets.SystemRandom().shuffle(characters)
 
-        # Ensure it has at least one letter and one number
-        if not any(c.isalpha() for c in password):
-            password = password[:-1] + random.choice(string.ascii_letters)
-        if not any(c.isdigit() for c in password):
-            password = password[:-1] + random.choice(string.digits)
-
-        return password
+        return "".join(characters)
 
     async def signup(self, data: GoogleSignupData) -> GoogleSignupResult:
         """Perform Google account signup."""
@@ -308,7 +310,9 @@ class GoogleSignupService:
                             time.sleep(2)
                         else:
                             # Generate alternative username
-                            alt_username = f"{data.username}{random.randint(100, 999)}"
+                            alt_username = (
+                                f"{data.username}{secrets.randbelow(900) + 100}"
+                            )
                             username_field.clear()
                             self._type_with_delay(username_field, alt_username)
                             self._wait_and_click(By.ID, "next")

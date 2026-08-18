@@ -196,9 +196,19 @@ class AnthropicClient(BaseLLMClient):
 class LocalLLMClient(BaseLLMClient):
     """Local LLM client (e.g., Ollama, local API)"""
 
-    def __init__(self, base_url: str, model: str = "codellama"):
+    # Generation can legitimately take a while on a local model, but an
+    # unbounded request will hang the caller forever if the endpoint stalls.
+    DEFAULT_REQUEST_TIMEOUT = 300
+
+    def __init__(
+        self,
+        base_url: str,
+        model: str = "codellama",
+        request_timeout: int = DEFAULT_REQUEST_TIMEOUT,
+    ):
         self.base_url = base_url
         self.model = model
+        self.request_timeout = request_timeout
 
     async def generate_code(self, prompt: str, **kwargs) -> LLMResponse:
         """Generate code using local LLM"""
@@ -213,7 +223,11 @@ class LocalLLMClient(BaseLLMClient):
                 },
             }
 
-            response = requests.post(f"{self.base_url}/api/generate", json=payload)
+            response = requests.post(
+                f"{self.base_url}/api/generate",
+                json=payload,
+                timeout=self.request_timeout,
+            )
             response.raise_for_status()
 
             result = response.json()

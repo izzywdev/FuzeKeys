@@ -174,26 +174,38 @@ jobs:
       with:
         python-version: 3.11
 
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20.x
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+
     - name: Install security scanning tools
       run: |
-        pip install bandit safety
+        # bandit[toml] so bandit can read its config from backend/pyproject.toml.
+        # pip-audit replaces `safety`: safety 3.x requires an authenticated
+        # account and exits with InvalidCredentialError on every unauthenticated
+        # run, so that step could never have passed here.
+        pip install "bandit[toml]" pip-audit
+
+    - name: Install frontend dependencies (for npm audit)
+      run: |
+        cd frontend
+        npm ci --legacy-peer-deps
 
     - name: Run Python Security Scan (Bandit)
       run: |
         cd backend
-        bandit -r app/ -f json -o bandit-report.json || true
-        bandit -r app/
+        bandit -c pyproject.toml -r app/ -f json -o bandit-report.json || true
+        bandit -c pyproject.toml -r app/
 
-    - name: Run Python Dependency Security Scan (Safety)
-      run: |
-        cd backend
-        safety check --json --output safety-report.json || true
-        safety check
-
-    - name: Run Node.js Security Audit
-      run: |
-        cd frontend
-        npm audit --audit-level=moderate
+    - name: Run Dependency Vulnerability Audit
+      # Fails on any advisory that is not in security/dependency-audit-baseline.json,
+      # so a PR that pulls in a newly vulnerable dependency is blocked while the
+      # pre-existing debt stays enumerated and reviewable rather than blocking
+      # every merge. See the script's docstring.
+      run: python scripts/dependency_audit.py
 
   permit-io-scraper-test:
     runs-on: ubuntu-latest
@@ -208,28 +220,51 @@ jobs:
       with:
         python-version: 3.11
 
-    - name: Install Playwright
+    # This job used to `cd scrapers/permit_io` and import a `scraper` module with
+    # UserCredentials/PermitIOScraper. That path has never existed in this
+    # repository's history and neither has that module -- the permit.io
+    # integration lives at backend/app/integrations/site/permit_io and exposes
+    # PermitIOIntegration. The job therefore failed at the first `cd` every time
+    # it was reached. Repointed at the real package.
+    - name: Install backend dependencies
       run: |
-        cd scrapers/permit_io
+        cd backend
+        python -m pip install --upgrade pip
         pip install -r requirements.txt
-        playwright install
 
-    - name: Test Permit.io Scraper (Dry Run)
+    - name: Test Permit.io Integration (Dry Run)
+      # No browser is launched, so the Playwright browser download is not needed
+      # here; the automation modules only need the Python package to import.
       run: |
-        cd scrapers/permit_io
-        python -c "
-        import asyncio
-        from scraper import UserCredentials, PermitIOScraper
-        
-        async def dry_run_test():
-            print('Testing scraper initialization...')
-            async with PermitIOScraper(headless=True) as scraper:
-                print('Scraper initialized successfully')
-                # Test form field detection without actual submission
-                print('Dry run test completed')
-        
-        asyncio.run(dry_run_test())
-        "
+        cd backend
+        python - <<'PY'
+        from app.integrations.site import get_available_sites, get_site_capabilities
+        from app.integrations.site.permit_io import (
+            CAPABILITIES,
+            PermitIOIntegration,
+            __site__,
+        )
+
+        print("Discovering site integrations...")
+        sites = get_available_sites()
+        assert "permit_io" in sites, f"permit_io not discovered, got {sites}"
+
+        # The package publishes itself as "permit.io" while the module is
+        # permit_io; the lookup must resolve the published identifier.
+        caps = get_site_capabilities(__site__)
+        for op in ("signup", "signin", "apikey"):
+            assert caps[op] is True, f"{op} capability missing: {caps}"
+            assert CAPABILITIES[op] is True, f"{op} not declared: {CAPABILITIES}"
+
+        integration = PermitIOIntegration(headless=True)
+        assert integration.config.BASE_URL.startswith("https://"), (
+            f"insecure base URL: {integration.config.BASE_URL}"
+        )
+        for entry in ("signup_account", "signin_account", "create_api_key"):
+            assert callable(getattr(integration, entry)), f"missing {entry}"
+
+        print(f"Dry run OK: {__site__} exposes {sorted(caps)}")
+        PY
 
   build-status:
     runs-on: ubuntu-latest

@@ -67,3 +67,21 @@ module = [
     "app.services.email_service",
 ]
 ignore_errors = true
+
+[tool.bandit]
+# Checks skipped with a reason. Everything else gates at LOW severity, so the
+# two findings fixed alongside this config -- B113 (requests without a timeout)
+# and B311 (Mersenne Twister used to mint account passwords) -- would fail CI
+# again if reintroduced.
+#
+#   B105/B106  hardcoded_password_string / _funcarg. Every hit is a false
+#              positive: RFC 8693 token-type URIs in broker/derived.py, OpenAPI
+#              example payloads in routers/credentials.py, scoring weights in
+#              validation_system.py, and fake demo credentials seeded by
+#              init_database(). None are secrets.
+#   B110/B112  try/except/pass and try/except/continue. All are best-effort
+#              cleanup (driver.quit(), IMAP logout) or element-polling loops in
+#              the browser automation. Code smells, not vulnerabilities.
+#   B404       "import subprocess". Informational; the call sites are covered by
+#              the B602/B603/B607 checks, which remain enabled.
+skips = ["B105", "B106", "B110", "B112", "B404"]
