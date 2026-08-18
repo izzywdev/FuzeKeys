@@ -42,8 +42,8 @@ class SealedSecret:
     """Ciphertext bundle safe to hand to an untrusted relay."""
 
     wrapped_dek: str  # b64url RSA-OAEP-wrapped data key
-    nonce: str        # b64url AES-GCM nonce
-    ciphertext: str   # b64url AES-GCM ciphertext (incl. tag)
+    nonce: str  # b64url AES-GCM nonce
+    ciphertext: str  # b64url AES-GCM ciphertext (incl. tag)
     alg: str = "RSA-OAEP-256+A256GCM"
 
     def to_json(self) -> str:
@@ -77,7 +77,9 @@ def load_rsa_public_from_jwk(jwk: dict) -> rsa.RSAPublicKey:
     return rsa.RSAPublicNumbers(e, n).public_key()
 
 
-def seal_to_recipient(plaintext: bytes, recipient_public: rsa.RSAPublicKey) -> SealedSecret:
+def seal_to_recipient(
+    plaintext: bytes, recipient_public: rsa.RSAPublicKey
+) -> SealedSecret:
     """Envelope-encrypt ``plaintext`` so only the recipient's private key opens it."""
     dek = AESGCM.generate_key(bit_length=256)
     nonce = os.urandom(12)
@@ -105,7 +107,9 @@ def open_sealed(sealed: SealedSecret, recipient_private: rsa.RSAPrivateKey) -> b
             label=None,
         ),
     )
-    return AESGCM(dek).decrypt(_b64u_dec(sealed.nonce), _b64u_dec(sealed.ciphertext), None)
+    return AESGCM(dek).decrypt(
+        _b64u_dec(sealed.nonce), _b64u_dec(sealed.ciphertext), None
+    )
 
 
 def generate_recipient_keypair(bits: int = 2048):

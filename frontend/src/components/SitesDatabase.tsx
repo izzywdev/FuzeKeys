@@ -58,6 +58,14 @@ interface SitesStats {
   estimated_total_hours: number;
 }
 
+// Resolved at module scope: these are constants. Rebuilding API_BASE on every
+// render would give every data callback below a new identity each render.
+const API_BASE = process.env.REACT_APP_API_URL
+  ? `${process.env.REACT_APP_API_URL}/api/v1/sites`
+  : 'http://localhost:8002/api/v1/sites';
+
+const ITEMS_PER_PAGE = 20;
+
 const SitesDatabase: React.FC = () => {
   const [sites, setSites] = useState<Site[]>([]);
   const [stats, setStats] = useState<SitesStats | null>(null);
@@ -65,8 +73,13 @@ const SitesDatabase: React.FC = () => {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
-  const [page, setPage] = useState(0);
-  
+
+  // The current page is a ref, not state: it is never rendered, and as state it
+  // would have to sit in fetchSitesData's dependency list -- which fetchSitesData
+  // itself writes, re-creating the callback (and re-firing the effects) on every
+  // fetch.
+  const pageRef = useRef(0);
+
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
@@ -75,45 +88,23 @@ const SitesDatabase: React.FC = () => {
 
   // Infinite scroll
   const observer = useRef<IntersectionObserver>();
-  const lastSiteElementRef = useCallback((node: HTMLDivElement) => {
-    if (loading) return;
-    if (observer.current) observer.current.disconnect();
-    observer.current = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && hasMore && !loadingMore) {
-        loadMoreSites();
-      }
-    });
-    if (node) observer.current.observe(node);
-  }, [loading, hasMore, loadingMore]);
 
-  // Use environment variable or default to backend port
-  const API_BASE = process.env.REACT_APP_API_URL 
-    ? `${process.env.REACT_APP_API_URL}/api/v1/sites`
-    : 'http://localhost:8002/api/v1/sites';
-
-  const ITEMS_PER_PAGE = 20;
-
-  useEffect(() => {
-    fetchSitesData(true); // Reset on filter change
-    fetchStats();
-  }, [searchTerm, categoryFilter, difficultyFilter, priorityFilter]);
-
-  const fetchSitesData = async (reset = false) => {
+  const fetchSitesData = useCallback(async (reset = false) => {
     try {
       if (reset) {
         setLoading(true);
         setSites([]);
-        setPage(0);
+        pageRef.current = 0;
         setHasMore(true);
       } else {
         setLoadingMore(true);
       }
 
-      const currentPage = reset ? 0 : page;
+      const currentPage = reset ? 0 : pageRef.current;
       const params = new URLSearchParams();
       params.append('skip', (currentPage * ITEMS_PER_PAGE).toString());
       params.append('limit', ITEMS_PER_PAGE.toString());
-      
+
       if (searchTerm) params.append('search', searchTerm);
       if (categoryFilter) params.append('category', categoryFilter);
       if (difficultyFilter) params.append('difficulty', difficultyFilter);
@@ -123,9 +114,9 @@ const SitesDatabase: React.FC = () => {
 
       const response = await fetch(`${API_BASE}?${params}`);
       if (!response.ok) throw new Error(`Failed to fetch sites: ${response.status} ${response.statusText}`);
-      
+
       const data = await response.json();
-      
+
       if (reset) {
         setSites(data);
       } else {
@@ -134,7 +125,7 @@ const SitesDatabase: React.FC = () => {
 
       // Check if we have more data
       setHasMore(data.length === ITEMS_PER_PAGE);
-      setPage(currentPage + 1);
+      pageRef.current = currentPage + 1;
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
@@ -143,25 +134,42 @@ const SitesDatabase: React.FC = () => {
       setLoading(false);
       setLoadingMore(false);
     }
-  };
+  }, [searchTerm, categoryFilter, difficultyFilter, priorityFilter]);
 
-  const loadMoreSites = () => {
+  const loadMoreSites = useCallback(() => {
     if (!loadingMore && hasMore) {
       fetchSitesData(false);
     }
-  };
+  }, [loadingMore, hasMore, fetchSitesData]);
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     try {
       const response = await fetch(`${API_BASE}/stats/overview`);
       if (!response.ok) throw new Error(`Failed to fetch stats: ${response.status} ${response.statusText}`);
-      
+
       const data = await response.json();
       setStats(data);
     } catch (err) {
       console.error('Failed to fetch stats:', err);
     }
-  };
+  }, []);
+
+  // Declared after loadMoreSites so it can list it as a dependency.
+  const lastSiteElementRef = useCallback((node: HTMLDivElement) => {
+    if (loading) return;
+    if (observer.current) observer.current.disconnect();
+    observer.current = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && hasMore && !loadingMore) {
+        loadMoreSites();
+      }
+    });
+    if (node) observer.current.observe(node);
+  }, [loading, hasMore, loadingMore, loadMoreSites]);
+
+  useEffect(() => {
+    fetchSitesData(true); // Reset on filter change
+    fetchStats();
+  }, [fetchSitesData, fetchStats]);
 
   // Debounced search
   useEffect(() => {
@@ -171,7 +179,8 @@ const SitesDatabase: React.FC = () => {
       }
     }, 500);
     return () => clearTimeout(timeoutId);
-  }, [searchTerm, categoryFilter, difficultyFilter, priorityFilter]);
+  }, [fetchSitesData, searchTerm, categoryFilter, difficultyFilter, priorityFilter]);
+
 
   const getDifficultyColor = (difficulty: string) => {
     switch (difficulty.toLowerCase()) {

@@ -2,7 +2,7 @@
 Google backend integration components.
 """
 
-from .signup import GoogleSignupService
 from .models import GoogleSignupData
+from .signup import GoogleSignupService
 
-__all__ = ["GoogleSignupService", "GoogleSignupData"] 
+__all__ = ["GoogleSignupService", "GoogleSignupData"]

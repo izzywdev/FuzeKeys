@@ -13,6 +13,17 @@ aiosqlite==0.19.0
 # Security & Encryption
 cryptography>=3.4.8
 passlib[bcrypt]==1.7.4
+# passlib 1.7.4 is the last release and predates bcrypt 4.1: it probes the
+# backend at import time in a way bcrypt >=4.1 rejects, so an unpinned bcrypt
+# (5.x today) makes every hash_password() call raise. Pin until passlib is
+# replaced.
+bcrypt==4.0.1
+# SECURITY: 3.3.0 carries CVE-2024-33663 (CRITICAL, JWT algorithm confusion),
+# CVE-2024-33664 and PYSEC-2025-185. The obvious bump to 3.4.0 is NOT a clean
+# win: 3.4.0 caps pyasn1<0.5.0, which pulls pyasn1 0.4.8 and its own 4
+# advisories, and the cap makes `python-jose==3.4.0 + pyasn1>=0.6.4`
+# unresolvable. Trading an auth-path CVE for ASN.1 parser CVEs is a security
+# call, not a CI one -- tracked separately for the security owner.
 python-jose[cryptography]==3.3.0
 # Secret-broker: attenuable capability handles (macaroons) for A2A delegation.
 pymacaroons==0.13.0
@@ -64,5 +75,4 @@ pytest==7.4.3
 pytest-asyncio==0.21.1
 black==23.11.0
 isort==5.12.0
-mypy==1.7.1 
 mypy==1.7.1 
