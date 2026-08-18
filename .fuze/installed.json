@@ -799,8 +799,8 @@
       "capability": "node-toolchain",
       "mode": "derived",
       "sourcePath": "",
-      "sourceSha256": "b47482eddb3454c37653aada3a9a457e17053aecc2133263b53168500337e032",
-      "renderedSha256": "b47482eddb3454c37653aada3a9a457e17053aecc2133263b53168500337e032"
+      "sourceSha256": "2626599a8dd971f3b79eb0f254a77d458f21bcfd1e1fedd8d83ea121badc21d4",
+      "renderedSha256": "2626599a8dd971f3b79eb0f254a77d458f21bcfd1e1fedd8d83ea121badc21d4"
     },
     "frontend/vite.config.ts": {
       "capability": "mf-remote",
