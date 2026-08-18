@@ -6,7 +6,7 @@ including signup, signin, and API key creation for various platforms.
 """
 
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr
 from typing import Dict, Any, List, Optional
 import logging
 
@@ -22,6 +22,14 @@ router = APIRouter(prefix="/api/v1/integrations", tags=["Site Integrations"])
 
 # Request/Response Models
 class SignupRequest(BaseModel):
+    # extra="forbid" per governance/identifier-standard.md 1 (enforced by
+    # gate-identifier): a create body must reject fields it does not declare, so a
+    # client cannot smuggle an id or any other attribute the caller does not own.
+    # This is the mass-assignment (OWASP API3:2023 BOPLA) guard, and it has to live
+    # on the model rather than the generated spec — deploy/helm/fuzekeys/files/
+    # openapi.yaml is exported FROM this code and would lose a hand-edit.
+    model_config = ConfigDict(extra="forbid")
+
     site: str
     email: EmailStr
     password: str
@@ -39,6 +47,14 @@ class SigninRequest(BaseModel):
     headless: bool = True
 
 class ApiKeyRequest(BaseModel):
+    # extra="forbid" per governance/identifier-standard.md 1 (enforced by
+    # gate-identifier): a create body must reject fields it does not declare, so a
+    # client cannot smuggle an id or any other attribute the caller does not own.
+    # This is the mass-assignment (OWASP API3:2023 BOPLA) guard, and it has to live
+    # on the model rather than the generated spec — deploy/helm/fuzekeys/files/
+    # openapi.yaml is exported FROM this code and would lose a hand-edit.
+    model_config = ConfigDict(extra="forbid")
+
     site: str
     email: EmailStr
     password: str

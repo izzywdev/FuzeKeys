@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import List, Optional, Dict
 from datetime import datetime
 
@@ -41,6 +41,13 @@ class AccountResponse(BaseModel):
 
 
 class AccountCreate(BaseModel):
+    # extra="forbid" per governance/identifier-standard.md 1 (enforced by
+    # gate-identifier): a create body must reject fields it does not declare, so a
+    # client cannot smuggle an id or any other attribute the caller does not own
+    # (OWASP API3:2023 mass assignment). It lives on the model, not the spec —
+    # contracts/openapi.yaml is exported FROM this code and loses hand-edits.
+    model_config = ConfigDict(extra="forbid")
+
     website_name: str
     website_url: str
     identity_id: int

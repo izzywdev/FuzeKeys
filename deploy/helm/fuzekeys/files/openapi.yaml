@@ -1721,7 +1721,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Body_manual_signup_api_google_signup_manual_post'
+              $ref: '#/components/schemas/ManualSignupRequest'
         required: true
       responses:
         '200':
@@ -2394,6 +2394,7 @@ components:
             type: array
           - type: 'null'
           title: Stages
+      additionalProperties: false
       type: object
       required:
       - website_name
@@ -2585,22 +2586,13 @@ components:
           type: boolean
           title: Headless
           default: true
+      additionalProperties: false
       type: object
       required:
       - site
       - email
       - password
       title: ApiKeyRequest
-    Body_manual_signup_api_google_signup_manual_post:
-      properties:
-        signup_data:
-          $ref: '#/components/schemas/GoogleSignupData'
-        config:
-          $ref: '#/components/schemas/GoogleSignupConfig'
-      type: object
-      required:
-      - signup_data
-      title: Body_manual_signup_api_google_signup_manual_post
     ChatMessage:
       properties:
         message:
@@ -2781,6 +2773,7 @@ components:
         app_version:
           type: string
           title: App Version
+      additionalProperties: false
       type: object
       required:
       - device_id
@@ -3089,6 +3082,7 @@ components:
           - type: string
           - type: 'null'
           title: Preferred Username Pattern
+      additionalProperties: false
       type: object
       required:
       - name
@@ -3384,6 +3378,40 @@ components:
       - message
       - site
       title: IntegrationResponse
+    ManualSignupRequest:
+      properties:
+        signup_data:
+          $ref: '#/components/schemas/GoogleSignupData'
+        config:
+          anyOf:
+          - $ref: '#/components/schemas/GoogleSignupConfig'
+          - type: 'null'
+      additionalProperties: false
+      type: object
+      required:
+      - signup_data
+      title: ManualSignupRequest
+      description: 'Explicit body model for POST /signup/manual.
+
+
+        Previously this endpoint declared two separate body parameters, so FastAPI synthesised
+
+        the wrapper schema `Body_manual_signup_api_google_signup_manual_post` — and a synthesised
+
+        wrapper cannot carry `extra="forbid"`, which is why gate-identifier flagged this route
+
+        (governance/identifier-standard.md 1: a create body must reject fields it does not
+
+        declare, the OWASP API3:2023 mass-assignment guard).
+
+
+        Declaring the wrapper explicitly is WIRE-COMPATIBLE: two embedded body params already
+
+        produced `{"signup_data": ..., "config": ...}`, and this model produces exactly the same
+
+        JSON, with `config` still optional. What changes is that an undeclared top-level field is
+
+        now a 422 instead of being silently ignored.'
     MintTokenRequest:
       properties:
         audience:
@@ -3788,6 +3816,7 @@ components:
           - type: string
           - type: 'null'
           title: Last Name
+      additionalProperties: false
       type: object
       required:
       - username
@@ -3984,6 +4013,7 @@ components:
           - type: string
           - type: 'null'
           title: Additional Instructions
+      additionalProperties: false
       type: object
       required:
       - website_url
@@ -4026,6 +4056,7 @@ components:
           type: boolean
           title: Headless
           default: true
+      additionalProperties: false
       type: object
       required:
       - site

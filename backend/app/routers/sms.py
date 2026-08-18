@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, WebSocket, WebSocketDisco
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from typing import List, Dict, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 import logging
 import json
 import re
@@ -72,6 +72,13 @@ class OtpRequest(BaseModel):
     request_id: str
 
 class DeviceRegistrationRequest(BaseModel):
+    # extra="forbid" per governance/identifier-standard.md 1 (enforced by
+    # gate-identifier): a create body must reject fields it does not declare, so a
+    # client cannot smuggle an id or any other attribute the caller does not own
+    # (OWASP API3:2023 mass assignment). It lives on the model, not the spec —
+    # contracts/openapi.yaml is exported FROM this code and loses hand-edits.
+    model_config = ConfigDict(extra="forbid")
+
     device_id: str
     device_name: str
     os_version: str

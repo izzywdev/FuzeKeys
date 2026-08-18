@@ -18,7 +18,8 @@ rest of the codebase.
 """
 
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Optional
+from pydantic import BaseModel, ConfigDict
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -119,10 +120,31 @@ async def signup_with_identity(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+
+class ManualSignupRequest(BaseModel):
+    """
+    Explicit body model for POST /signup/manual.
+
+    Previously this endpoint declared two separate body parameters, so FastAPI synthesised
+    the wrapper schema `Body_manual_signup_api_google_signup_manual_post` — and a synthesised
+    wrapper cannot carry `extra="forbid"`, which is why gate-identifier flagged this route
+    (governance/identifier-standard.md 1: a create body must reject fields it does not
+    declare, the OWASP API3:2023 mass-assignment guard).
+
+    Declaring the wrapper explicitly is WIRE-COMPATIBLE: two embedded body params already
+    produced `{"signup_data": ..., "config": ...}`, and this model produces exactly the same
+    JSON, with `config` still optional. What changes is that an undeclared top-level field is
+    now a 422 instead of being silently ignored.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    signup_data: GoogleSignupData
+    config: Optional[GoogleSignupConfig] = None
+
 @router.post("/signup/manual")
 async def manual_signup(
-    signup_data: GoogleSignupData,
-    config: GoogleSignupConfig = None,
+    body: "ManualSignupRequest",
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ) -> Dict[str, Any]:
@@ -134,10 +156,10 @@ async def manual_signup(
     """
     try:
         # Create signup service
-        signup_service = GoogleSignupService(config or GoogleSignupConfig())
+        signup_service = GoogleSignupService(body.config or GoogleSignupConfig())
 
         # Perform signup
-        result = await signup_service.signup(signup_data)
+        result = await signup_service.signup(body.signup_data)
 
         return {
             "success": result.success,
