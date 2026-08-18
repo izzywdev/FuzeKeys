@@ -8,7 +8,7 @@ name: Harden Gate
 
 on:
   push:
-    branches: [main, master]
+    branches: [master]
   pull_request:
 
 permissions:
@@ -21,12 +21,45 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  gate-manifest:
+    # Validate .fuze/manifest.json against the repo manifest schema.
+    #
+    # ENFORCING FROM DAY ONE, which is only defensible because the schema was brought into
+    # line with reality first. Before that: 19 of 22 real manifests violated it, because the
+    # schema declared `additionalProperties: false` while every repo carried a2a/mcp/mobile/
+    # portal blocks it had never heard of. After: 22 of 22 pass. Turning a gate on is safe
+    # exactly when the fleet already satisfies it — otherwise you get 19 permanently-red repos
+    # and a `|| true` two weeks later.
+    #
+    # It caught a real defect on its first run: FuzeFinance declared
+    # channels: ["mcp","mobile"] where the enum member is "mobile-app", backed by neither
+    # block. A typo in a CLOSED enum survived indefinitely because nothing in the family had
+    # ever validated this file — the only reference to the schema in any executable was a
+    # filename inside an error string.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Manifest schema gate (enforcing)
+        shell: bash
+        run: |
+          if [ ! -f scripts/gate_manifest.py ]; then
+            echo "::error title=gate-manifest::scripts/gate_manifest.py is missing. sdlc-bootstrap installs it together with .fuze/repo-manifest.schema.json and this job. Do NOT 'fix' this by skipping."
+            exit 1
+          fi
+          # jsonschema gives full validation. The gate runs without it too — a structural
+          # fallback covering required keys, closed enums and unknown properties — and SAYS
+          # which mode it used, so a degraded run is never mistaken for a clean one.
+          pip install -q jsonschema || echo "::warning::jsonschema unavailable — gate-manifest will run in structural fallback mode"
+          python scripts/gate_manifest.py .
+
   gate-lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '20' }
+        with: { node-version: '24.x' }
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
       - name: Lint (adaptive, report-only)
@@ -49,7 +82,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '20' }
+        with: { node-version: '24.x' }
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
       - name: Test (adaptive, report-only)
@@ -69,7 +102,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '20' }
+        with: { node-version: '24.x' }
       - name: Build (adaptive, report-only)
         shell: bash
         run: |
@@ -101,10 +134,54 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
+
+      # Runs the gitleaks BINARY, not gitleaks-action.
+      #
+      # The action's pull_request path calls GET /repos/:o/:r/pulls/:n/commits to work out
+      # what to scan, and when that call fails it does not degrade — it throws, and the job
+      # dies before scanning a single byte. That is happening now: the call returns 403
+      # "Resource not accessible by integration" while the job's own token summary prints
+      # "PullRequests: read", so the permission the API asks for is the permission the token
+      # already has. It broke repo-wide between 2026-08-11 and 2026-08-17: three unrelated
+      # dependabot PRs and this one all failed inside a few hours, on branches that had
+      # passed the same gate days earlier.
+      #
+      # A secret gate that depends on an API call is a gate with an availability failure
+      # mode, and the whole point of this one is that it CANNOT be the thing that quietly
+      # stops working. git already knows the commit range; nothing needs to be asked.
       - name: gitleaks (gates new secrets)
-        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7  # v2
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          VERSION=8.24.3
+          SHA256=9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c
+          TARBALL=gitleaks_${VERSION}_linux_x64.tar.gz
+
+          # Pinned + checksummed. A security gate that curls an unverified binary is worse
+          # than the problem it is solving; the digest is the upstream one from
+          # gitleaks_${VERSION}_checksums.txt.
+          curl -sSfL -o "$TARBALL" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/${TARBALL}"
+          echo "${SHA256}  ${TARBALL}" | sha256sum -c -
+          tar -xzf "$TARBALL" gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+          rm -f "$TARBALL" gitleaks
+
+          # On a PR, scan exactly the commits the PR adds. Anywhere else, scan all history:
+          # a wider scan can only find MORE, so the fallback is the safe direction. There is
+          # deliberately no path that scans nothing — "no range, so skip" is how a gate ends
+          # up green while enforcing nothing.
+          if [ -n "${BASE_SHA:-}" ] && [ -n "${HEAD_SHA:-}" ]; then
+            echo "::notice title=gate-secret-scan::scanning ${BASE_SHA}..${HEAD_SHA}"
+            gitleaks git --log-opts="${BASE_SHA}..${HEAD_SHA}" --redact --no-banner .
+          else
+            echo "::notice title=gate-secret-scan::no PR range — scanning full history"
+            gitleaks git --redact --no-banner .
+          fi
 
   gate-dependency-scan:
     runs-on: ubuntu-latest
@@ -148,6 +225,135 @@ jobs:
           sarif_file: authz.sarif
           category: authz
 
+  gate-pagination:
+    # Pagination standard (CLAUDE.baseline.md §4.1). Inspects OpenAPI/Swagger contracts and
+    # FAILS when an unbounded collection GET lacks limit + cursor|offset + the {items,page}
+    # envelope, unless annotated `x-pagination: exempt` or allowlisted. Report-only first pass
+    # (|| true) — flip to enforcing per-repo once contracts are annotated. Owned by contract-designer
+    # (contract) + backend-engineer (impl) + test-engineer (verify); policy by platform-governance.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Pagination gate
+        shell: bash
+        run: |
+          pip install -q pyyaml
+          SCRIPT=""
+          for c in scripts/gate_pagination.py .fuze/gate_pagination.py .github/scripts/gate_pagination.py; do
+            [ -f "$c" ] && SCRIPT="$c" && break
+          done
+          if [ -z "$SCRIPT" ]; then
+            echo "::warning title=gate-pagination::no gate_pagination.py found in repo — skipping"; exit 0
+          fi
+          python "$SCRIPT" . || true   # report-only first pass; remove "|| true" to enforce
+
+  gate-identifier:
+    # Server-owned entity identifiers (governance/identifier-standard.md).
+    #
+    # THIS JOB DID NOT EXIST IN THIS TEMPLATE UNTIL NOW, AND THAT WAS THE GAP.
+    # CLAUDE.baseline.md §4.2 declares the standard normative and says it is
+    # "enforced by gate-identifier" — but the rule shipped as two docs(baseline)
+    # commits carrying no script and no job. Measured result across the fleet:
+    # 0 repos ran the gate, 0 declared `identity.namespace`, 0 depended on
+    # @izzywdev/fuzefront-identity or fuzefront-identity. The standard travelled;
+    # the enforcement did not.
+    #
+    # Note the ordering of the checks below is deliberate. Two of them
+    # (--registry-parity, --namespace) return [] early when the files they read
+    # are absent, so a repo that has adopted nothing passes them VACUOUSLY.
+    # --adoption is the check that actually fires on non-adoption, and its own
+    # docstring names the reason it exists: "a family standard whose gate is
+    # satisfied by non-adoption is not a standard."
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+
+      - name: Identifier gate — self-tests (the gate must be known to FIRE)
+        shell: bash
+        # Asserts the gate FAILS on a violation, not merely that it passes on a
+        # clean tree. `claude-auto-pr.yml` was green for its whole life because
+        # every run took its early-exit path; the one time it had real work, it
+        # failed. Passing is not evidence. These run FIRST so a broken gate
+        # reports as a broken gate rather than as a clean repo.
+        run: |
+          if [ ! -f scripts/gate_identifier.py ]; then
+            echo "::error title=gate-identifier::scripts/gate_identifier.py is missing. It is installed by sdlc-bootstrap together with its self-tests, the allowlist and this job — if you have this job you must have the script. Do NOT 'fix' this by skipping."
+            exit 1
+          fi
+          # Pattern is test_*.py, NOT test_gate_identifier*.py. An earlier version of this
+          # step scoped the glob to the identifier tests, which would have meant any OTHER
+          # suite added to scripts/__tests__/ (the bootstrap installer's, for one) silently
+          # never ran — a new vacuous gate, introduced by the commit that removed four of
+          # them. Discovery here is deliberately broad: this directory holds the self-tests
+          # for every distributed script, and all of them must be known to fire.
+          python -m unittest discover -s scripts/__tests__ -p 'test_*.py'
+
+      - name: Identifier gate — contracts (enforcing)
+        shell: bash
+        # C1 no client-supplied id on create, C2 additionalProperties:false,
+        # C3 polymorphic reference carries its type, C4 aggregate scoping.
+        # Enforcing from day one: these fire only on NEW violations in specs the
+        # repo already has, so a repo that has adopted nothing is not penalised.
+        run: |
+          pip install -q pyyaml
+          python scripts/gate_identifier.py .
+          python scripts/gate_identifier.py . --registry-parity
+          python scripts/gate_identifier.py . --namespace
+
+      - name: Identifier gate — adoption
+        shell: bash
+        # ENFORCING ONLY ONCE THE REPO OPTS IN, by declaring `identity` in
+        # .fuze/manifest.json. That is deliberate and is not the same thing as
+        # "report-only until someone remembers":
+        #   * a repo that has NOT declared identity gets a notice, not a failure
+        #     — installing this enforcing everywhere would red most of the fleet
+        #     on day one for a standard they have not adopted yet;
+        #   * a repo that HAS declared it is asserting it adopted the package, so
+        #     the check is enforcing immediately. There is no state in which a
+        #     repo claims adoption and the gate stays quiet.
+        run: |
+          if python3 -c "import json,sys; sys.exit(0 if 'identity' in json.load(open('.fuze/manifest.json')) else 1)" 2>/dev/null; then
+            echo "manifest declares identity — adoption check is ENFORCING"
+            python scripts/gate_identifier.py . --adoption
+          else
+            echo "::notice title=gate-identifier::.fuze/manifest.json declares no \`identity\` block, so this repo has not opted into the identifier standard. Adding that block makes the adoption check enforcing. See governance/identifier-standard.md."
+          fi
+
+  gate-ds-conformance:
+    # Design-system conformance (CLAUDE.baseline.md §6). HARD-FAILS raw design values in feature
+    # code (hex/rgb/hsl/px/font outside tokens, excludes the DS package). SEPARATELY opens one
+    # idempotent `ds-extraction` GitHub issue per recurring UI pattern that should become a DS
+    # primitive. Report-only first pass (|| true). Owned by frontend-engineer (sole DS owner).
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: DS conformance gate (+ extraction issues on push to default branch)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          SCRIPT=""
+          for c in scripts/gate_ds_conformance.py .fuze/gate_ds_conformance.py .github/scripts/gate_ds_conformance.py; do
+            [ -f "$c" ] && SCRIPT="$c" && break
+          done
+          if [ -z "$SCRIPT" ]; then
+            echo "::warning title=gate-ds-conformance::no gate_ds_conformance.py found in repo — skipping"; exit 0
+          fi
+          EMIT=""
+          # Only emit extraction issues on push to the default branch (not on every PR) to avoid noise.
+          if [ "${{ github.event_name }}" = "push" ]; then EMIT="--emit-issues"; fi
+          python "$SCRIPT" . $EMIT || true   # report-only first pass; remove "|| true" to enforce hard violations
+
   gate-localup:
     # Bounded local deployability. Stands up FuzeInfra consumer-test (if vendored) + validates the
     # Helm chart; warns (tracked) when no bounded local-up is wired yet. local-env-verifier ratchets
@@ -177,6 +383,47 @@ jobs:
           cdir=$(dirname "$chart")
           curl -sSL https://get.helm.sh/helm-v3.16.4-linux-amd64.tar.gz | tar xz -C /tmp >/dev/null 2>&1 && sudo mv /tmp/linux-amd64/helm /usr/local/bin/helm || true
           helm lint "$cdir" || echo "::warning title=helm-lint::chart findings (report)"
+
+  gate-toolchain:
+    # Family toolchain floor (Node 24 / React 19 — see the "Toolchain baseline" convention
+    # documented per-repo, originated in FuzeFront's CLAUDE.md and generalized here). A sweep
+    # found several repos on node:18/20-alpine Docker images and CI runners with nothing
+    # checking it. Dependency-free (node scripts/gate-toolchain.mjs); safe to run on any repo
+    # — it scans package.json/.nvmrc/Dockerfiles/workflows/Module-Federation configs and
+    # passes vacuously (0 files scanned) on a repo with none of those. Report-only first pass
+    # (|| true): several repos are known non-compliant today (see the originating issue) and
+    # a hard-fail here would block every unrelated PR on them the moment this template syncs.
+    # Ratchet to enforcing per repo once its own bump PR (adding the missing engines/
+    # @types/node/Dockerfile-major/requiredVersion fields) has landed.
+    #
+    # CORRECTION: an earlier version of this comment claimed "FuzeFront's own copy of this job
+    # has already done so and dropped the || true". That was not true and is worth recording
+    # rather than quietly deleting, because it gave false confidence in an unproven gate:
+    # FuzeFront has NO gate-toolchain job and NO gate-toolchain.mjs — `grep -c toolchain` over
+    # its .github/workflows/ returns 0. Combined with the fact that sdlc-bootstrap distributes
+    # no scripts beyond the two frames .mjs files, this gate has never executed anywhere. The
+    # scan below is therefore UNPROVEN in production; treat its first real run as a smoke test.
+    #
+    # The floor it checks is declared data, not a constant in the script: FuzeFront's
+    # .fuze/manifest.json already carries a `toolchain` block (node/npm/typesNode/react/
+    # reactPeerRange/typesReact/moduleFederationRequiredVersion/dockerBaseImage/ciNodeVersion).
+    # That block is the canonical shape — promote it, do not invent a second one.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '24.x' }
+      - name: Toolchain floor gate (report-only)
+        shell: bash
+        run: |
+          SCRIPT=""
+          for c in scripts/gate-toolchain.mjs .fuze/gate-toolchain.mjs .github/scripts/gate-toolchain.mjs; do
+            [ -f "$c" ] && SCRIPT="$c" && break
+          done
+          if [ -z "$SCRIPT" ]; then
+            echo "::warning title=gate-toolchain::no gate-toolchain.mjs found in repo — skipping"; exit 0
+          fi
+          node "$SCRIPT" || true   # report-only first pass; remove "|| true" once this repo is compliant
 
   gate-version:
     # SemVer discipline (governance/versioning.md): a changed npm package or API contract

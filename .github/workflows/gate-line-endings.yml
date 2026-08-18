@@ -35,7 +35,7 @@ name: gate-line-endings
 
 on:
   push:
-    branches: [main, master]
+    branches: [master]
   pull_request:
   workflow_call:
 

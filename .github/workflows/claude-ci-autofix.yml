@@ -2,7 +2,7 @@ name: Claude Auto-Fix CI
 
 on:
   workflow_run:
-    workflows: ["CI/CD Pipeline"]
+    workflows: ["Infrastructure Tests", "Helm Chart Validation", "Harden Gate"]
     types: [completed]
 
 permissions:

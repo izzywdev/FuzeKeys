@@ -1,0 +1,876 @@
+{
+  "schemaVersion": 1,
+  "files": {
+    ".claude/agents/a2a-maintainer.md": {
+      "capability": "core-agents",
+      "mode": "managed",
+      "sourcePath": "agents/a2a-maintainer.md",
+      "sourceSha256": "07663ea2678e6bf142fe2669399c1a80bb50ebbe555a78e4744177ac0e23bd4c",
+      "renderedSha256": "07663ea2678e6bf142fe2669399c1a80bb50ebbe555a78e4744177ac0e23bd4c"
+    },
+    ".claude/agents/agile-manager.md": {
+      "capability": "core-agents",
+      "mode": "managed",
+      "sourcePath": "agents/agile-manager.md",
+      "sourceSha256": "d530d5adfcda0b6333d62fa6b3227678438a4a16ce174df2a3647bb2b4170760",
+      "renderedSha256": "d530d5adfcda0b6333d62fa6b3227678438a4a16ce174df2a3647bb2b4170760"
+    },
+    ".claude/agents/backend-engineer.md": {
+      "capability": "core-agents",
+      "mode": "managed",
+      "sourcePath": "agents/backend-engineer.md",
+      "sourceSha256": "eefbb85cf686a6c0a0ecc8623af90ed2244c11821a5d033ece48a77ba3ee9868",
+      "renderedSha256": "eefbb85cf686a6c0a0ecc8623af90ed2244c11821a5d033ece48a77ba3ee9868"
+    },
+    ".claude/agents/contract-designer.md": {
+      "capability": "core-agents",
+      "mode": "managed",
+      "sourcePath": "agents/contract-designer.md",
+      "sourceSha256": "5623bf51e3eb1b5a45d3b0af4d0b32b618a7ac3a4bb1332ec09e7bcdc4e44b86",
+      "renderedSha256": "5623bf51e3eb1b5a45d3b0af4d0b32b618a7ac3a4bb1332ec09e7bcdc4e44b86"
+    },
+    ".claude/agents/database-engineer.md": {
+      "capability": "core-agents",
+      "mode": "managed",
+      "sourcePath": "agents/database-engineer.md",
+      "sourceSha256": "0eee2813a846910b220c4c586f910571750dbcea0ccf9622491a9644f0636dab",
+      "renderedSha256": "0eee2813a846910b220c4c586f910571750dbcea0ccf9622491a9644f0636dab"
+    },
+    ".claude/agents/devops-engineer.md": {
+      "capability": "core-agents",
+      "mode": "managed",
+      "sourcePath": "agents/devops-engineer.md",
+      "sourceSha256": "282f60005144669906d7b96bc2e534f67d4e3db8f5df05e1a7b04baf47083be1",
+      "renderedSha256": "282f60005144669906d7b96bc2e534f67d4e3db8f5df05e1a7b04baf47083be1"
+    },
+    ".claude/agents/docs-maintainer.md": {
+      "capability": "core-agents",
+      "mode": "managed",
+      "sourcePath": "agents/docs-maintainer.md",
+      "sourceSha256": "62581d7936a330055acc455d94f08fbe9ae97aa3f5023633f96062a23a5be01e",
+      "renderedSha256": "62581d7936a330055acc455d94f08fbe9ae97aa3f5023633f96062a23a5be01e"
+    },
+    ".claude/agents/frontend-engineer.md": {
+      "capability": "core-agents",
+      "mode": "managed",
+      "sourcePath": "agents/frontend-engineer.md",
+      "sourceSha256": "c6e35d44bd6768c6d5969546d76a668e4ba3ef62d175763b25ac96a5b3d71ce4",
+      "renderedSha256": "c6e35d44bd6768c6d5969546d76a668e4ba3ef62d175763b25ac96a5b3d71ce4"
+    },
+    ".claude/agents/frontend-test-engineer.md": {
+      "capability": "core-agents",
+      "mode": "managed",
+      "sourcePath": "agents/frontend-test-engineer.md",
+      "sourceSha256": "852dc7ee0010c5b76e7fa00a553502e61acf227f28d02866a16bfc1cccd17e4d",
+      "renderedSha256": "852dc7ee0010c5b76e7fa00a553502e61acf227f28d02866a16bfc1cccd17e4d"
+    },
+    ".claude/agents/fuzefront-expert.md": {
+      "capability": "core-agents",
+      "mode": "managed",
+      "sourcePath": "agents/fuzefront-expert.md",
+      "sourceSha256": "a10a5752a8356cc6fc4bc68cfbd76e4ff9380ecdb737cbd3e3b2a4558c9d625b",
+      "renderedSha256": "a10a5752a8356cc6fc4bc68cfbd76e4ff9380ecdb737cbd3e3b2a4558c9d625b"
+    },
+    ".claude/agents/fuzeinfra-expert.md": {
+      "capability": "core-agents",
+      "mode": "managed",
+      "sourcePath": "agents/fuzeinfra-expert.md",
+      "sourceSha256": "7914c87c5ed8adbbaa44c62bfd1d68d2cca4f528d2591885dd9e486645ebbbdb",
+      "renderedSha256": "7914c87c5ed8adbbaa44c62bfd1d68d2cca4f528d2591885dd9e486645ebbbdb"
+    },
+    ".claude/agents/mcp-maintainer.md": {
+      "capability": "core-agents",
+      "mode": "managed",
+      "sourcePath": "agents/mcp-maintainer.md",
+      "sourceSha256": "3940bc0540e953d15cbda95db5c642f6aece2c2cea493b8e07749d4be85fcefc",
+      "renderedSha256": "3940bc0540e953d15cbda95db5c642f6aece2c2cea493b8e07749d4be85fcefc"
+    },
+    ".claude/agents/security.md": {
+      "capability": "core-agents",
+      "mode": "managed",
+      "sourcePath": "agents/security.md",
+      "sourceSha256": "ab941e989cab87edbd623fd5b9bf912c1e2531cd7d80ea4e06bd17efc6919f33",
+      "renderedSha256": "ab941e989cab87edbd623fd5b9bf912c1e2531cd7d80ea4e06bd17efc6919f33"
+    },
+    ".claude/agents/test-engineer.md": {
+      "capability": "core-agents",
+      "mode": "managed",
+      "sourcePath": "agents/test-engineer.md",
+      "sourceSha256": "07d19c4cd581e9a680014d8aceaf5ca02b70c6c2cd156b71a422be7abed69de1",
+      "renderedSha256": "07d19c4cd581e9a680014d8aceaf5ca02b70c6c2cd156b71a422be7abed69de1"
+    },
+    ".claude/skills/api-contract-first/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/api-contract-first/SKILL.md",
+      "sourceSha256": "83f269decf84233f7ac91f7c05340737a13752d1c5b334cbd88df23a5e2d9300",
+      "renderedSha256": "83f269decf84233f7ac91f7c05340737a13752d1c5b334cbd88df23a5e2d9300"
+    },
+    ".claude/skills/design-system-conformance/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/design-system-conformance/SKILL.md",
+      "sourceSha256": "7d1950ec4c070b26affc6f462b6111ff045802fec0d87d972370059b6b75f9e9",
+      "renderedSha256": "7d1950ec4c070b26affc6f462b6111ff045802fec0d87d972370059b6b75f9e9"
+    },
+    ".claude/skills/design-system-inheritance/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/design-system-inheritance/SKILL.md",
+      "sourceSha256": "507f39db4a2a4a759794464a7b653d7eb6c5f9ce12340d74f3f21ac1429c9e04",
+      "renderedSha256": "507f39db4a2a4a759794464a7b653d7eb6c5f9ce12340d74f3f21ac1429c9e04"
+    },
+    ".claude/skills/doc-validity/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/doc-validity/SKILL.md",
+      "sourceSha256": "e7d0d4c99895edf3fd604fa8878b39e6554165501765c74e573ef1b6e2740210",
+      "renderedSha256": "e7d0d4c99895edf3fd604fa8878b39e6554165501765c74e573ef1b6e2740210"
+    },
+    ".claude/skills/feature-flags/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/feature-flags/SKILL.md",
+      "sourceSha256": "e03f51ed05aa8bb50287a20d10a307cc3a23970173c123bfd3673a92b7346009",
+      "renderedSha256": "e03f51ed05aa8bb50287a20d10a307cc3a23970173c123bfd3673a92b7346009"
+    },
+    ".claude/skills/feature-tech-planning/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/feature-tech-planning/SKILL.md",
+      "sourceSha256": "7b0797dc973404c94d02a5d57258f8befb7b490f7643f9b01619eed1e83c9127",
+      "renderedSha256": "7b0797dc973404c94d02a5d57258f8befb7b490f7643f9b01619eed1e83c9127"
+    },
+    ".claude/skills/fuzefront-ui-package/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/fuzefront-ui-package/SKILL.md",
+      "sourceSha256": "772c7031eca212e59f8509b8a4e773c975aeb5f63b6595d549c96f9c127af600",
+      "renderedSha256": "772c7031eca212e59f8509b8a4e773c975aeb5f63b6595d549c96f9c127af600"
+    },
+    ".claude/skills/logging/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/logging/SKILL.md",
+      "sourceSha256": "b80bd1a00ad2ad001c357ad66d486bffa6b8d691a04a69c56d8ccd810b854f4b",
+      "renderedSha256": "b80bd1a00ad2ad001c357ad66d486bffa6b8d691a04a69c56d8ccd810b854f4b"
+    },
+    ".claude/skills/managed-agents-roles/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/managed-agents-roles/SKILL.md",
+      "sourceSha256": "888ffd0b73f3233f27f9b60b3ca5415fba65399ee6a471571a6be98f43e61437",
+      "renderedSha256": "888ffd0b73f3233f27f9b60b3ca5415fba65399ee6a471571a6be98f43e61437"
+    },
+    ".claude/skills/mobile-conformance/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/mobile-conformance/SKILL.md",
+      "sourceSha256": "476983a3b24b634d1a8c0e33e7475d4053c31ed20ac1a2ccf6bea2cc3c362046",
+      "renderedSha256": "476983a3b24b634d1a8c0e33e7475d4053c31ed20ac1a2ccf6bea2cc3c362046"
+    },
+    ".claude/skills/model-cascade/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/model-cascade/SKILL.md",
+      "sourceSha256": "1673f06d41c25b894fc587e55bd02da02e338bbc3d9eee4d69a3b5031c3f1913",
+      "renderedSha256": "1673f06d41c25b894fc587e55bd02da02e338bbc3d9eee4d69a3b5031c3f1913"
+    },
+    ".claude/skills/repo-hardening/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/repo-hardening/SKILL.md",
+      "sourceSha256": "b33d38d40d677f2f62385971efb9ba7401a47aa22cf9d642ef70854b56cf688b",
+      "renderedSha256": "b33d38d40d677f2f62385971efb9ba7401a47aa22cf9d642ef70854b56cf688b"
+    },
+    ".claude/skills/ticket-creator/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/ticket-creator/SKILL.md",
+      "sourceSha256": "401d94c0ff9a99acabdfc6de19a0338c9a2337abf53b5bf13a6b39eca7e05e78",
+      "renderedSha256": "401d94c0ff9a99acabdfc6de19a0338c9a2337abf53b5bf13a6b39eca7e05e78"
+    },
+    ".claude/skills/ticket-creator/backend/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/ticket-creator/backend/SKILL.md",
+      "sourceSha256": "f4254bc5a8cda575acdee84bbb8769fc353e5a60fcd90a369f3ee099805331b0",
+      "renderedSha256": "f4254bc5a8cda575acdee84bbb8769fc353e5a60fcd90a369f3ee099805331b0"
+    },
+    ".claude/skills/ticket-creator/bug/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/ticket-creator/bug/SKILL.md",
+      "sourceSha256": "bb5faa8e5b9aa8b627c65bce935bbe73df4d95c28af63589a48bd76e18fbbd42",
+      "renderedSha256": "bb5faa8e5b9aa8b627c65bce935bbe73df4d95c28af63589a48bd76e18fbbd42"
+    },
+    ".claude/skills/ticket-creator/devops/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/ticket-creator/devops/SKILL.md",
+      "sourceSha256": "9c6d38d7f96ff200c8ca8217a3de3850d2ac2945728a0a16199e0fc318baa84d",
+      "renderedSha256": "9c6d38d7f96ff200c8ca8217a3de3850d2ac2945728a0a16199e0fc318baa84d"
+    },
+    ".claude/skills/ticket-creator/docs/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/ticket-creator/docs/SKILL.md",
+      "sourceSha256": "7ef59d846b605c5a3ff8362a700d3d88fca62365bfb03bd4e3761994a1e63bd4",
+      "renderedSha256": "7ef59d846b605c5a3ff8362a700d3d88fca62365bfb03bd4e3761994a1e63bd4"
+    },
+    ".claude/skills/ticket-creator/epic/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/ticket-creator/epic/SKILL.md",
+      "sourceSha256": "9e66e9e76a2209b1c81f1086389f02dc8c9187f9e1418f5b5e27d49cf3db94b5",
+      "renderedSha256": "9e66e9e76a2209b1c81f1086389f02dc8c9187f9e1418f5b5e27d49cf3db94b5"
+    },
+    ".claude/skills/ticket-creator/frontend/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/ticket-creator/frontend/SKILL.md",
+      "sourceSha256": "b4400c8aabfac295364fe1e326adfe0085eef35ff772b9f10d46a28e42764899",
+      "renderedSha256": "b4400c8aabfac295364fe1e326adfe0085eef35ff772b9f10d46a28e42764899"
+    },
+    ".claude/skills/ticket-creator/qa/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/ticket-creator/qa/SKILL.md",
+      "sourceSha256": "020e1c3a40efa097f9dc883137a0b9937ddc68f7cc32da739957f2b3dbcd3d92",
+      "renderedSha256": "020e1c3a40efa097f9dc883137a0b9937ddc68f7cc32da739957f2b3dbcd3d92"
+    },
+    ".claude/skills/ticket-creator/qa/functional/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/ticket-creator/qa/functional/SKILL.md",
+      "sourceSha256": "6f9016fec42a5cd3779b282f488188342b8d8f890e9f5191c52ab76bf7a648bd",
+      "renderedSha256": "6f9016fec42a5cd3779b282f488188342b8d8f890e9f5191c52ab76bf7a648bd"
+    },
+    ".claude/skills/ticket-creator/qa/integration/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/ticket-creator/qa/integration/SKILL.md",
+      "sourceSha256": "7cb4ebfc0736c56f61b382a08bbf9ec02932eba8dc78c700b1e1a0c61c6d6f31",
+      "renderedSha256": "7cb4ebfc0736c56f61b382a08bbf9ec02932eba8dc78c700b1e1a0c61c6d6f31"
+    },
+    ".claude/skills/ticket-creator/qa/load-stress/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/ticket-creator/qa/load-stress/SKILL.md",
+      "sourceSha256": "7e492d0c0a6bc951d883761df01ba2b01301886a738d521a36b25f7fe3a6af93",
+      "renderedSha256": "7e492d0c0a6bc951d883761df01ba2b01301886a738d521a36b25f7fe3a6af93"
+    },
+    ".claude/skills/ticket-creator/qa/security/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/ticket-creator/qa/security/SKILL.md",
+      "sourceSha256": "2bbe07ad8f27c5ec318f4cf712055dd281bd21140b2f8055cfb044c99c6b179a",
+      "renderedSha256": "2bbe07ad8f27c5ec318f4cf712055dd281bd21140b2f8055cfb044c99c6b179a"
+    },
+    ".claude/skills/ticket-creator/qa/unit/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/ticket-creator/qa/unit/SKILL.md",
+      "sourceSha256": "4201415d62fc24cd9b5bfb521798017a4e74c92fd5cb7f1577c3c001e7ca3268",
+      "renderedSha256": "4201415d62fc24cd9b5bfb521798017a4e74c92fd5cb7f1577c3c001e7ca3268"
+    },
+    ".claude/skills/ticket-creator/story/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/ticket-creator/story/SKILL.md",
+      "sourceSha256": "737bd59465e739035b287b5ebe144a511c097871f6ce68c09141da0d5dfa5cf8",
+      "renderedSha256": "737bd59465e739035b287b5ebe144a511c097871f6ce68c09141da0d5dfa5cf8"
+    },
+    ".claude/skills/ticket-creator/ux/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/ticket-creator/ux/SKILL.md",
+      "sourceSha256": "1f6aeca9a59c029a3cd9c5c3ff865ef1cede51488cddfbee65092684315a54b6",
+      "renderedSha256": "1f6aeca9a59c029a3cd9c5c3ff865ef1cede51488cddfbee65092684315a54b6"
+    },
+    ".claude/skills/ticket-enforcer/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/ticket-enforcer/SKILL.md",
+      "sourceSha256": "58b936c8670162d3f6281e9b960f98ab6223937a5aac12c2e63d88dcaf6b6e7a",
+      "renderedSha256": "58b936c8670162d3f6281e9b960f98ab6223937a5aac12c2e63d88dcaf6b6e7a"
+    },
+    ".claude/skills/ticket-reviewer/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/ticket-reviewer/SKILL.md",
+      "sourceSha256": "99ebdc75bbc5eae409cc35b147ba04dbc36979bd6512ae448dd8c5d8d0e7e675",
+      "renderedSha256": "99ebdc75bbc5eae409cc35b147ba04dbc36979bd6512ae448dd8c5d8d0e7e675"
+    },
+    ".claude/skills/ticket-reviewer/bug/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/ticket-reviewer/bug/SKILL.md",
+      "sourceSha256": "3ec912e90d2da19eaa68917817f48d786b59b3cb0b6183c49bce81d4689ec5f5",
+      "renderedSha256": "3ec912e90d2da19eaa68917817f48d786b59b3cb0b6183c49bce81d4689ec5f5"
+    },
+    ".claude/skills/ticket-reviewer/dev-task/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/ticket-reviewer/dev-task/SKILL.md",
+      "sourceSha256": "f3984f390e7acfbc50320c4ddb554640e9cfae28cd397e12bf348516067daa9b",
+      "renderedSha256": "f3984f390e7acfbc50320c4ddb554640e9cfae28cd397e12bf348516067daa9b"
+    },
+    ".claude/skills/ticket-reviewer/devops/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/ticket-reviewer/devops/SKILL.md",
+      "sourceSha256": "d72c24d9f49fa3d4522210f9a32f0a12c2efe9cd18e2f35d455b69f4840c0590",
+      "renderedSha256": "d72c24d9f49fa3d4522210f9a32f0a12c2efe9cd18e2f35d455b69f4840c0590"
+    },
+    ".claude/skills/ticket-reviewer/docs/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/ticket-reviewer/docs/SKILL.md",
+      "sourceSha256": "aa98b1c9983209cd7305984462cb363174e5ba9f7ddbdb9570b6472723161b85",
+      "renderedSha256": "aa98b1c9983209cd7305984462cb363174e5ba9f7ddbdb9570b6472723161b85"
+    },
+    ".claude/skills/ticket-reviewer/epic/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/ticket-reviewer/epic/SKILL.md",
+      "sourceSha256": "1f414cccadd1e84f1a5947be3fd043911b98f04a3140bb301983dd35e708f008",
+      "renderedSha256": "1f414cccadd1e84f1a5947be3fd043911b98f04a3140bb301983dd35e708f008"
+    },
+    ".claude/skills/ticket-reviewer/qa/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/ticket-reviewer/qa/SKILL.md",
+      "sourceSha256": "394f95a4cfcfe776a1ea65f47f0583bcd71f20cdad96a7eb8d17e8c2216d9608",
+      "renderedSha256": "394f95a4cfcfe776a1ea65f47f0583bcd71f20cdad96a7eb8d17e8c2216d9608"
+    },
+    ".claude/skills/ticket-reviewer/story/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/ticket-reviewer/story/SKILL.md",
+      "sourceSha256": "a832ba5f191a5b3277fb9b0b4c09343fe5b7363104adf8eb960f132f7297a722",
+      "renderedSha256": "a832ba5f191a5b3277fb9b0b4c09343fe5b7363104adf8eb960f132f7297a722"
+    },
+    ".claude/skills/ui-frame-contract/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/ui-frame-contract/SKILL.md",
+      "sourceSha256": "42f37f74cc1d3e81feb72c2fdf123a40e4a90f1bc30045649fbadf4ac932f92d",
+      "renderedSha256": "42f37f74cc1d3e81feb72c2fdf123a40e4a90f1bc30045649fbadf4ac932f92d"
+    },
+    ".claude/skills/ui-runtime-validation/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/ui-runtime-validation/SKILL.md",
+      "sourceSha256": "9a025e7dec7ddd21b72374676adea53d3e16136d4f6fec735f6b2b778540ec10",
+      "renderedSha256": "9a025e7dec7ddd21b72374676adea53d3e16136d4f6fec735f6b2b778540ec10"
+    },
+    ".claude/skills/verification-protocol/SKILL.md": {
+      "capability": "skills",
+      "mode": "managed",
+      "sourcePath": "skills/verification-protocol/SKILL.md",
+      "sourceSha256": "de74336a097829dbc6019af52f3f192b62339272935413e718b3917f42e5b3db",
+      "renderedSha256": "de74336a097829dbc6019af52f3f192b62339272935413e718b3917f42e5b3db"
+    },
+    ".fuze/identifier-allowlist.txt": {
+      "capability": "entity-identity",
+      "mode": "seeded",
+      "sourcePath": "governance/identifier-allowlist.txt",
+      "sourceSha256": "e63c72829872d7e7a42b1766bf161b6f7dec119b929b217a8333e3f6440dc883",
+      "renderedSha256": "e63c72829872d7e7a42b1766bf161b6f7dec119b929b217a8333e3f6440dc883"
+    },
+    ".fuze/repo-manifest.schema.json": {
+      "capability": "schema-validate",
+      "mode": "managed",
+      "sourcePath": "governance/repo-manifest.schema.json",
+      "sourceSha256": "0609a29df35b0adb8fbda5c15a695a693bc09fb6d01b40bc19b933d23fc249d5",
+      "renderedSha256": "0609a29df35b0adb8fbda5c15a695a693bc09fb6d01b40bc19b933d23fc249d5"
+    },
+    ".github/labels.json": {
+      "capability": "community",
+      "mode": "seeded",
+      "sourcePath": "community-templates/labels.json",
+      "sourceSha256": "e179fa24088c360b368cf468d5974d1813029229d9f08f4127892eb4c15c5bb5",
+      "renderedSha256": "e179fa24088c360b368cf468d5974d1813029229d9f08f4127892eb4c15c5bb5"
+    },
+    ".github/workflows/a2a-maintain.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/a2a-maintain.yml",
+      "sourceSha256": "11bb6795ba6f067c6e70426b18fc9f0f8b585a7c9ff31df6d91ae2dcbd6b8ee4",
+      "renderedSha256": "11bb6795ba6f067c6e70426b18fc9f0f8b585a7c9ff31df6d91ae2dcbd6b8ee4"
+    },
+    ".github/workflows/auto-merge.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/auto-merge.yml",
+      "sourceSha256": "47465c2edc75b7a2ab9f3c0bfc5d290db6b51f4ccc5951eadddb9d23338e4692",
+      "renderedSha256": "47465c2edc75b7a2ab9f3c0bfc5d290db6b51f4ccc5951eadddb9d23338e4692"
+    },
+    ".github/workflows/claude-auto-pr.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/claude-auto-pr.yml",
+      "sourceSha256": "765059050785d2d87eb9474af45790fbda71b0f4855eb4f07a233f9aa8c8bf68",
+      "renderedSha256": "765059050785d2d87eb9474af45790fbda71b0f4855eb4f07a233f9aa8c8bf68"
+    },
+    ".github/workflows/claude-ci-autofix.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/claude-ci-autofix.yml",
+      "sourceSha256": "35da8c61ab208185aadb47d3e70b31d782bde856e3804d64ef574cc7bcefe0c7",
+      "renderedSha256": "35da8c61ab208185aadb47d3e70b31d782bde856e3804d64ef574cc7bcefe0c7",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "v1"
+      }
+    },
+    ".github/workflows/claude.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/claude.yml",
+      "sourceSha256": "4347a6e48ee39ef1a3ab32198e9de0e4a7dd6e8ccbe2df76ab42664124bf0746",
+      "renderedSha256": "4347a6e48ee39ef1a3ab32198e9de0e4a7dd6e8ccbe2df76ab42664124bf0746",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "v1"
+      }
+    },
+    ".github/workflows/design-approval.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/design-approval.yml",
+      "sourceSha256": "ee6fa15c16a2c5df69e184e9817da9a80fd7a68cff9f9d9cc23c6b4da376040f",
+      "renderedSha256": "ee6fa15c16a2c5df69e184e9817da9a80fd7a68cff9f9d9cc23c6b4da376040f",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "v1"
+      }
+    },
+    ".github/workflows/design-review-notify.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/design-review-notify.yml",
+      "sourceSha256": "31efd5b3f9c6239dadf2a719eb7bebf413a02bb49580fae6cec60e1345ff1e71",
+      "renderedSha256": "31efd5b3f9c6239dadf2a719eb7bebf413a02bb49580fae6cec60e1345ff1e71",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "v1"
+      }
+    },
+    ".github/workflows/gate-frames-stamped.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/gate-frames-stamped.yml",
+      "sourceSha256": "69fd04a77f3dc79a15756aa43bc1b4cd2ae760952b6b6d85e6846cd4b81539da",
+      "renderedSha256": "69fd04a77f3dc79a15756aa43bc1b4cd2ae760952b6b6d85e6846cd4b81539da",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "v1"
+      }
+    },
+    ".github/workflows/gate-line-endings.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/gate-line-endings.yml",
+      "sourceSha256": "d61df24244d497f0c1385b02e5d0520ec30cf5bd7a73acc97ab78377265ca21e",
+      "renderedSha256": "d61df24244d497f0c1385b02e5d0520ec30cf5bd7a73acc97ab78377265ca21e",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "v1"
+      }
+    },
+    ".github/workflows/governance-nightly.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/governance-nightly.yml",
+      "sourceSha256": "ce2012d501788442d53400bd6fb0f7363aa69c3cfd654735959ff58d8d9450ee",
+      "renderedSha256": "ce2012d501788442d53400bd6fb0f7363aa69c3cfd654735959ff58d8d9450ee",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "v1"
+      }
+    },
+    ".github/workflows/governance-sync.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/governance-sync.yml",
+      "sourceSha256": "096e619f6fad6cb3dd46d457fcb78c54f84cbb9ba289f90169efc2ea3758d867",
+      "renderedSha256": "096e619f6fad6cb3dd46d457fcb78c54f84cbb9ba289f90169efc2ea3758d867"
+    },
+    ".github/workflows/harden-gate.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/harden-gate.yml",
+      "sourceSha256": "052035d2499d71071aaf458b6d01522695760d6b63130334e4fa7ea05945f46f",
+      "renderedSha256": "052035d2499d71071aaf458b6d01522695760d6b63130334e4fa7ea05945f46f",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "v1"
+      }
+    },
+    ".github/workflows/helm-validate.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/helm-validate.yml",
+      "sourceSha256": "963859a5508037f9c9c26d7243f26ecd8ce527c5d16e4e25f7178d5021ab860a",
+      "renderedSha256": "963859a5508037f9c9c26d7243f26ecd8ce527c5d16e4e25f7178d5021ab860a",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "v1"
+      }
+    },
+    ".github/workflows/label-sync.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/label-sync.yml",
+      "sourceSha256": "148e442e9eef219571ba38455fa8f44a8d185f7bc692cd2e8cfbdfbbbfe75c96",
+      "renderedSha256": "148e442e9eef219571ba38455fa8f44a8d185f7bc692cd2e8cfbdfbbbfe75c96",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "v1"
+      }
+    },
+    ".github/workflows/mcp-maintain.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/mcp-maintain.yml",
+      "sourceSha256": "5fb529630898bc1bdc0163d251ec4f2c650b544342bac2c9fe43920775d1759d",
+      "renderedSha256": "5fb529630898bc1bdc0163d251ec4f2c650b544342bac2c9fe43920775d1759d"
+    },
+    ".github/workflows/nightly-integration.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/nightly-integration.yml",
+      "sourceSha256": "f92714ba57347281948855ddb8de3b37f5f0e67e3913b51073050fe2e5b75f95",
+      "renderedSha256": "f92714ba57347281948855ddb8de3b37f5f0e67e3913b51073050fe2e5b75f95",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "v1"
+      }
+    },
+    ".github/workflows/pages-frames.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/pages-frames.yml",
+      "sourceSha256": "65f59bb2870ac1bd38ab946e6f174fb26b6f78ce892a2d7c0a44b847f3071416",
+      "renderedSha256": "65f59bb2870ac1bd38ab946e6f174fb26b6f78ce892a2d7c0a44b847f3071416",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "v1"
+      }
+    },
+    ".github/workflows/publish-expert.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/publish-expert.yml",
+      "sourceSha256": "6f8664e7e31be3c7fc01f792cfa6bf1b5c44b8b6a7c3fb2099f425ac8c6e157a",
+      "renderedSha256": "6f8664e7e31be3c7fc01f792cfa6bf1b5c44b8b6a7c3fb2099f425ac8c6e157a",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "v1"
+      }
+    },
+    ".github/workflows/telegram-pr-merged.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/telegram-pr-merged.yml",
+      "sourceSha256": "d7b161e66268ee150ccda2726176449262f608b4ee29e397051709aa4c2a3ecc",
+      "renderedSha256": "d7b161e66268ee150ccda2726176449262f608b4ee29e397051709aa4c2a3ecc"
+    },
+    ".npmrc": {
+      "capability": "npm-registry",
+      "mode": "seeded",
+      "sourcePath": "community-templates/npmrc",
+      "sourceSha256": "0dc82809c288fc8380df0d3701f3abe8bbb594860f7425ab97a0f82bd69469fc",
+      "renderedSha256": "0dc82809c288fc8380df0d3701f3abe8bbb594860f7425ab97a0f82bd69469fc"
+    },
+    ".nvmrc": {
+      "capability": "node-toolchain",
+      "mode": "seeded",
+      "sourcePath": "",
+      "sourceSha256": "68ca3fba3b7e864770cb61aeb306d4bd4354b68ab4dd38450860c5d823e42a53",
+      "renderedSha256": "68ca3fba3b7e864770cb61aeb306d4bd4354b68ab4dd38450860c5d823e42a53"
+    },
+    "agent-templates/providers/README.md": {
+      "capability": "roles",
+      "mode": "managed",
+      "sourcePath": "agent-templates/providers/README.md",
+      "sourceSha256": "b0d8e9a70db32dd620ba8bbdc795231fb41dc34dafa3de1c1e322aa9e9c698e3",
+      "renderedSha256": "b0d8e9a70db32dd620ba8bbdc795231fb41dc34dafa3de1c1e322aa9e9c698e3"
+    },
+    "agent-templates/providers/__init__.py": {
+      "capability": "roles",
+      "mode": "managed",
+      "sourcePath": "agent-templates/providers/__init__.py",
+      "sourceSha256": "27c57128919ac2b76540a16e90c09a16c0fff7254f332c54e1060a828729e7d4",
+      "renderedSha256": "27c57128919ac2b76540a16e90c09a16c0fff7254f332c54e1060a828729e7d4"
+    },
+    "agent-templates/providers/anthropic/__init__.py": {
+      "capability": "roles",
+      "mode": "managed",
+      "sourcePath": "agent-templates/providers/anthropic/__init__.py",
+      "sourceSha256": "c1fd152a1c0758aca7b27979c0634f8d816ce99aa757bb870e4736bf82f478b0",
+      "renderedSha256": "c1fd152a1c0758aca7b27979c0634f8d816ce99aa757bb870e4736bf82f478b0"
+    },
+    "agent-templates/providers/anthropic/adapter.py": {
+      "capability": "roles",
+      "mode": "managed",
+      "sourcePath": "agent-templates/providers/anthropic/adapter.py",
+      "sourceSha256": "0a9e17075c50772298d71f4a163c67554d8894ec7fbf612285a8343acf8f7612",
+      "renderedSha256": "0a9e17075c50772298d71f4a163c67554d8894ec7fbf612285a8343acf8f7612"
+    },
+    "agent-templates/providers/base.py": {
+      "capability": "roles",
+      "mode": "managed",
+      "sourcePath": "agent-templates/providers/base.py",
+      "sourceSha256": "480821608c9c009aea949caca9df9701b2d88857e3aa1fc122a858ad7ad3c773",
+      "renderedSha256": "480821608c9c009aea949caca9df9701b2d88857e3aa1fc122a858ad7ad3c773"
+    },
+    "agent-templates/providers/hermes/__init__.py": {
+      "capability": "roles",
+      "mode": "managed",
+      "sourcePath": "agent-templates/providers/hermes/__init__.py",
+      "sourceSha256": "6453fce6d954113ba0e5182543c500f010e3578162e07301a361807fd13ea0c1",
+      "renderedSha256": "6453fce6d954113ba0e5182543c500f010e3578162e07301a361807fd13ea0c1"
+    },
+    "agent-templates/providers/hermes/adapter.py": {
+      "capability": "roles",
+      "mode": "managed",
+      "sourcePath": "agent-templates/providers/hermes/adapter.py",
+      "sourceSha256": "9fcedb97b327e5b48d960c19a943e800144de5a2b0fbd0b213be9578b76b6e70",
+      "renderedSha256": "9fcedb97b327e5b48d960c19a943e800144de5a2b0fbd0b213be9578b76b6e70"
+    },
+    "agent-templates/providers/openai/__init__.py": {
+      "capability": "roles",
+      "mode": "managed",
+      "sourcePath": "agent-templates/providers/openai/__init__.py",
+      "sourceSha256": "bf0bc1ad3e08bf4fa29852ceb8018c7ac614797c07a65462b1c3411f6bf55567",
+      "renderedSha256": "bf0bc1ad3e08bf4fa29852ceb8018c7ac614797c07a65462b1c3411f6bf55567"
+    },
+    "agent-templates/providers/openai/adapter.py": {
+      "capability": "roles",
+      "mode": "managed",
+      "sourcePath": "agent-templates/providers/openai/adapter.py",
+      "sourceSha256": "0bfdae63b2caf64309443bea5bd612189cca780511ef5bb1883ea4ca48387057",
+      "renderedSha256": "0bfdae63b2caf64309443bea5bd612189cca780511ef5bb1883ea4ca48387057"
+    },
+    "agent-templates/providers/provision.py": {
+      "capability": "roles",
+      "mode": "managed",
+      "sourcePath": "agent-templates/providers/provision.py",
+      "sourceSha256": "757da115f5426ce955670e49e378e2489d29e54314b9c54dfbc4176434149b2d",
+      "renderedSha256": "757da115f5426ce955670e49e378e2489d29e54314b9c54dfbc4176434149b2d"
+    },
+    "agent-templates/roles/_base/role.json": {
+      "capability": "roles",
+      "mode": "managed",
+      "sourcePath": "agent-templates/roles/_base/role.json",
+      "sourceSha256": "67add1adf33f093cb9ac0ef63546b623a9a11ace98789caf7d141be502a4e937",
+      "renderedSha256": "67add1adf33f093cb9ac0ef63546b623a9a11ace98789caf7d141be502a4e937"
+    },
+    "agent-templates/schema/environment.schema.json": {
+      "capability": "roles",
+      "mode": "managed",
+      "sourcePath": "agent-templates/schema/environment.schema.json",
+      "sourceSha256": "525b7489a4044190c40f13443012f23985cc4de0602893438057feb20a8b39f3",
+      "renderedSha256": "525b7489a4044190c40f13443012f23985cc4de0602893438057feb20a8b39f3"
+    },
+    "agent-templates/schema/memory.schema.json": {
+      "capability": "roles",
+      "mode": "managed",
+      "sourcePath": "agent-templates/schema/memory.schema.json",
+      "sourceSha256": "f2645779babcc1d8ac7efa3c61021c60e5e75011bb2a79cadf7a470a7f12d4ef",
+      "renderedSha256": "f2645779babcc1d8ac7efa3c61021c60e5e75011bb2a79cadf7a470a7f12d4ef"
+    },
+    "agent-templates/schema/mobile-requirements.schema.json": {
+      "capability": "roles",
+      "mode": "managed",
+      "sourcePath": "agent-templates/schema/mobile-requirements.schema.json",
+      "sourceSha256": "30a1e94b36bfb25ec65aecda3dac5d62c4ac7fe9153c85b4fb279728b3497fe5",
+      "renderedSha256": "30a1e94b36bfb25ec65aecda3dac5d62c4ac7fe9153c85b4fb279728b3497fe5"
+    },
+    "agent-templates/schema/role-manifest.schema.json": {
+      "capability": "roles",
+      "mode": "managed",
+      "sourcePath": "agent-templates/schema/role-manifest.schema.json",
+      "sourceSha256": "cdeacc70a3a55aafc8c2e7a2ae63227216b9eed38183895b42b6e2426fd16e1c",
+      "renderedSha256": "cdeacc70a3a55aafc8c2e7a2ae63227216b9eed38183895b42b6e2426fd16e1c"
+    },
+    "agent-templates/schema/vault.schema.json": {
+      "capability": "roles",
+      "mode": "managed",
+      "sourcePath": "agent-templates/schema/vault.schema.json",
+      "sourceSha256": "993c7415d20397688502fbc3f27ae4a564769a6f5d258216a929d55691a291be",
+      "renderedSha256": "993c7415d20397688502fbc3f27ae4a564769a6f5d258216a929d55691a291be"
+    },
+    "agent-templates/sync/.gitignore": {
+      "capability": "roles",
+      "mode": "managed",
+      "sourcePath": "agent-templates/sync/.gitignore",
+      "sourceSha256": "5e7a2fb056f4ee84e115d0594961787158d521873482319df251d8ee27e0ebad",
+      "renderedSha256": "5e7a2fb056f4ee84e115d0594961787158d521873482319df251d8ee27e0ebad"
+    },
+    "agent-templates/sync/common.py": {
+      "capability": "roles",
+      "mode": "managed",
+      "sourcePath": "agent-templates/sync/common.py",
+      "sourceSha256": "01b1126a920f5aab5be113a71b85d97b6b26eb4f727a9ce641cdd0c57158ae02",
+      "renderedSha256": "01b1126a920f5aab5be113a71b85d97b6b26eb4f727a9ce641cdd0c57158ae02"
+    },
+    "agent-templates/sync/driver.py": {
+      "capability": "roles",
+      "mode": "managed",
+      "sourcePath": "agent-templates/sync/driver.py",
+      "sourceSha256": "b158508af21086c3a7c5ea40be3a151d5f27d6d009e26c4c8df64982b2461ade",
+      "renderedSha256": "b158508af21086c3a7c5ea40be3a151d5f27d6d009e26c4c8df64982b2461ade"
+    },
+    "agent-templates/sync/launch_session.py": {
+      "capability": "roles",
+      "mode": "managed",
+      "sourcePath": "agent-templates/sync/launch_session.py",
+      "sourceSha256": "7fbe2aa20ec327b028d864469354dd697df7ce859999499955f2e95bede886da",
+      "renderedSha256": "7fbe2aa20ec327b028d864469354dd697df7ce859999499955f2e95bede886da"
+    },
+    "agent-templates/sync/requirements.txt": {
+      "capability": "roles",
+      "mode": "managed",
+      "sourcePath": "agent-templates/sync/requirements.txt",
+      "sourceSha256": "462738ad889760ba38f2dc00976008a3c87201e17c9bc69972e5c213b6751d97",
+      "renderedSha256": "462738ad889760ba38f2dc00976008a3c87201e17c9bc69972e5c213b6751d97"
+    },
+    "agent-templates/sync/role_loader.py": {
+      "capability": "roles",
+      "mode": "managed",
+      "sourcePath": "agent-templates/sync/role_loader.py",
+      "sourceSha256": "ac911e97bd594c29ccf6964fbf3bf218b286e79c0e6ae04b50367b1d0b326de6",
+      "renderedSha256": "ac911e97bd594c29ccf6964fbf3bf218b286e79c0e6ae04b50367b1d0b326de6"
+    },
+    "agent-templates/sync/sync_agents.py": {
+      "capability": "roles",
+      "mode": "managed",
+      "sourcePath": "agent-templates/sync/sync_agents.py",
+      "sourceSha256": "6faafb497e8f8fbde6def1575069c6809775c314ed1e445b34adc83dd5a60e7c",
+      "renderedSha256": "6faafb497e8f8fbde6def1575069c6809775c314ed1e445b34adc83dd5a60e7c"
+    },
+    "agent-templates/sync/sync_environments.py": {
+      "capability": "roles",
+      "mode": "managed",
+      "sourcePath": "agent-templates/sync/sync_environments.py",
+      "sourceSha256": "3aac67b84d61439b5203168138bd370d726b941e554f3c2fe284635663088e57",
+      "renderedSha256": "3aac67b84d61439b5203168138bd370d726b941e554f3c2fe284635663088e57"
+    },
+    "agent-templates/sync/sync_memory.py": {
+      "capability": "roles",
+      "mode": "managed",
+      "sourcePath": "agent-templates/sync/sync_memory.py",
+      "sourceSha256": "6b204e3c95a6309e380a60d6b50ca486e06ab7f02278904a0bae65dcd0e42318",
+      "renderedSha256": "6b204e3c95a6309e380a60d6b50ca486e06ab7f02278904a0bae65dcd0e42318"
+    },
+    "agent-templates/sync/sync_vaults.py": {
+      "capability": "roles",
+      "mode": "managed",
+      "sourcePath": "agent-templates/sync/sync_vaults.py",
+      "sourceSha256": "aa286b35e59f28361c953c5e6bbc8d2de6c97ece66d2605a027f46f4a05aee24",
+      "renderedSha256": "aa286b35e59f28361c953c5e6bbc8d2de6c97ece66d2605a027f46f4a05aee24"
+    },
+    "agent-templates/sync/validate.py": {
+      "capability": "roles",
+      "mode": "managed",
+      "sourcePath": "agent-templates/sync/validate.py",
+      "sourceSha256": "74c9fac452b18d218f5fa8a55e189b20d653c065d376c70f12ae1b5fd800b51f",
+      "renderedSha256": "74c9fac452b18d218f5fa8a55e189b20d653c065d376c70f12ae1b5fd800b51f"
+    },
+    "backend/.npmrc": {
+      "capability": "npm-registry",
+      "mode": "seeded",
+      "sourcePath": "community-templates/npmrc",
+      "sourceSha256": "0dc82809c288fc8380df0d3701f3abe8bbb594860f7425ab97a0f82bd69469fc",
+      "renderedSha256": "0dc82809c288fc8380df0d3701f3abe8bbb594860f7425ab97a0f82bd69469fc"
+    },
+    "backend/package.json": {
+      "capability": "node-toolchain",
+      "mode": "derived",
+      "sourcePath": "",
+      "sourceSha256": "143541aedb1bee9b5e8032ba346e6555457c9a09faea69d6c36b90669fee420e",
+      "renderedSha256": "143541aedb1bee9b5e8032ba346e6555457c9a09faea69d6c36b90669fee420e"
+    },
+    "frontend/package.json": {
+      "capability": "node-toolchain",
+      "mode": "derived",
+      "sourcePath": "",
+      "sourceSha256": "b47482eddb3454c37653aada3a9a457e17053aecc2133263b53168500337e032",
+      "renderedSha256": "b47482eddb3454c37653aada3a9a457e17053aecc2133263b53168500337e032"
+    },
+    "frontend/vite.config.ts": {
+      "capability": "mf-remote",
+      "mode": "derived",
+      "sourcePath": "",
+      "sourceSha256": "979a4ce89db23bb43ab8066aa3030fdfd9e9035ff992825b325e58c320b35d59",
+      "renderedSha256": "979a4ce89db23bb43ab8066aa3030fdfd9e9035ff992825b325e58c320b35d59"
+    },
+    "scripts/__tests__/test_gate_identifier.py": {
+      "capability": "entity-identity",
+      "mode": "managed",
+      "sourcePath": "scripts/__tests__/test_gate_identifier.py",
+      "sourceSha256": "d6b01fc736d59e4d1f1f8591f16f03cd4d1faa3a4b7bb422a155c13eb0040723",
+      "renderedSha256": "d6b01fc736d59e4d1f1f8591f16f03cd4d1faa3a4b7bb422a155c13eb0040723"
+    },
+    "scripts/build-frames-site.mjs": {
+      "capability": "workflows",
+      "mode": "managed",
+      "sourcePath": "scripts/build-frames-site.mjs",
+      "sourceSha256": "4fcb6bc3cb2d9c658622e55ada484ed9958a9591af36959301c6310a24d75aae",
+      "renderedSha256": "4fcb6bc3cb2d9c658622e55ada484ed9958a9591af36959301c6310a24d75aae"
+    },
+    "scripts/check-registration.mjs": {
+      "capability": "portal-registration",
+      "mode": "managed",
+      "sourcePath": "scripts/check-registration.mjs",
+      "sourceSha256": "82debe9d9c9ddfb24854a4a30a5d4602f13efa147209f5daa9698d187a922e0b",
+      "renderedSha256": "82debe9d9c9ddfb24854a4a30a5d4602f13efa147209f5daa9698d187a922e0b"
+    },
+    "scripts/gate_ds_conformance.py": {
+      "capability": "design-system",
+      "mode": "managed",
+      "sourcePath": "scripts/gate_ds_conformance.py",
+      "sourceSha256": "2155d4d75c739c1cf20ef03f3a364e66d8d4d0e47d9aa6844014caa82bfc1844",
+      "renderedSha256": "2155d4d75c739c1cf20ef03f3a364e66d8d4d0e47d9aa6844014caa82bfc1844"
+    },
+    "scripts/gate_identifier.py": {
+      "capability": "entity-identity",
+      "mode": "managed",
+      "sourcePath": "scripts/gate_identifier.py",
+      "sourceSha256": "ca1f8bfc2701346e949f1aa669fc4ace9a9586927379870e8dd67effe5d58ac8",
+      "renderedSha256": "ca1f8bfc2701346e949f1aa669fc4ace9a9586927379870e8dd67effe5d58ac8"
+    },
+    "scripts/gate_manifest.py": {
+      "capability": "schema-validate",
+      "mode": "managed",
+      "sourcePath": "scripts/gate_manifest.py",
+      "sourceSha256": "527abd1ed32ff9a928b65e082b306b4055e55d1346cf031a3b8b6ec70ccd76b1",
+      "renderedSha256": "527abd1ed32ff9a928b65e082b306b4055e55d1346cf031a3b8b6ec70ccd76b1"
+    },
+    "scripts/gate_pagination.py": {
+      "capability": "workflows",
+      "mode": "managed",
+      "sourcePath": "scripts/gate_pagination.py",
+      "sourceSha256": "7f1e0d79e2a80a79250db72ff8e437c9cb4a7b596728c4c9b377d66c080f6c35",
+      "renderedSha256": "7f1e0d79e2a80a79250db72ff8e437c9cb4a7b596728c4c9b377d66c080f6c35"
+    },
+    "scripts/stamp-frames.mjs": {
+      "capability": "workflows",
+      "mode": "managed",
+      "sourcePath": "scripts/stamp-frames.mjs",
+      "sourceSha256": "71ede05b3cf69848c595302b4d80a041d2e7cb177e7afa8b2fe68ace2d04d6b9",
+      "renderedSha256": "71ede05b3cf69848c595302b4d80a041d2e7cb177e7afa8b2fe68ace2d04d6b9"
+    },
+    "scripts/sync-chart-files.sh": {
+      "capability": "portal-registration",
+      "mode": "managed",
+      "sourcePath": "scripts/sync-chart-files.sh",
+      "sourceSha256": "1d6a570f53a8ad1b0fd76b383fe4d54329a6f6568a150d8d0a07d7d2c0bd8534",
+      "renderedSha256": "1d6a570f53a8ad1b0fd76b383fe4d54329a6f6568a150d8d0a07d7d2c0bd8534"
+    }
+  }
+}

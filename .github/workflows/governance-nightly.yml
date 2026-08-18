@@ -49,6 +49,25 @@ jobs:
             4. DRIFT — compare .claude/agents + CLAUDE.md + the workflow stack against the expectation in
                .fuze/manifest.json and the FuzeSDLC canonical; open a fix PR for mechanical drift, flag
                judgment calls.
+            5. STUB EXPERTS — scan .claude/agents/ for any expert file whose frontmatter contains
+               `stub: true` AND whose name matches manifest.expert (the repo's OWN expert, not advisors).
+               For each: open a tracked issue titled "Expert agent <name>: hub-authored stub — replace with
+               repo-authored content" with: a link to governance/agent-ownership.md, the instruction to run
+               platform-governance locally with prompt "author the <repo>-expert for this repo", and a
+               reminder that publish-expert.yml will propagate it. Check for an existing open issue with
+               the same title first (idempotent). Do NOT file this issue for advisor copies.
+            6. EXPERT SELF-REFRESH — for THIS repo's own expert (manifest.expert):
+               a. Read the current expert file (.claude/agents/<expert>.md).
+               b. Read every file/directory listed under manifest.expertMonitors (if the key is present).
+               c. Compare: does the expert's content still accurately describe what those files show?
+                  Focus on: architecture changes, new deploy targets, new CI workflows, renamed files,
+                  new gotchas, removed components.
+               d. If significant drift is found: open a PR titled "chore(expert): auto-refresh
+                  <expert> — <date>" on branch expert-refresh/<expert>-<date> with a targeted edit
+                  to the expert file. Include in the PR body which monitored files changed vs the
+                  expert's claims, and what specifically was updated.
+               e. If no drift: skip silently (no PR, no comment).
+               This is non-blocking — never fail a gate on expert freshness.
 
             Then open or UPDATE a single issue titled "Governance reconciliation — <today's date>"
             (label: governance) with: branch actions, per-PR blocker+next-action, per-issue disposition,

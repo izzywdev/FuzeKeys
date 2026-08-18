@@ -12,7 +12,7 @@ name: Nightly Integration
 
 on:
   schedule:
-    - cron: '17 4 * * *'   # off-peak, off the :00 herd; per-repo offset set at install time
+    - cron: '37 8 * * *'   # off-peak, off the :00 herd; per-repo offset set at install time
   workflow_dispatch:        # manual run
 
 permissions:

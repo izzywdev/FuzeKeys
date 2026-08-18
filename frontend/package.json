@@ -11,8 +11,8 @@
     "@types/react-dom": "^18.2.15",
     "antd": "^5.11.0",
     "axios": "^1.6.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
     "react-hook-form": "^7.47.0",
     "react-hot-toast": "^2.4.1",
     "react-router-dom": "^6.18.0",
@@ -58,5 +58,9 @@
     "postcss": "^8.4.31",
     "tailwindcss": "^3.3.5"
   },
-  "proxy": "http://localhost:8888"
+  "proxy": "http://localhost:8888",
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  }
 }

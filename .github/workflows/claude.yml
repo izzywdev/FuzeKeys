@@ -36,7 +36,27 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Checkout PR branch (when triggered from a PR)
+        if: |
+          (github.event_name == 'issue_comment' && github.event.issue.pull_request != null) ||
+          github.event_name == 'pull_request_review_comment' ||
+          github.event_name == 'pull_request_review'
+        run: |
+          if [ "${{ github.event_name }}" = "issue_comment" ]; then
+            PR_NUM=${{ github.event.issue.number }}
+            HEAD_SHA=$(gh api repos/${{ github.repository }}/pulls/$PR_NUM --jq .head.sha)
+            HEAD_REF=$(gh api repos/${{ github.repository }}/pulls/$PR_NUM --jq .head.ref)
+          else
+            HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+            HEAD_REF="${{ github.event.pull_request.head.ref }}"
+          fi
+          git fetch origin "$HEAD_SHA"
+          git checkout "$HEAD_SHA"
+          echo "Checked out PR branch: $HEAD_REF @ $HEAD_SHA"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Run Claude
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@428971d2ecd6e3a7cb0ee0da2a3a8b33fdb3678d  # v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
