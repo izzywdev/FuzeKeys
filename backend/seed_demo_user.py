@@ -37,7 +37,7 @@ else:
 os.environ["DATABASE_URL"] = async_url
 
 # Import only the data-tier modules — never main.py / routers (cv2 lives there).
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
 
@@ -46,12 +46,13 @@ class Base(DeclarativeBase):
 
 
 # Import models manually to avoid any router-level imports
-from app.database import Base as AppBase, engine, async_session_maker
-from app.models.user import User
-from app.models.identity import Identity
-from app.models.account import Account, AccountStage, StageType, StageStatus
-from app.models.signup_script import SignupScript
+from app.database import Base as AppBase
+from app.database import async_session_maker, engine
+from app.models.account import Account, AccountStage, StageStatus, StageType
 from app.models.api_key import ApiKey
+from app.models.identity import Identity
+from app.models.signup_script import SignupScript
+from app.models.user import User
 from app.utils.encryption import EncryptionManager
 
 
@@ -64,7 +65,9 @@ async def seed():
     async with async_session_maker() as session:
         existing = await session.get(User, 1)
         if existing:
-            print(f"Demo user already exists: id={existing.id} username={existing.username}")
+            print(
+                f"Demo user already exists: id={existing.id} username={existing.username}"
+            )
             # Verify password hash matches
             expected_hash = hashlib.sha256("demo123".encode()).hexdigest()
             if existing.hashed_password == expected_hash:
@@ -102,7 +105,9 @@ async def seed():
             encrypted_country=enc.encrypt("USA"),
             encrypted_profession=enc.encrypt("Software Developer"),
             encrypted_company=enc.encrypt("TechCorp Inc."),
-            encrypted_bio=enc.encrypt("Experienced software developer specialising in full-stack apps"),
+            encrypted_bio=enc.encrypt(
+                "Experienced software developer specialising in full-stack apps"
+            ),
         )
         personal = Identity(
             user_id=demo_user.id,
@@ -114,7 +119,9 @@ async def seed():
             encrypted_phone=enc.encrypt("+1-555-0124"),
             encrypted_address_line1=enc.encrypt("California, USA"),
             encrypted_profession=enc.encrypt("Tech Enthusiast"),
-            encrypted_bio=enc.encrypt("Tech enthusiast who loves exploring new technologies"),
+            encrypted_bio=enc.encrypt(
+                "Tech enthusiast who loves exploring new technologies"
+            ),
         )
         session.add_all([professional, personal])
         await session.flush()

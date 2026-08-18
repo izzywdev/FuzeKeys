@@ -8,9 +8,15 @@ every Phase 1 table/column op is present.
 import importlib.util
 import os
 
-MIG_PATH = os.path.abspath(os.path.join(
-    os.path.dirname(__file__), "..", "alembic", "versions",
-    "e4a1f0b21c01_identity_vault_phase1.py"))
+MIG_PATH = os.path.abspath(
+    os.path.join(
+        os.path.dirname(__file__),
+        "..",
+        "alembic",
+        "versions",
+        "e4a1f0b21c01_identity_vault_phase1.py",
+    )
+)
 
 
 def _load():
@@ -29,9 +35,16 @@ def test_revision_chain():
 
 def test_all_phase1_tables_and_columns_present():
     src = open(MIG_PATH).read()
-    for table in ["organizations", "organization_members", "identity_cards",
-                  "api_credentials", "agents", "agent_scopes",
-                  "approval_requests", "audit_log"]:
+    for table in [
+        "organizations",
+        "organization_members",
+        "identity_cards",
+        "api_credentials",
+        "agents",
+        "agent_scopes",
+        "approval_requests",
+        "audit_log",
+    ]:
         assert f'"{table}"' in src, f"missing create_table for {table}"
     assert 'add_column("identities"' in src
     assert 'add_column("accounts"' in src

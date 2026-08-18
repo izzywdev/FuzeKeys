@@ -21,18 +21,21 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
-from app.broker import mcp_tools
+from app.broker import mcp_tools, runtime
 from app.broker.errors import BrokerConfigError
 from app.broker.identity import TransportIdentity
-from app.broker import runtime
 
 router = APIRouter(prefix="/api/v1/broker", tags=["Secret Broker"])
 
 
 class GrantRequest(BaseModel):
-    redeemer_identity: str = Field(..., description="Bound transport identity that may redeem")
+    redeemer_identity: str = Field(
+        ..., description="Bound transport identity that may redeem"
+    )
     scope: Dict[str, Any] = Field(default_factory=dict)
-    ttl_seconds: Optional[int] = Field(None, description="Clamped to the server maximum")
+    ttl_seconds: Optional[int] = Field(
+        None, description="Clamped to the server maximum"
+    )
     secret_ref: Optional[str] = None
     operation: Optional[str] = None
     single_use: bool = True
@@ -101,7 +104,11 @@ def mint_token(body: MintTokenRequest, request: Request):
     try:
         service = runtime.build_service(db)
         return mcp_tools.keys_mint_token(
-            service, ctx=ctx, audience=body.audience, scope=body.scope, ttl_seconds=body.ttl_seconds
+            service,
+            ctx=ctx,
+            audience=body.audience,
+            scope=body.scope,
+            ttl_seconds=body.ttl_seconds,
         )
     finally:
         db.close()
@@ -112,6 +119,8 @@ def revoke(body: RevokeRequest, request: Request):
     db = runtime.new_session()
     try:
         service = runtime.build_service(db)
-        return mcp_tools.keys_revoke(service, grant_id=body.grant_id, reason=body.reason)
+        return mcp_tools.keys_revoke(
+            service, grant_id=body.grant_id, reason=body.reason
+        )
     finally:
         db.close()

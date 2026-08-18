@@ -3,67 +3,63 @@ Pytest configuration and fixtures for FuzeKeys backend tests.
 """
 
 import asyncio
+import os
+from typing import AsyncGenerator
+
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-from app.main import app
+
 # NOTE: app.database exposes the async dependency as `get_async_session` with a
 # backward-compat alias `get_db` (it does NOT export `get_db_session`). The
 # routers all declare `Depends(get_db)`, so `get_db` is the correct symbol to
 # import and to use as the dependency-override key.
-from app.database import get_db, Base
-from app.models.identity import Identity
+from app.database import Base, get_db
+from app.main import app
 from app.models.account import Account
-import os
-from typing import AsyncGenerator
+from app.models.identity import Identity
 
 # Test database URL
-TEST_DATABASE_URL = os.getenv(
-    "TEST_DATABASE_URL", 
-    "sqlite+aiosqlite:///./test.db"
-)
+TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "sqlite+aiosqlite:///./test.db")
 
 # Create test engine
-test_engine = create_async_engine(
-    TEST_DATABASE_URL,
-    echo=False,
-    future=True
-)
+test_engine = create_async_engine(TEST_DATABASE_URL, echo=False, future=True)
 
 # Create test session maker
 TestingSessionLocal = sessionmaker(
-    test_engine, 
-    class_=AsyncSession, 
-    expire_on_commit=False
+    test_engine, class_=AsyncSession, expire_on_commit=False
 )
+
 
 @pytest_asyncio.fixture
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
     """Create a test database session."""
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    
+
     async with TestingSessionLocal() as session:
         yield session
-    
+
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
+
 
 @pytest_asyncio.fixture
 async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     """Create a test client with database session override."""
-    
+
     async def override_get_db():
         yield db_session
-    
+
     app.dependency_overrides[get_db] = override_get_db
-    
+
     async with AsyncClient(app=app, base_url="http://test") as ac:
         yield ac
-    
+
     app.dependency_overrides.clear()
+
 
 @pytest_asyncio.fixture
 async def sample_identity(db_session: AsyncSession) -> Identity:
@@ -73,15 +69,18 @@ async def sample_identity(db_session: AsyncSession) -> Identity:
         name="Test Identity",
         email="test@example.com",
         encrypted_data=b"encrypted_test_data",
-        master_key_hash="test_hash"
+        master_key_hash="test_hash",
     )
     db_session.add(identity)
     await db_session.commit()
     await db_session.refresh(identity)
     return identity
 
+
 @pytest_asyncio.fixture
-async def sample_account(db_session: AsyncSession, sample_identity: Identity) -> Account:
+async def sample_account(
+    db_session: AsyncSession, sample_identity: Identity
+) -> Account:
     """Create a sample account for testing."""
     account = Account(
         id="test-account-123",
@@ -92,12 +91,13 @@ async def sample_account(db_session: AsyncSession, sample_identity: Identity) ->
         status="active",
         signup_date=None,
         last_login=None,
-        notes="Test account"
+        notes="Test account",
     )
     db_session.add(account)
     await db_session.commit()
     await db_session.refresh(account)
     return account
+
 
 @pytest.fixture(scope="session")
 def event_loop():
@@ -106,13 +106,16 @@ def event_loop():
     yield loop
     loop.close()
 
+
 # Test configuration
 @pytest.fixture(autouse=True)
 def setup_test_env():
     """Setup test environment variables."""
-    os.environ.update({
-        "ENVIRONMENT": "test",
-        "SECRET_KEY": "test-secret-key",
-        "MASTER_KEY_SALT": "test-salt",
-        "DATABASE_URL_ASYNC": TEST_DATABASE_URL,
-    }) 
+    os.environ.update(
+        {
+            "ENVIRONMENT": "test",
+            "SECRET_KEY": "test-secret-key",
+            "MASTER_KEY_SALT": "test-salt",
+            "DATABASE_URL_ASYNC": TEST_DATABASE_URL,
+        }
+    )

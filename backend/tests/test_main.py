@@ -5,6 +5,7 @@ Tests for the main application endpoints and functionality.
 import pytest
 from httpx import AsyncClient
 
+
 class TestMainApp:
     """Test suite for main application functionality."""
 
@@ -55,10 +56,11 @@ class TestMainApp:
         # Test that /api routes are accessible
         response = await client.get("/api/identities")
         assert response.status_code == 200
-        
+
         # Test that non-prefixed routes (if any) also work
         response = await client.get("/health")
         assert response.status_code == 200
+
 
 class TestAPIDocumentation:
     """Test suite for API documentation endpoints."""
@@ -86,6 +88,7 @@ class TestAPIDocumentation:
         response = await client.get("/redoc")
         assert response.status_code == 200
         assert "text/html" in response.headers["content-type"]
+
 
 class TestErrorHandling:
     """Test suite for error handling."""
@@ -115,6 +118,7 @@ class TestErrorHandling:
         # Should handle gracefully (either process or reject with appropriate error)
         assert response.status_code in [400, 413, 422]
 
+
 class TestSecurity:
     """Test suite for security features."""
 
@@ -142,12 +146,12 @@ class TestSecurity:
         identity_data = {
             "name": xss_payload,
             "email": "test@example.com",
-            "master_key": "test-key"
+            "master_key": "test-key",
         }
-        
+
         response = await client.post("/api/identities", json=identity_data)
         # Should either sanitize the input or reject it
         if response.status_code == 201:
             data = response.json()
             # If accepted, should be sanitized
-            assert "<script>" not in data["name"] 
+            assert "<script>" not in data["name"]

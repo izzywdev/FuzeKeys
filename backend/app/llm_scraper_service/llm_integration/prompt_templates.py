@@ -2,8 +2,9 @@
 Prompt templates for LLM-driven scraper generation
 """
 
-from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
+
 
 @dataclass
 class SiteInfo:
@@ -14,9 +15,10 @@ class SiteInfo:
     previous_attempts: List[Dict[str, Any]]
     test_data: Dict[str, Any]
 
+
 class PromptTemplates:
     """Collection of prompt templates for scraper generation"""
-    
+
     INFRASTRUCTURE_CONTEXT = """
 AVAILABLE INFRASTRUCTURE APIS:
 
@@ -349,7 +351,7 @@ async def create_api_key(self, key_name: str = "FuzeKeys Integration", **kwargs)
     @classmethod
     def build_generation_prompt(cls, site_info: SiteInfo) -> str:
         """Build the complete prompt for initial scraper generation"""
-        
+
         # Determine action-specific template
         action_specific = ""
         if site_info.action_type == "signup":
@@ -358,27 +360,33 @@ async def create_api_key(self, key_name: str = "FuzeKeys Integration", **kwargs)
             action_specific = cls.SIGNIN_SPECIFIC_TEMPLATE
         elif site_info.action_type == "apikey_creation":
             action_specific = cls.APIKEY_SPECIFIC_TEMPLATE
-        
+
         # Generate class and method names
-        site_class_name = ''.join(word.capitalize() for word in site_info.name.split())
-        action_method = site_info.action_type.replace('_', '_')
-        
-        return cls.BASE_SCRAPER_TEMPLATE.format(
-            site_name=site_info.name,
-            action_type=site_info.action_type,
-            infrastructure_context=cls.INFRASTRUCTURE_CONTEXT,
-            site_url=site_info.url,
-            known_patterns=site_info.patterns,
-            previous_attempts=site_info.previous_attempts,
-            site_class_name=site_class_name,
-            action_method=action_method,
-            infrastructure_imports="# Infrastructure API helper functions included above"
-        ) + "\n\n" + action_specific
-    
+        site_class_name = "".join(word.capitalize() for word in site_info.name.split())
+        action_method = site_info.action_type.replace("_", "_")
+
+        return (
+            cls.BASE_SCRAPER_TEMPLATE.format(
+                site_name=site_info.name,
+                action_type=site_info.action_type,
+                infrastructure_context=cls.INFRASTRUCTURE_CONTEXT,
+                site_url=site_info.url,
+                known_patterns=site_info.patterns,
+                previous_attempts=site_info.previous_attempts,
+                site_class_name=site_class_name,
+                action_method=action_method,
+                infrastructure_imports="# Infrastructure API helper functions included above",
+            )
+            + "\n\n"
+            + action_specific
+        )
+
     @classmethod
-    def build_iteration_prompt(cls, previous_code: str, execution_result: Dict[str, Any]) -> str:
+    def build_iteration_prompt(
+        cls, previous_code: str, execution_result: Dict[str, Any]
+    ) -> str:
         """Build prompt for scraper improvement iteration"""
-        
+
         return cls.ITERATION_TEMPLATE.format(
             previous_code=previous_code,
             success=execution_result.get("success", False),
@@ -386,13 +394,15 @@ async def create_api_key(self, key_name: str = "FuzeKeys Integration", **kwargs)
             screenshot_analysis=execution_result.get("screenshot_analysis", ""),
             html_context=execution_result.get("html_context", ""),
             execution_logs=execution_result.get("logs", ""),
-            failure_analysis=execution_result.get("failure_analysis", "")
+            failure_analysis=execution_result.get("failure_analysis", ""),
         )
-    
+
     @classmethod
-    def build_debugging_prompt(cls, code: str, error: str, context: Dict[str, Any]) -> str:
+    def build_debugging_prompt(
+        cls, code: str, error: str, context: Dict[str, Any]
+    ) -> str:
         """Build prompt for debugging specific issues"""
-        
+
         return f"""
 DEBUG AND FIX THE FOLLOWING SCRAPER CODE:
 
@@ -414,4 +424,4 @@ INSTRUCTIONS:
 4. Suggest preventive measures for similar issues
 
 Generate the corrected code:
-""" 
+"""

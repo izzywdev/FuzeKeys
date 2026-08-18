@@ -90,7 +90,9 @@ def keys_mint_token(
 ) -> Dict[str, Any]:
     """MCP ``keys.mint_token`` — RFC 8693 token exchange."""
     try:
-        token = service.mint_token(ctx=ctx, audience=audience, scope=scope, ttl_seconds=ttl_seconds)
+        token = service.mint_token(
+            ctx=ctx, audience=audience, scope=scope, ttl_seconds=ttl_seconds
+        )
     except BrokerDenied as denied:
         return {"status": "denied", "message": denied.public_message}
     return {
@@ -103,7 +105,9 @@ def keys_mint_token(
     }
 
 
-def keys_revoke(service: BrokerService, *, grant_id: str, reason: str = "revoked") -> Dict[str, Any]:
+def keys_revoke(
+    service: BrokerService, *, grant_id: str, reason: str = "revoked"
+) -> Dict[str, Any]:
     """MCP ``keys.revoke`` — instant, idempotent, non-disclosing."""
     service.revoke(grant_id=grant_id, reason=reason)
     return {"status": "revoked", "grant_id": grant_id}

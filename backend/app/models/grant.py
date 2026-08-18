@@ -20,14 +20,23 @@ Standards grounding:
     of record; the broker releases short-lived derived creds, never the root.
 """
 from sqlalchemy import (
-    Column, Integer, String, Boolean, DateTime, Text, LargeBinary, ForeignKey,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
 )
 from sqlalchemy.sql import func
+
 from app.database import Base
 
 
 class Grant(Base):
     """A single secretless grant: bound to ONE redeemer transport identity."""
+
     __tablename__ = "broker_grants"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -54,7 +63,9 @@ class Grant(Base):
     # Attenuable scope (JSON) + sensitivity class. HIGH => human approval required
     # before release (reach_human / digital-persona), mirroring the approval plane.
     scope = Column(Text, nullable=False, default="{}")
-    sensitivity = Column(String(20), nullable=False, default="medium")  # low|medium|high
+    sensitivity = Column(
+        String(20), nullable=False, default="medium"
+    )  # low|medium|high
 
     ttl_seconds = Column(Integer, nullable=False)
     single_use = Column(Boolean, nullable=False, default=True)
