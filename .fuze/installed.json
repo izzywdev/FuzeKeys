@@ -397,22 +397,34 @@
       "capability": "workflows",
       "mode": "stamped",
       "sourcePath": "workflow-templates/a2a-maintain.yml",
-      "sourceSha256": "11bb6795ba6f067c6e70426b18fc9f0f8b585a7c9ff31df6d91ae2dcbd6b8ee4",
-      "renderedSha256": "11bb6795ba6f067c6e70426b18fc9f0f8b585a7c9ff31df6d91ae2dcbd6b8ee4"
+      "sourceSha256": "35d9e4cf7b06623fa892cfc36fd440c4b19d633dacfc9d61c0362cb0383ce77b",
+      "renderedSha256": "35d9e4cf7b06623fa892cfc36fd440c4b19d633dacfc9d61c0362cb0383ce77b",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "v1"
+      }
     },
     ".github/workflows/auto-merge.yml": {
       "capability": "workflows",
       "mode": "stamped",
       "sourcePath": "workflow-templates/auto-merge.yml",
-      "sourceSha256": "47465c2edc75b7a2ab9f3c0bfc5d290db6b51f4ccc5951eadddb9d23338e4692",
-      "renderedSha256": "47465c2edc75b7a2ab9f3c0bfc5d290db6b51f4ccc5951eadddb9d23338e4692"
+      "sourceSha256": "2d2d09380b72e9d56725a137205bc7351e91dc9feb20be41120d6e418d8b4027",
+      "renderedSha256": "2d2d09380b72e9d56725a137205bc7351e91dc9feb20be41120d6e418d8b4027",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "v1"
+      }
     },
     ".github/workflows/claude-auto-pr.yml": {
       "capability": "workflows",
       "mode": "stamped",
       "sourcePath": "workflow-templates/claude-auto-pr.yml",
-      "sourceSha256": "765059050785d2d87eb9474af45790fbda71b0f4855eb4f07a233f9aa8c8bf68",
-      "renderedSha256": "765059050785d2d87eb9474af45790fbda71b0f4855eb4f07a233f9aa8c8bf68"
+      "sourceSha256": "7d0fd50f72145abe4225120998b68bb23a5a79dee8a7d93cbe7f94730ea5e354",
+      "renderedSha256": "7d0fd50f72145abe4225120998b68bb23a5a79dee8a7d93cbe7f94730ea5e354",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "v1"
+      }
     },
     ".github/workflows/claude-ci-autofix.yml": {
       "capability": "workflows",
@@ -429,8 +441,8 @@
       "capability": "workflows",
       "mode": "stamped",
       "sourcePath": "workflow-templates/claude.yml",
-      "sourceSha256": "4347a6e48ee39ef1a3ab32198e9de0e4a7dd6e8ccbe2df76ab42664124bf0746",
-      "renderedSha256": "4347a6e48ee39ef1a3ab32198e9de0e4a7dd6e8ccbe2df76ab42664124bf0746",
+      "sourceSha256": "f79807ed2e35d8bc6e0dc48a5697c3537e4ebe33ffe33212c15571aec6285aff",
+      "renderedSha256": "f79807ed2e35d8bc6e0dc48a5697c3537e4ebe33ffe33212c15571aec6285aff",
       "renderVars": {
         "defaultBranch": "master",
         "baselineRef": "v1"
@@ -473,8 +485,8 @@
       "capability": "workflows",
       "mode": "stamped",
       "sourcePath": "workflow-templates/gate-line-endings.yml",
-      "sourceSha256": "d61df24244d497f0c1385b02e5d0520ec30cf5bd7a73acc97ab78377265ca21e",
-      "renderedSha256": "d61df24244d497f0c1385b02e5d0520ec30cf5bd7a73acc97ab78377265ca21e",
+      "sourceSha256": "07ee2e135bd267da6b03b99c9990e2b898a7584c7191a12816af56a830e74d30",
+      "renderedSha256": "07ee2e135bd267da6b03b99c9990e2b898a7584c7191a12816af56a830e74d30",
       "renderVars": {
         "defaultBranch": "master",
         "baselineRef": "v1"
@@ -484,8 +496,8 @@
       "capability": "workflows",
       "mode": "stamped",
       "sourcePath": "workflow-templates/governance-nightly.yml",
-      "sourceSha256": "ce2012d501788442d53400bd6fb0f7363aa69c3cfd654735959ff58d8d9450ee",
-      "renderedSha256": "ce2012d501788442d53400bd6fb0f7363aa69c3cfd654735959ff58d8d9450ee",
+      "sourceSha256": "8bc3fbb28fb307f33cf03ea04a71fb6a68c3d8e8ebd2f5920a41faa60f81343d",
+      "renderedSha256": "8bc3fbb28fb307f33cf03ea04a71fb6a68c3d8e8ebd2f5920a41faa60f81343d",
       "renderVars": {
         "defaultBranch": "master",
         "baselineRef": "v1"
@@ -495,15 +507,19 @@
       "capability": "workflows",
       "mode": "stamped",
       "sourcePath": "workflow-templates/governance-sync.yml",
-      "sourceSha256": "096e619f6fad6cb3dd46d457fcb78c54f84cbb9ba289f90169efc2ea3758d867",
-      "renderedSha256": "096e619f6fad6cb3dd46d457fcb78c54f84cbb9ba289f90169efc2ea3758d867"
+      "sourceSha256": "8fbd260435ddeb153996c0d73abcadb6459a08106b193862a9ff3821547055ba",
+      "renderedSha256": "8fbd260435ddeb153996c0d73abcadb6459a08106b193862a9ff3821547055ba",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "v1"
+      }
     },
     ".github/workflows/harden-gate.yml": {
       "capability": "workflows",
       "mode": "stamped",
       "sourcePath": "workflow-templates/harden-gate.yml",
-      "sourceSha256": "052035d2499d71071aaf458b6d01522695760d6b63130334e4fa7ea05945f46f",
-      "renderedSha256": "052035d2499d71071aaf458b6d01522695760d6b63130334e4fa7ea05945f46f",
+      "sourceSha256": "13333b6ec21976755e849a3de6f831befbb24eb9b78f7ad16b6c0b79e12bb97f",
+      "renderedSha256": "13333b6ec21976755e849a3de6f831befbb24eb9b78f7ad16b6c0b79e12bb97f",
       "renderVars": {
         "defaultBranch": "master",
         "baselineRef": "v1"
@@ -513,8 +529,8 @@
       "capability": "workflows",
       "mode": "stamped",
       "sourcePath": "workflow-templates/helm-validate.yml",
-      "sourceSha256": "963859a5508037f9c9c26d7243f26ecd8ce527c5d16e4e25f7178d5021ab860a",
-      "renderedSha256": "963859a5508037f9c9c26d7243f26ecd8ce527c5d16e4e25f7178d5021ab860a",
+      "sourceSha256": "c137a042911ed9b0dc2bacda6477f8176e396f41b4d5e17bebba02654a8401da",
+      "renderedSha256": "c137a042911ed9b0dc2bacda6477f8176e396f41b4d5e17bebba02654a8401da",
       "renderVars": {
         "defaultBranch": "master",
         "baselineRef": "v1"
@@ -524,8 +540,8 @@
       "capability": "workflows",
       "mode": "stamped",
       "sourcePath": "workflow-templates/label-sync.yml",
-      "sourceSha256": "148e442e9eef219571ba38455fa8f44a8d185f7bc692cd2e8cfbdfbbbfe75c96",
-      "renderedSha256": "148e442e9eef219571ba38455fa8f44a8d185f7bc692cd2e8cfbdfbbbfe75c96",
+      "sourceSha256": "cbc346e3bb08d8217ee0fec7c95899876c2713ac9db68ab050bb2e1d4ae04204",
+      "renderedSha256": "cbc346e3bb08d8217ee0fec7c95899876c2713ac9db68ab050bb2e1d4ae04204",
       "renderVars": {
         "defaultBranch": "master",
         "baselineRef": "v1"
@@ -542,8 +558,8 @@
       "capability": "workflows",
       "mode": "stamped",
       "sourcePath": "workflow-templates/nightly-integration.yml",
-      "sourceSha256": "f92714ba57347281948855ddb8de3b37f5f0e67e3913b51073050fe2e5b75f95",
-      "renderedSha256": "f92714ba57347281948855ddb8de3b37f5f0e67e3913b51073050fe2e5b75f95",
+      "sourceSha256": "6efaff8acf9a32a236f81da8a9beee5b05a5a7226d9df8178ddc0be7048edea5",
+      "renderedSha256": "6efaff8acf9a32a236f81da8a9beee5b05a5a7226d9df8178ddc0be7048edea5",
       "renderVars": {
         "defaultBranch": "master",
         "baselineRef": "v1"
@@ -564,8 +580,8 @@
       "capability": "workflows",
       "mode": "stamped",
       "sourcePath": "workflow-templates/publish-expert.yml",
-      "sourceSha256": "6f8664e7e31be3c7fc01f792cfa6bf1b5c44b8b6a7c3fb2099f425ac8c6e157a",
-      "renderedSha256": "6f8664e7e31be3c7fc01f792cfa6bf1b5c44b8b6a7c3fb2099f425ac8c6e157a",
+      "sourceSha256": "5615c0e40b1ffe784ee90d2c181ab3c18452c7429c9216ca5482938b2f51ab0e",
+      "renderedSha256": "5615c0e40b1ffe784ee90d2c181ab3c18452c7429c9216ca5482938b2f51ab0e",
       "renderVars": {
         "defaultBranch": "master",
         "baselineRef": "v1"

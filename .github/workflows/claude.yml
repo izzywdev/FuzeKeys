@@ -32,7 +32,7 @@ jobs:
       actions: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           fetch-depth: 1
 
@@ -41,20 +41,29 @@ jobs:
           (github.event_name == 'issue_comment' && github.event.issue.pull_request != null) ||
           github.event_name == 'pull_request_review_comment' ||
           github.event_name == 'pull_request_review'
+        # Every `github` context value reaches the shell through env:, never through
+        # `${{ }}` inside run:. A branch name is attacker-controlled and git permits `;`,
+        # `|`, `$`, `"` and backticks in a ref, so an interpolated head.ref executes on the
+        # runner with the job's token in scope — the documented GitHub Actions script
+        # injection. actionlint flags it as `expression`, semgrep as run-shell-injection.
         run: |
-          if [ "${{ github.event_name }}" = "issue_comment" ]; then
-            PR_NUM=${{ github.event.issue.number }}
-            HEAD_SHA=$(gh api repos/${{ github.repository }}/pulls/$PR_NUM --jq .head.sha)
-            HEAD_REF=$(gh api repos/${{ github.repository }}/pulls/$PR_NUM --jq .head.ref)
+          if [ "$EVENT_NAME" = "issue_comment" ]; then
+            HEAD_SHA=$(gh api "repos/${REPO}/pulls/${PR_NUM}" --jq .head.sha)
+            HEAD_REF=$(gh api "repos/${REPO}/pulls/${PR_NUM}" --jq .head.ref)
           else
-            HEAD_SHA="${{ github.event.pull_request.head.sha }}"
-            HEAD_REF="${{ github.event.pull_request.head.ref }}"
+            HEAD_SHA="$PR_HEAD_SHA"
+            HEAD_REF="$PR_HEAD_REF"
           fi
           git fetch origin "$HEAD_SHA"
           git checkout "$HEAD_SHA"
           echo "Checked out PR branch: $HEAD_REF @ $HEAD_SHA"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          PR_NUM: ${{ github.event.issue.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
 
       - name: Run Claude
         uses: anthropics/claude-code-action@428971d2ecd6e3a7cb0ee0da2a3a8b33fdb3678d  # v1

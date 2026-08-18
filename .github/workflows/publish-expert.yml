@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name != 'pull_request'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
 
       - name: Guard — token + manifest present
         id: guard
@@ -109,7 +109,7 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
 
       - name: Flag expert-drift-risk when PR touches monitored paths
         env:
@@ -126,13 +126,13 @@ jobs:
             echo "::notice::no expert declared — skipping drift hint."; exit 0
           fi
           python3 -c "
-import json, sys
-d = json.load(open('.fuze/manifest.json'))
-monitors = d.get('expertMonitors', [])
-if not monitors:
-    sys.exit(0)
-open('/tmp/monitors.txt', 'w').write('\n'.join(monitors))
-" || true
+          import json, sys
+          d = json.load(open('.fuze/manifest.json'))
+          monitors = d.get('expertMonitors', [])
+          if not monitors:
+              sys.exit(0)
+          open('/tmp/monitors.txt', 'w').write('\n'.join(monitors))
+          " || true
           if [ ! -f /tmp/monitors.txt ]; then
             echo "::notice::no expertMonitors declared — skipping drift hint."; exit 0
           fi
@@ -143,16 +143,16 @@ open('/tmp/monitors.txt', 'w').write('\n'.join(monitors))
             echo "::notice::could not fetch PR files — skipping."; exit 0
           fi
           MATCHED=$(python3 -c "
-monitors = [m.strip().rstrip('/') for m in open('/tmp/monitors.txt').read().strip().split('\n') if m.strip()]
-changed  = [f.strip() for f in open('/tmp/changed.txt').read().strip().split('\n') if f.strip()]
-hits = []
-for f in changed:
-    for m in monitors:
-        if f == m or f.startswith(m + '/') or f.startswith(m):
-            hits.append(f)
-            break
-print('\n'.join(hits))
-")
+          monitors = [m.strip().rstrip('/') for m in open('/tmp/monitors.txt').read().strip().split('\n') if m.strip()]
+          changed  = [f.strip() for f in open('/tmp/changed.txt').read().strip().split('\n') if f.strip()]
+          hits = []
+          for f in changed:
+              for m in monitors:
+                  if f == m or f.startswith(m + '/') or f.startswith(m):
+                      hits.append(f)
+                      break
+          print('\n'.join(hits))
+          ")
           if [ -z "$MATCHED" ]; then
             echo "::notice::no overlap with expertMonitors — no drift risk."; exit 0
           fi

@@ -46,7 +46,7 @@ jobs:
 
       - name: Checkout PR head (writable, same-repo only)
         if: steps.guard.outputs.ok == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           repository: ${{ github.event.pull_request.head.repo.full_name }}
