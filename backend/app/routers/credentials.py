@@ -334,7 +334,7 @@ class AccountCredentialResponse(BaseModel):
                 "credentials": {
                     "email": "john.doe.1703123456@example.com",
                     "password": "JohnDoePass123!",
-                    "api_key": "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                    "api_key": "<example-api-key-not-a-real-token>",
                 },
                 "last_used": "2024-01-01T12:00:00Z",
             }
@@ -361,7 +361,7 @@ class CredentialUpdate(BaseModel):
                     "email": "john.doe.1703123456@example.com",
                     "password": "JohnDoePass123!",
                     "username": "johndoe_a1b2",
-                    "api_key": "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                    "api_key": "<example-api-key-not-a-real-token>",
                 },
                 "metadata": {
                     "signup_date": "2024-01-01T12:00:00Z",

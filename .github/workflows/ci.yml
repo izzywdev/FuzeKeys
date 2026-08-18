@@ -174,13 +174,6 @@ jobs:
       with:
         python-version: 3.11
 
-    - name: Set up Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: 20.x
-        cache: 'npm'
-        cache-dependency-path: frontend/package-lock.json
-
     - name: Install security scanning tools
       run: |
         # bandit[toml] so bandit can read its config from backend/pyproject.toml.
@@ -188,11 +181,6 @@ jobs:
         # account and exits with InvalidCredentialError on every unauthenticated
         # run, so that step could never have passed here.
         pip install "bandit[toml]" pip-audit
-
-    - name: Install frontend dependencies (for npm audit)
-      run: |
-        cd frontend
-        npm ci --legacy-peer-deps
 
     - name: Run Python Security Scan (Bandit)
       run: |
@@ -205,6 +193,10 @@ jobs:
       # so a PR that pulls in a newly vulnerable dependency is blocked while the
       # pre-existing debt stays enumerated and reviewable rather than blocking
       # every merge. See the script's docstring.
+      #
+      # `npm audit` resolves advisories from package-lock.json alone, so this
+      # needs neither a node_modules install nor a setup-node step -- the
+      # runner's preinstalled npm is enough.
       run: python scripts/dependency_audit.py
 
   permit-io-scraper-test:

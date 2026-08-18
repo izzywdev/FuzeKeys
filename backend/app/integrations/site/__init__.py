@@ -42,6 +42,13 @@ def get_site_integration(site_name: str) -> Any:
     # package is a Python module ("permit_io"). Normalise before importing so
     # both spellings resolve to the same integration.
     module_name = site_name.replace(".", "_").replace("-", "_")
+
+    # site_name reaches here straight from a URL path parameter, so the module
+    # name is resolved against the discovered packages rather than interpolated
+    # into an import path directly.
+    if module_name not in get_available_sites():
+        raise ImportError(f"Site integration '{site_name}' not found")
+
     try:
         return importlib.import_module(f"app.integrations.site.{module_name}")
     except ImportError:
