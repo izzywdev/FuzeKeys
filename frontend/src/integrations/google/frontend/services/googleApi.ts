@@ -1,3 +1,4 @@
+import apiClient from '../../../../services/apiClient';
 // Google API Service for FuzeKeys Frontend
 
 export interface GoogleSignupData {
@@ -52,21 +53,14 @@ class GoogleApiService {
   private baseUrl = process.env.REACT_APP_API_URL || 'http://localhost:8002';
 
   async getIdentities(): Promise<Identity[]> {
-    try {
-      const response = await fetch(`${this.baseUrl}/api/identities`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch identities');
-      }
-      return await response.json();
-    } catch (error) {
-      console.error('Error fetching identities:', error);
-      // Return mock data for now
-      return [
-        { id: 1, name: 'John Doe', description: 'Primary identity' },
-        { id: 2, name: 'Jane Smith', description: 'Secondary identity' },
-        { id: 3, name: 'Bob Johnson', description: 'Test identity' }
-      ];
-    }
+    // Was fetch(`${baseUrl}/api/identities`) -- un-versioned, unauthenticated,
+    // and 404 against the backend. It also swallowed the failure and returned
+    // three hardcoded people ("John Doe", "Jane Smith", "Bob Johnson"), which is
+    // why the 404 went unnoticed: an identity vault silently showed invented
+    // identities. GoogleIntegrationPage.loadIdentities already surfaces errors
+    // via notification.error, so the failure is now allowed to reach it.
+    const { data } = await apiClient.get('/identities/');
+    return data;
   }
 
   async getGoogleAccounts(identityId: number): Promise<GoogleAccountsResponse> {

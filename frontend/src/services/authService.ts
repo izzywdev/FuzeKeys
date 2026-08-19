@@ -1,6 +1,7 @@
-import axios from 'axios';
+import apiClient, { API_BASE_URL } from './apiClient';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
+// Re-exported for callers that need the resolved base (and for tests).
+export { API_BASE_URL };
 
 export interface User {
   id: number;
@@ -27,38 +28,9 @@ export interface RegisterData {
   last_name?: string;
 }
 
-// Create axios instance with default config
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
-
-// Add token to requests if available
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
-
-// Handle token expiration
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      window.location.href = '/login';
-    }
-    return Promise.reject(error);
-  }
-);
-
 export const authService = {
   async login(email: string, password: string, masterKey: string): Promise<LoginResponse> {
-    const response = await api.post('/auth/login', {
+    const response = await apiClient.post('/auth/login', {
       email,
       password,
       master_key: masterKey,
@@ -67,17 +39,17 @@ export const authService = {
   },
 
   async register(userData: RegisterData): Promise<User> {
-    const response = await api.post('/auth/register', userData);
+    const response = await apiClient.post('/auth/register', userData);
     return response.data;
   },
 
   async getCurrentUser(): Promise<User> {
-    const response = await api.get('/auth/me');
+    const response = await apiClient.get('/auth/me');
     return response.data;
   },
 
   async logout(): Promise<void> {
-    await api.post('/auth/logout');
+    await apiClient.post('/auth/logout');
     localStorage.removeItem('token');
   },
 }; 
