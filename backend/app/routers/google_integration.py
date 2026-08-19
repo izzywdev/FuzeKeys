@@ -61,6 +61,50 @@ async def _get_owned_identity(
     return identity
 
 
+# NOTE: this literal route MUST stay above /signup/{identity_id}. Starlette
+# matches routes in declaration order, and "/signup/{identity_id}" also matches
+# "/signup/manual" -- binding identity_id="manual", which then fails int
+# validation with a 422. Declared the other way round, manual_signup is
+# unreachable. Covered by tests/test_google_route_order.py.
+@router.post("/signup/manual")
+async def manual_signup(
+    signup_data: GoogleSignupData,
+    config: GoogleSignupConfig = None,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Dict[str, Any]:
+    """
+    Create a Google account with manually provided data.
+
+    SECURITY: requires auth. This route drives real signup automation from the
+    request body and must not be reachable unauthenticated.
+    """
+    try:
+        # Create signup service
+        signup_service = GoogleSignupService(config or GoogleSignupConfig())
+
+        # Perform signup
+        result = await signup_service.signup(signup_data)
+
+        return {
+            "success": result.success,
+            "message": result.error_message
+            if not result.success
+            else "Google account created successfully",
+            "account_email": result.account_email,
+            "account_id": result.account_id,
+            "verification_required": result.verification_required,
+            "verification_type": result.verification_type,
+            "additional_data": result.additional_data,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in manual Google signup: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 @router.post("/signup/{identity_id}")
 async def signup_with_identity(
     identity_id: int,
@@ -125,45 +169,6 @@ async def signup_with_identity(
         raise
     except Exception as e:
         logger.error(f"Error in Google signup: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-
-@router.post("/signup/manual")
-async def manual_signup(
-    signup_data: GoogleSignupData,
-    config: GoogleSignupConfig = None,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> Dict[str, Any]:
-    """
-    Create a Google account with manually provided data.
-
-    SECURITY: requires auth. This route drives real signup automation from the
-    request body and must not be reachable unauthenticated.
-    """
-    try:
-        # Create signup service
-        signup_service = GoogleSignupService(config or GoogleSignupConfig())
-
-        # Perform signup
-        result = await signup_service.signup(signup_data)
-
-        return {
-            "success": result.success,
-            "message": result.error_message
-            if not result.success
-            else "Google account created successfully",
-            "account_email": result.account_email,
-            "account_id": result.account_id,
-            "verification_required": result.verification_required,
-            "verification_type": result.verification_type,
-            "additional_data": result.additional_data,
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error in manual Google signup: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
