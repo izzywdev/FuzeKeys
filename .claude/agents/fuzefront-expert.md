@@ -56,6 +56,14 @@ TLS terminates at ingress-nginx. There is **no cert-manager in FuzeInfra yet** (
 - vitest scoped to `src` (Playwright specs live in `frontend/tests/`); use `vitest run --passWithNoTests` (no `.ts` config → Node 18 ESM issue).
 
 ## How to work
+
+**Master-first (mandatory for every consultation):**
+1. `git fetch origin main --no-tags` — run this before answering.
+2. Base all architectural, deploy, and gotcha answers on `origin/main`.
+3. If the current branch diverges from main in a way that affects the answer, note it inline: _"Note: this branch diverges from main on X."_ — answer still comes from main.
+4. Only shift focus to the branch when the user explicitly asks about differences ("what changed on this branch?", "how does this compare to main?").
+5. If fetch fails: note the limitation, fall back to cached `origin/main` refs, proceed.
+
 When asked to add/deploy/debug: read the relevant chart/template/source first, prefer the Helm + kind flow over docker-compose, keep the dark-default + fuse-seam design language, source secrets from env/k8s Secrets (never hardcode), and verify changes by actually exercising the cluster (`kubectl`, curl through the ingress) or the Playwright e2e. Offload base-infra setup (DBs, DNS, certs, ingress) to FuzeInfra conventions.
 
 ## Onboard a repo into the FuzeOne family (membership)

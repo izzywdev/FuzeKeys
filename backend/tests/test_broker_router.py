@@ -16,9 +16,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.database import Base
 import app.models  # noqa: F401
-from app.broker import runtime, BrokerConfig, InMemoryVault
+from app.broker import BrokerConfig, InMemoryVault, runtime
+from app.database import Base
 from app.routers import broker as broker_router
 
 ROOT = b"root-secret-http-never-leak"
@@ -37,7 +37,8 @@ def client(monkeypatch):
 
     monkeypatch.setattr(runtime, "new_session", lambda: Session())
     monkeypatch.setattr(
-        runtime, "get_broker_config",
+        runtime,
+        "get_broker_config",
         lambda: BrokerConfig(signing_key="strong-http-signing-key-abcdefgh"),
     )
     runtime.set_vault(InMemoryVault({REF: ROOT}))
@@ -55,7 +56,11 @@ def test_grant_redeem_over_http(client):
     g = client.post(
         "/api/v1/broker/grant",
         headers={"X-Verified-Repo": AGENT_B},
-        json={"redeemer_identity": f"repo:{AGENT_A}", "scope": {"action": "read"}, "secret_ref": REF},
+        json={
+            "redeemer_identity": f"repo:{AGENT_A}",
+            "scope": {"action": "read"},
+            "secret_ref": REF,
+        },
     ).json()
     assert "grant_handle" in g and ROOT.decode() not in g["grant_handle"]
 

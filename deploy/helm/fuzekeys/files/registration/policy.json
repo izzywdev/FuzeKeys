@@ -1,0 +1,100 @@
+{
+  "name": "FuzeKeys",
+  "resources": [
+    {
+      "key": "Identity",
+      "name": "Identity",
+      "actions": {
+        "read": { "name": "Read" },
+        "create": { "name": "Create" },
+        "update": { "name": "Update" },
+        "delete": { "name": "Delete" }
+      }
+    },
+    {
+      "key": "Account",
+      "name": "Site Account",
+      "actions": {
+        "read": { "name": "Read" },
+        "create": { "name": "Create" },
+        "update": { "name": "Update" },
+        "delete": { "name": "Delete" }
+      }
+    },
+    {
+      "key": "VaultAsset",
+      "name": "Vault Asset",
+      "actions": {
+        "read": { "name": "Read metadata" },
+        "reveal": { "name": "Reveal secret value" },
+        "create": { "name": "Create" },
+        "update": { "name": "Update" },
+        "delete": { "name": "Delete" }
+      }
+    },
+    {
+      "key": "Site",
+      "name": "Site",
+      "actions": {
+        "read": { "name": "Read" },
+        "create": { "name": "Create" },
+        "update": { "name": "Update" },
+        "delete": { "name": "Delete" }
+      }
+    },
+    {
+      "key": "SignupScript",
+      "name": "Signup Script",
+      "actions": {
+        "read": { "name": "Read" },
+        "create": { "name": "Create" },
+        "update": { "name": "Update" },
+        "delete": { "name": "Delete" },
+        "run": { "name": "Run" }
+      }
+    },
+    {
+      "key": "ApiKey",
+      "name": "API Key",
+      "actions": {
+        "read": { "name": "Read metadata" },
+        "create": { "name": "Create" },
+        "revoke": { "name": "Revoke" }
+      }
+    }
+  ],
+  "roles": [
+    {
+      "key": "viewer",
+      "name": "Viewer",
+      "permissions": [
+        "Identity:read", "Account:read", "VaultAsset:read",
+        "Site:read", "SignupScript:read", "ApiKey:read"
+      ]
+    },
+    {
+      "key": "operator",
+      "name": "Operator",
+      "permissions": [
+        "Identity:read", "Identity:create", "Identity:update",
+        "Account:read", "Account:create", "Account:update",
+        "VaultAsset:read", "VaultAsset:create", "VaultAsset:update",
+        "Site:read", "Site:create", "Site:update",
+        "SignupScript:read", "SignupScript:run",
+        "ApiKey:read"
+      ]
+    },
+    {
+      "key": "admin",
+      "name": "Admin",
+      "permissions": [
+        "Identity:read", "Identity:create", "Identity:update", "Identity:delete",
+        "Account:read", "Account:create", "Account:update", "Account:delete",
+        "VaultAsset:read", "VaultAsset:reveal", "VaultAsset:create", "VaultAsset:update", "VaultAsset:delete",
+        "Site:read", "Site:create", "Site:update", "Site:delete",
+        "SignupScript:read", "SignupScript:create", "SignupScript:update", "SignupScript:delete", "SignupScript:run",
+        "ApiKey:read", "ApiKey:create", "ApiKey:revoke"
+      ]
+    }
+  ]
+}

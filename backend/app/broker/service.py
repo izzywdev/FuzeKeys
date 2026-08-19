@@ -28,8 +28,8 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.models.grant import Grant
 from app.models.approval import ApprovalRequest, AuditLog
+from app.models.grant import Grant
 
 from . import macaroons
 from .derived import (
@@ -68,15 +68,15 @@ class BrokerConfig:
 @dataclass(frozen=True)
 class GrantResult:
     grant_id: str
-    handle: str          # opaque macaroon, carries NO secret material
+    handle: str  # opaque macaroon, carries NO secret material
     expires_at: datetime
     sensitivity: str
 
 
 @dataclass(frozen=True)
 class RedeemResult:
-    kind: str            # "derived_secret" | "operation_token"
-    credential: str      # short-lived DERIVED material — NEVER the root
+    kind: str  # "derived_secret" | "operation_token"
+    credential: str  # short-lived DERIVED material — NEVER the root
     expires_at: datetime
     scope: dict
     grant_id: str
@@ -149,7 +149,11 @@ class BrokerService:
             agent_id=None,
             on_behalf_user_id=None,
             identity_id=None,
-            resource_ref=(resource_ref if redeemer is None else f"{resource_ref} redeemer={redeemer}")[:300],
+            resource_ref=(
+                resource_ref
+                if redeemer is None
+                else f"{resource_ref} redeemer={redeemer}"
+            )[:300],
             decision=decision[:40],
         )
         self.db.add(entry)
@@ -168,7 +172,9 @@ class BrokerService:
         sensitivity: str = "medium",
     ) -> GrantResult:
         if bool(secret_ref) == bool(operation):
-            raise BrokerConfigError("exactly one of secret_ref or operation is required")
+            raise BrokerConfigError(
+                "exactly one of secret_ref or operation is required"
+            )
         if not redeemer_identity or not redeemer_identity.strip():
             raise BrokerConfigError("redeemer_identity is required")
         if sensitivity not in ("low", "medium", "high"):
@@ -213,7 +219,10 @@ class BrokerService:
         )
         self.db.commit()
         return GrantResult(
-            grant_id=grant_id, handle=handle, expires_at=expires_at, sensitivity=sensitivity
+            grant_id=grant_id,
+            handle=handle,
+            expires_at=expires_at,
+            sensitivity=sensitivity,
         )
 
     # ---- redeem --------------------------------------------------------
@@ -238,7 +247,11 @@ class BrokerService:
                 caller=caller.principal,
             )
         except Exception:
-            self._audit(resource_ref=f"grant:{grant_id}", decision="denied", redeemer=caller.principal)
+            self._audit(
+                resource_ref=f"grant:{grant_id}",
+                decision="denied",
+                redeemer=caller.principal,
+            )
             self.db.commit()
             raise BrokerDenied("macaroon verification failed")
 
@@ -272,7 +285,9 @@ class BrokerService:
         # narrowing `scope <=` caveat gets the INTERSECTED (narrowed) scope, never
         # the original grant's wider scope.
         authoritative_scope = json.loads(row.scope or "{}")
-        effective_scope = bounds.scope if bounds.scope is not None else authoritative_scope
+        effective_scope = (
+            bounds.scope if bounds.scope is not None else authoritative_scope
+        )
         # DEFENSE IN DEPTH (privilege-escalation guard): regardless of what caveats
         # were appended, clamp the released scope to a SUBSET of the grantor's
         # original scope. A holder can never redeem more than was granted, even if
@@ -292,7 +307,11 @@ class BrokerService:
                 scope=json.dumps(scope, sort_keys=True),
                 ttl_seconds=row.ttl_seconds,
             )
-            kind, credential, expires_at = "derived_secret", derived.value, derived.expires_at
+            kind, credential, expires_at = (
+                "derived_secret",
+                derived.value,
+                derived.expires_at,
+            )
         else:
             # Capability delegation / operation grant: mint a scoped action token.
             token = mint_exchanged_token(
@@ -304,7 +323,11 @@ class BrokerService:
                 ttl_seconds=row.ttl_seconds,
                 issuer=self.config.issuer,
             )
-            kind, credential, expires_at = "operation_token", token.access_token, _now() + timedelta(seconds=token.expires_in)
+            kind, credential, expires_at = (
+                "operation_token",
+                token.access_token,
+                _now() + timedelta(seconds=token.expires_in),
+            )
 
         row.redemption_count += 1
         row.redeemed_at = _now()
@@ -316,7 +339,11 @@ class BrokerService:
         )
         self.db.commit()
         return RedeemResult(
-            kind=kind, credential=credential, expires_at=expires_at, scope=scope, grant_id=grant_id
+            kind=kind,
+            credential=credential,
+            expires_at=expires_at,
+            scope=scope,
+            grant_id=grant_id,
         )
 
     # ---- mint_token (RFC 8693) ----------------------------------------
@@ -350,9 +377,7 @@ class BrokerService:
 
     # ---- revoke --------------------------------------------------------
     def revoke(self, *, grant_id: str, reason: str = "revoked") -> bool:
-        row = (
-            self.db.query(Grant).filter(Grant.grant_id == grant_id).one_or_none()
-        )
+        row = self.db.query(Grant).filter(Grant.grant_id == grant_id).one_or_none()
         if row is None:
             # Idempotent + non-disclosing: report the same result either way.
             self._audit(resource_ref=f"grant:{grant_id}", decision="revoke_noop")
@@ -369,7 +394,11 @@ class BrokerService:
     def _grant_id_from_handle(self, handle: str) -> str:
         try:
             m = macaroons.Macaroon.deserialize(handle)
-            return m.identifier_bytes.decode("utf-8") if hasattr(m, "identifier_bytes") else str(m.identifier)
+            return (
+                m.identifier_bytes.decode("utf-8")
+                if hasattr(m, "identifier_bytes")
+                else str(m.identifier)
+            )
         except Exception:
             # Malformed handle -> generic denial.
             raise BrokerDenied("malformed grant handle")
@@ -381,16 +410,20 @@ class BrokerService:
         return row
 
     def _deny(self, grant_id: str, caller: str, reason: str) -> "None":
-        self._audit(resource_ref=f"grant:{grant_id}", decision="denied", redeemer=caller)
+        self._audit(
+            resource_ref=f"grant:{grant_id}", decision="denied", redeemer=caller
+        )
         self.db.commit()
         raise BrokerDenied(reason)
 
     def _enforce_approval(self, row: Grant, caller: str) -> None:
         req = None
         if row.approval_request_id is not None:
-            req = self.db.query(ApprovalRequest).filter(
-                ApprovalRequest.id == row.approval_request_id
-            ).one_or_none()
+            req = (
+                self.db.query(ApprovalRequest)
+                .filter(ApprovalRequest.id == row.approval_request_id)
+                .one_or_none()
+            )
         if req is None:
             # Create a pending approval and defer (reach_human path).
             req = ApprovalRequest(
@@ -402,7 +435,11 @@ class BrokerService:
             self.db.add(req)
             self.db.flush()
             row.approval_request_id = req.id
-            self._audit(resource_ref=f"grant:{row.grant_id}", decision="approval_required", redeemer=caller)
+            self._audit(
+                resource_ref=f"grant:{row.grant_id}",
+                decision="approval_required",
+                redeemer=caller,
+            )
             self.db.commit()
             raise ApprovalRequired(request_id=req.id, expires_at=_aware(row.expires_at))
         if req.status == "approved":
@@ -410,6 +447,10 @@ class BrokerService:
         if req.status in ("denied", "expired"):
             self._deny(row.grant_id, caller, f"approval {req.status}")
         # still pending
-        self._audit(resource_ref=f"grant:{row.grant_id}", decision="approval_pending", redeemer=caller)
+        self._audit(
+            resource_ref=f"grant:{row.grant_id}",
+            decision="approval_pending",
+            redeemer=caller,
+        )
         self.db.commit()
         raise ApprovalRequired(request_id=req.id, expires_at=_aware(row.expires_at))

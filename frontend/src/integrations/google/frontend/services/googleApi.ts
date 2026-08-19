@@ -1,3 +1,4 @@
+import apiClient, { legacyApiClient } from '../../../../services/apiClient';
 // Google API Service for FuzeKeys Frontend
 
 export interface GoogleSignupData {
@@ -49,109 +50,59 @@ export interface GoogleAccountsResponse {
 }
 
 class GoogleApiService {
-  private baseUrl = process.env.REACT_APP_API_URL || 'http://localhost:8002';
-
   async getIdentities(): Promise<Identity[]> {
-    try {
-      const response = await fetch(`${this.baseUrl}/api/identities`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch identities');
-      }
-      return await response.json();
-    } catch (error) {
-      console.error('Error fetching identities:', error);
-      // Return mock data for now
-      return [
-        { id: 1, name: 'John Doe', description: 'Primary identity' },
-        { id: 2, name: 'Jane Smith', description: 'Secondary identity' },
-        { id: 3, name: 'Bob Johnson', description: 'Test identity' }
-      ];
-    }
+    // Was fetch(`${baseUrl}/api/identities`) -- un-versioned, unauthenticated,
+    // and 404 against the backend. It also swallowed the failure and returned
+    // three hardcoded people ("John Doe", "Jane Smith", "Bob Johnson"), which is
+    // why the 404 went unnoticed: an identity vault silently showed invented
+    // identities. GoogleIntegrationPage.loadIdentities already surfaces errors
+    // via notification.error, so the failure is now allowed to reach it.
+    const { data } = await apiClient.get('/identities/');
+    return data;
   }
 
   async getGoogleAccounts(identityId: number): Promise<GoogleAccountsResponse> {
-    try {
-      const response = await fetch(`${this.baseUrl}/api/google/accounts?identity_id=${identityId}`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch Google accounts');
-      }
-      return await response.json();
-    } catch (error) {
-      console.error('Error fetching Google accounts:', error);
-      // Return mock data for now
-      return {
-        accounts: [],
-        total: 0
-      };
-    }
+    // The route is /accounts/{identity_id} -- a PATH parameter. This sent
+    // ?identity_id=, which matched nothing and 404'd, and the failure was then
+    // swallowed into an empty list that reads as "this identity has no Google
+    // accounts". GoogleIntegrationPage.loadAccounts already raises
+    // notification.error, so the failure is allowed to reach it.
+    const { data } = await legacyApiClient.get(`/api/google/accounts/${identityId}`);
+    return data;
   }
 
   async signupWithIdentity(identityId: number, config?: GoogleSignupConfig): Promise<GoogleSignupResult> {
-    try {
-      const response = await fetch(`${this.baseUrl}/api/google/signup/identity`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          identity_id: identityId,
-          config: config || {}
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to create Google account');
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Error creating Google account with identity:', error);
-      throw error;
-    }
+    // Two mistakes here, not one. The route is /signup/{identity_id}, so the id
+    // belongs in the PATH -- posting to the literal "/signup/identity" bound
+    // identity_id="identity" and failed int validation. And the handler's only
+    // body parameter is `config`, so the body is the config object itself; the
+    // {identity_id, config} envelope was never the expected shape.
+    const { data } = await legacyApiClient.post(
+      `/api/google/signup/${identityId}`,
+      config || {}
+    );
+    return data;
   }
 
   async signupWithManualData(data: GoogleSignupData, config?: GoogleSignupConfig): Promise<GoogleSignupResult> {
-    try {
-      const response = await fetch(`${this.baseUrl}/api/google/signup/manual`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          signup_data: data,
-          config: config || {}
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to create Google account');
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Error creating Google account with manual data:', error);
-      throw error;
-    }
+    // This one's path and body were already correct -- two Pydantic body params
+    // means FastAPI embeds them as {signup_data, config}. It failed anyway,
+    // because /signup/{identity_id} is declared first and shadowed it; that is
+    // fixed on the backend in this change. The only thing missing here was auth.
+    const { data: result } = await legacyApiClient.post('/api/google/signup/manual', {
+      signup_data: data,
+      config: config || {},
+    });
+    return result;
   }
 
   async testIdentityConversion(identityId: number): Promise<any> {
-    try {
-      const response = await fetch(`${this.baseUrl}/api/google/test/identity/${identityId}`, {
-        method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-      if (!response.ok) {
-        throw new Error('Failed to test identity conversion');
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Error testing identity conversion:', error);
-      throw error;
-    }
+    // The route is /test/identity-conversion/{identity_id}, not /test/identity/,
+    // and it takes no request body.
+    const { data } = await legacyApiClient.post(
+      `/api/google/test/identity-conversion/${identityId}`
+    );
+    return data;
   }
 }
 

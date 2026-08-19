@@ -1,18 +1,19 @@
-from logging.config import fileConfig
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-from alembic import context
 import os
 import sys
+from logging.config import fileConfig
 from pathlib import Path
+
+from sqlalchemy import engine_from_config, pool
+
+from alembic import context
 
 # Add the parent directory to the path so we can import our app
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
-from app.database import Base
-from app.models import user, identity, account, signup_script, api_key
 # Ensure every table is registered on Base.metadata for autogenerate/offline runs.
 import app.models  # noqa: F401
+from app.database import Base
+from app.models import account, api_key, identity, signup_script, user
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -87,7 +88,7 @@ def run_migrations_online() -> None:
     """
     configuration = config.get_section(config.config_ini_section)
     configuration["sqlalchemy.url"] = get_url()
-    
+
     connectable = engine_from_config(
         configuration,
         prefix="sqlalchemy.",
@@ -95,9 +96,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()
@@ -106,4 +105,4 @@ def run_migrations_online() -> None:
 if context.is_offline_mode():
     run_migrations_offline()
 else:
-    run_migrations_online() 
+    run_migrations_online()

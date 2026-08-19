@@ -5,12 +5,17 @@ This router provides API endpoints for managing automated site integrations
 including signup, signin, and API key creation for various platforms.
 """
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
-from pydantic import BaseModel, EmailStr
-from typing import Dict, Any, List, Optional
 import logging
+from typing import Any, Dict, List, Optional
 
-from app.integrations.site import get_available_sites, get_site_capabilities
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from pydantic import BaseModel, EmailStr
+
+from app.integrations.site import (
+    get_available_sites,
+    get_site_capabilities,
+    get_site_integration,
+)
 from app.integrations.site.permit_io import PermitIOIntegration
 from app.integrations.site.permit_io.models import PermitIOCredentials, PermitIOResult
 from app.models.user import User
@@ -19,6 +24,7 @@ from app.routers.auth import get_current_user
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/integrations", tags=["Site Integrations"])
+
 
 # Request/Response Models
 class SignupRequest(BaseModel):
@@ -32,11 +38,13 @@ class SignupRequest(BaseModel):
     job_title: Optional[str] = None
     headless: bool = True
 
+
 class SigninRequest(BaseModel):
     site: str
     email: EmailStr
     password: str
     headless: bool = True
+
 
 class ApiKeyRequest(BaseModel):
     site: str
@@ -45,6 +53,12 @@ class ApiKeyRequest(BaseModel):
     key_name: str = "FuzeKeys"
     headless: bool = True
 
+
+class AvailableSitesResponse(BaseModel):
+    sites: List[str]
+    count: int
+
+
 class IntegrationResponse(BaseModel):
     success: bool
     message: str
@@ -52,32 +66,41 @@ class IntegrationResponse(BaseModel):
     error: Optional[str] = None
     site: str
 
+
 # Available Sites Endpoints
-@router.get("/sites", response_model=Dict[str, List[str]])
+@router.get("/sites", response_model=AvailableSitesResponse)
 async def list_available_sites():
     """Get a list of all available site integrations."""
     try:
         sites = get_available_sites()
-        return {
-            "sites": sites,
-            "count": len(sites)
-        }
+        return {"sites": sites, "count": len(sites)}
     except Exception as e:
         logger.error(f"Failed to list sites: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve available sites")
+        raise HTTPException(
+            status_code=500, detail="Failed to retrieve available sites"
+        )
+
 
 @router.get("/sites/{site_name}/capabilities")
 async def get_site_capabilities_endpoint(site_name: str):
     """Get the capabilities of a specific site integration."""
     try:
+        # Resolve the integration first: get_site_capabilities() reports an
+        # all-False capability set for a site that does not exist, which would
+        # otherwise be returned as a 200 for any unknown name.
+        get_site_integration(site_name)
+    except ImportError:
+        raise HTTPException(status_code=404, detail=f"Site '{site_name}' not found")
+
+    try:
         capabilities = get_site_capabilities(site_name)
-        return {
-            "site": site_name,
-            "capabilities": capabilities
-        }
+        return {"site": site_name, "capabilities": capabilities}
     except Exception as e:
         logger.error(f"Failed to get capabilities for {site_name}: {str(e)}")
-        raise HTTPException(status_code=404, detail=f"Site '{site_name}' not found")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to read capabilities for '{site_name}'"
+        )
+
 
 # Site Integration Operations
 @router.post("/signup", response_model=IntegrationResponse)
@@ -101,14 +124,15 @@ async def create_account(
             return await handle_permit_io_signup(request)
         else:
             raise HTTPException(
-                status_code=400, 
-                detail=f"Site '{request.site}' is not supported for signup"
+                status_code=400,
+                detail=f"Site '{request.site}' is not supported for signup",
             )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Signup failed for {request.site}: {str(e)}")
         raise HTTPException(status_code=500, detail="Account creation failed")
+
 
 @router.post("/signin", response_model=IntegrationResponse)
 async def authenticate_account(
@@ -130,14 +154,15 @@ async def authenticate_account(
             return await handle_permit_io_signin(request)
         else:
             raise HTTPException(
-                status_code=400, 
-                detail=f"Site '{request.site}' is not supported for signin"
+                status_code=400,
+                detail=f"Site '{request.site}' is not supported for signin",
             )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Signin failed for {request.site}: {str(e)}")
         raise HTTPException(status_code=500, detail="Authentication failed")
+
 
 @router.post("/apikey", response_model=IntegrationResponse)
 async def create_api_key(
@@ -158,14 +183,15 @@ async def create_api_key(
             return await handle_permit_io_apikey(request)
         else:
             raise HTTPException(
-                status_code=400, 
-                detail=f"Site '{request.site}' is not supported for API key creation"
+                status_code=400,
+                detail=f"Site '{request.site}' is not supported for API key creation",
             )
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"API key creation failed for {request.site}: {str(e)}")
         raise HTTPException(status_code=500, detail="API key creation failed")
+
 
 # Permit.io specific handlers
 async def handle_permit_io_signup(request: SignupRequest) -> IntegrationResponse:
@@ -178,18 +204,18 @@ async def handle_permit_io_signup(request: SignupRequest) -> IntegrationResponse
             last_name=request.last_name,
             company_name=request.company_name,
             phone=request.phone,
-            job_title=request.job_title
+            job_title=request.job_title,
         )
-        
+
         integration = PermitIOIntegration(headless=request.headless)
         result = await integration.signup_account(credentials)
-        
+
         return IntegrationResponse(
             success=result.success,
             message=result.message,
             data=result.data,
             error=result.error,
-            site="permit.io"
+            site="permit.io",
         )
     except Exception as e:
         logger.error(f"Permit.io signup failed: {str(e)}")
@@ -197,21 +223,22 @@ async def handle_permit_io_signup(request: SignupRequest) -> IntegrationResponse
             success=False,
             message="Signup automation failed",
             error=str(e),
-            site="permit.io"
+            site="permit.io",
         )
+
 
 async def handle_permit_io_signin(request: SigninRequest) -> IntegrationResponse:
     """Handle permit.io account signin."""
     try:
         integration = PermitIOIntegration(headless=request.headless)
         result = await integration.signin_account(str(request.email), request.password)
-        
+
         return IntegrationResponse(
             success=result.success,
             message=result.message,
             data=result.data,
             error=result.error,
-            site="permit.io"
+            site="permit.io",
         )
     except Exception as e:
         logger.error(f"Permit.io signin failed: {str(e)}")
@@ -219,25 +246,24 @@ async def handle_permit_io_signin(request: SigninRequest) -> IntegrationResponse
             success=False,
             message="Signin automation failed",
             error=str(e),
-            site="permit.io"
+            site="permit.io",
         )
+
 
 async def handle_permit_io_apikey(request: ApiKeyRequest) -> IntegrationResponse:
     """Handle permit.io API key creation."""
     try:
         integration = PermitIOIntegration(headless=request.headless)
         result = await integration.create_api_key(
-            str(request.email), 
-            request.password, 
-            request.key_name
+            str(request.email), request.password, request.key_name
         )
-        
+
         return IntegrationResponse(
             success=result.success,
             message=result.message,
             data=result.data,
             error=result.error,
-            site="permit.io"
+            site="permit.io",
         )
     except Exception as e:
         logger.error(f"Permit.io API key creation failed: {str(e)}")
@@ -245,8 +271,9 @@ async def handle_permit_io_apikey(request: ApiKeyRequest) -> IntegrationResponse
             success=False,
             message="API key creation automation failed",
             error=str(e),
-            site="permit.io"
+            site="permit.io",
         )
+
 
 # Health check for integrations
 @router.get("/health")
@@ -257,8 +284,8 @@ async def integration_health_check():
         return {
             "status": "healthy",
             "available_sites": sites,
-            "timestamp": "2024-06-15T14:00:00Z"
+            "timestamp": "2024-06-15T14:00:00Z",
         }
     except Exception as e:
         logger.error(f"Integration health check failed: {str(e)}")
-        raise HTTPException(status_code=503, detail="Service unavailable") 
+        raise HTTPException(status_code=503, detail="Service unavailable")
