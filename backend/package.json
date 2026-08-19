@@ -11,6 +11,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@izzywdev/fuzefront-identity": "^1.0.0",
     "puppeteer": "^24.10.0"
   }
 }
