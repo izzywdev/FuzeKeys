@@ -6,10 +6,16 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.database import Base
 import app.models  # noqa: F401
-from app.broker import BrokerConfig, BrokerService, InMemoryVault, TransportContext, TransportIdentity
-from app.broker import mcp_tools
+from app.broker import (
+    BrokerConfig,
+    BrokerService,
+    InMemoryVault,
+    TransportContext,
+    TransportIdentity,
+    mcp_tools,
+)
+from app.database import Base
 
 ROOT = b"root-secret-never-leak"
 REF = "openbao:kv/x"
@@ -33,8 +39,11 @@ def _ctx(authed, asserted=None):
 
 def test_grant_then_redeem_flow(service):
     g = mcp_tools.keys_grant(
-        service, grantor=B, redeemer_identity=A.principal,
-        scope={"action": "read"}, secret_ref=REF,
+        service,
+        grantor=B,
+        redeemer_identity=A.principal,
+        scope={"action": "read"},
+        secret_ref=REF,
     )
     assert "grant_handle" in g and ROOT.decode() not in g["grant_handle"]
     r = mcp_tools.keys_redeem(service, ctx=_ctx(A), grant_handle=g["grant_handle"])
@@ -44,8 +53,11 @@ def test_grant_then_redeem_flow(service):
 
 def test_redeem_wrong_identity_returns_generic_denial(service):
     g = mcp_tools.keys_grant(
-        service, grantor=B, redeemer_identity=A.principal,
-        scope={}, secret_ref=REF,
+        service,
+        grantor=B,
+        redeemer_identity=A.principal,
+        scope={},
+        secret_ref=REF,
     )
     r = mcp_tools.keys_redeem(service, ctx=_ctx(B), grant_handle=g["grant_handle"])
     assert r["status"] == "denied"
@@ -53,7 +65,9 @@ def test_redeem_wrong_identity_returns_generic_denial(service):
 
 
 def test_mint_token_tool(service):
-    r = mcp_tools.keys_mint_token(service, ctx=_ctx(A), audience="FuzeBI", scope="read:x")
+    r = mcp_tools.keys_mint_token(
+        service, ctx=_ctx(A), audience="FuzeBI", scope="read:x"
+    )
     assert r["status"] == "issued"
     assert r["token_type"] == "Bearer"
     assert r["issued_token_type"].endswith("access_token")
@@ -61,7 +75,11 @@ def test_mint_token_tool(service):
 
 def test_revoke_tool(service):
     g = mcp_tools.keys_grant(
-        service, grantor=B, redeemer_identity=A.principal, scope={}, secret_ref=REF,
+        service,
+        grantor=B,
+        redeemer_identity=A.principal,
+        scope={},
+        secret_ref=REF,
     )
     out = mcp_tools.keys_revoke(service, grant_id=g["grant_id"])
     assert out["status"] == "revoked"
@@ -71,8 +89,12 @@ def test_revoke_tool(service):
 
 def test_high_sensitivity_returns_approval_required(service):
     g = mcp_tools.keys_grant(
-        service, grantor=B, redeemer_identity=A.principal, scope={},
-        secret_ref=REF, sensitivity="high",
+        service,
+        grantor=B,
+        redeemer_identity=A.principal,
+        scope={},
+        secret_ref=REF,
+        sensitivity="high",
     )
     r = mcp_tools.keys_redeem(service, ctx=_ctx(A), grant_handle=g["grant_handle"])
     assert r["status"] == "approval_required"

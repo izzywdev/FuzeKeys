@@ -28,11 +28,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.database import Base
 import app.models  # noqa: F401  registers every table on Base.metadata
-from app.models.grant import Grant
-from app.models.approval import AuditLog
-
 from app.broker import (
     BrokerConfig,
     BrokerDenied,
@@ -40,10 +36,14 @@ from app.broker import (
     InMemoryVault,
     TransportContext,
     TransportIdentity,
+    envelope,
+    macaroons,
+    runtime,
 )
-from app.broker import macaroons, envelope, runtime
 from app.broker.errors import ApprovalRequired
-
+from app.database import Base
+from app.models.approval import AuditLog
+from app.models.grant import Grant
 
 ROOT_SECRET = b"super-long-lived-root-token-DO-NOT-LEAK-EVER"
 SECRET_REF = "openbao:kv/identities/1/github/ci-token"
@@ -75,7 +75,9 @@ def vault():
 
 @pytest.fixture()
 def service(db, vault):
-    cfg = BrokerConfig(signing_key=SIGNING_KEY, max_ttl_seconds=3600, default_ttl_seconds=300)
+    cfg = BrokerConfig(
+        signing_key=SIGNING_KEY, max_ttl_seconds=3600, default_ttl_seconds=300
+    )
     return BrokerService(db, config=cfg, vault=vault)
 
 
@@ -239,7 +241,12 @@ def test_cannot_rebind_redeemer_by_appending_caveat(service, db):
     row = db.query(Grant).filter(Grant.grant_id == g.grant_id).one()
     rebound = macaroons.attenuate(g.handle, caveat=f"redeemer = {B.principal}")
     with pytest.raises(ValueError):
-        macaroons.verify_handle(handle=rebound, root_key=row.root_key, grant_id=g.grant_id, caller=B.principal)
+        macaroons.verify_handle(
+            handle=rebound,
+            root_key=row.root_key,
+            grant_id=g.grant_id,
+            caller=B.principal,
+        )
     with pytest.raises(BrokerDenied):
         service.redeem(ctx=_ctx(B), handle=rebound)
 
@@ -254,19 +261,23 @@ def test_cannot_extend_ttl_by_appending_caveat(service, db):
     extended = macaroons.attenuate(g.handle, caveat=f"expires <= {far_future}")
     # The grant itself is not yet expired, so this must still verify with the
     # *original* (tighter) expiry as the ceiling, never the far-future one.
-    bounds = macaroons.verify_handle(handle=extended, root_key=row.root_key, grant_id=g.grant_id, caller=A.principal)
+    bounds = macaroons.verify_handle(
+        handle=extended, root_key=row.root_key, grant_id=g.grant_id, caller=A.principal
+    )
     original_expiry = row.expires_at
     if original_expiry.tzinfo is None:
         original_expiry = original_expiry.replace(tzinfo=timezone.utc)
-    assert bounds.expires_at <= original_expiry + timedelta(seconds=2), (
-        "appended expiry caveat widened the TTL ceiling"
-    )
+    assert bounds.expires_at <= original_expiry + timedelta(
+        seconds=2
+    ), "appended expiry caveat widened the TTL ceiling"
 
 
 def test_attenuation_narrows_a_list_scope(service):
     """Legitimate attenuation: narrowing a repos list is honored and redeems with the narrowed scope."""
     g = _grant(service, scope={"repos": ["FuzeAgent", "FuzeBI"], "action": "read"})
-    narrowed = macaroons.attenuate(g.handle, caveat='scope <= {"action":"read","repos":["FuzeAgent"]}')
+    narrowed = macaroons.attenuate(
+        g.handle, caveat='scope <= {"action":"read","repos":["FuzeAgent"]}'
+    )
     res = service.redeem(ctx=_ctx(A), handle=narrowed)
     assert res.scope["repos"] == ["FuzeAgent"]
 
@@ -276,7 +287,9 @@ def test_attenuation_cannot_inject_new_scope_key_derived(service):
     appends a `scope <=` caveat introducing NEW capability keys the grantor never
     authorized (`admin`, `delete`). The released credential's effective scope MUST NOT
     contain those injected keys — otherwise a holder can self-escalate its authority."""
-    g = _grant(service, scope={"repos": ["FuzeAgent"], "action": "read"}, single_use=False)
+    g = _grant(
+        service, scope={"repos": ["FuzeAgent"], "action": "read"}, single_use=False
+    )
     evil = macaroons.attenuate(
         g.handle,
         caveat='scope <= {"admin":true,"delete":["prod"],"repos":["FuzeAgent"]}',
@@ -290,10 +303,15 @@ def test_attenuation_cannot_inject_new_scope_key_operation_token(service):
     """Same escalation via the operation-token (capability delegation) path: the JWT scope
     claim MUST NOT carry holder-injected keys beyond what the grantor authorized."""
     g = _grant(
-        service, secret_ref=None, operation="send_email_via_sendgrid",
-        scope={"action": "send"}, single_use=False,
+        service,
+        secret_ref=None,
+        operation="send_email_via_sendgrid",
+        scope={"action": "send"},
+        single_use=False,
     )
-    evil = macaroons.attenuate(g.handle, caveat='scope <= {"action":"send","admin":true}')
+    evil = macaroons.attenuate(
+        g.handle, caveat='scope <= {"action":"send","admin":true}'
+    )
     res = service.redeem(ctx=_ctx(A), handle=evil)
     scope_claim = json.loads(res.scope) if isinstance(res.scope, str) else res.scope
     assert "admin" not in scope_claim, f"operation-token scope widened -> {scope_claim}"
@@ -304,11 +322,15 @@ def test_effective_scope_never_exceeds_original_grant_scope(service):
     SUBSET of the scope the grantor originally authorized (row.scope)."""
     original = {"repos": ["FuzeAgent"], "action": "read"}
     g = _grant(service, scope=dict(original), single_use=False)
-    evil = macaroons.attenuate(g.handle, caveat='scope <= {"repos":["FuzeAgent"],"action":"read","extra":"x"}')
+    evil = macaroons.attenuate(
+        g.handle, caveat='scope <= {"repos":["FuzeAgent"],"action":"read","extra":"x"}'
+    )
     res = service.redeem(ctx=_ctx(A), handle=evil)
     released = json.loads(res.scope) if isinstance(res.scope, str) else res.scope
     extra_keys = set(released) - set(original)
-    assert not extra_keys, f"released scope introduced keys not in the grant: {extra_keys}"
+    assert (
+        not extra_keys
+    ), f"released scope introduced keys not in the grant: {extra_keys}"
 
 
 # ======================================================================
@@ -319,9 +341,12 @@ def test_unknown_unauthorized_revoked_expired_share_one_message(service, db):
 
     # unknown grant (valid macaroon over a grant_id that does not exist)
     fake = macaroons.mint_handle(
-        root_key=b"x" * 32, grant_id="deadbeefdeadbeef", redeemer=A.principal,
+        root_key=b"x" * 32,
+        grant_id="deadbeefdeadbeef",
+        redeemer=A.principal,
         expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
-        scope={}, single_use=True,
+        scope={},
+        single_use=True,
     )
     with pytest.raises(BrokerDenied) as e:
         service.redeem(ctx=_ctx(A), handle=fake)
@@ -349,15 +374,27 @@ def test_unknown_unauthorized_revoked_expired_share_one_message(service, db):
         service.redeem(ctx=_ctx(A), handle=g3.handle)
     messages.add(e.value.public_message)
 
-    assert messages == {BrokerDenied.PUBLIC_MESSAGE}, f"denial messages leak an oracle: {messages}"
+    assert messages == {
+        BrokerDenied.PUBLIC_MESSAGE
+    }, f"denial messages leak an oracle: {messages}"
 
 
 def test_unresolvable_secret_ref_is_nondisclosing(db):
     """A grant whose secret_ref is missing from the vault denies with the SAME generic
     message (does not reveal whether the ref exists)."""
     empty_vault = InMemoryVault()  # no secrets at all
-    svc = BrokerService(db, config=BrokerConfig(signing_key=SIGNING_KEY, max_ttl_seconds=3600), vault=empty_vault)
-    g = svc.grant(grantor=B, redeemer_identity=A.principal, scope={}, ttl_seconds=300, secret_ref="missing:ref")
+    svc = BrokerService(
+        db,
+        config=BrokerConfig(signing_key=SIGNING_KEY, max_ttl_seconds=3600),
+        vault=empty_vault,
+    )
+    g = svc.grant(
+        grantor=B,
+        redeemer_identity=A.principal,
+        scope={},
+        ttl_seconds=300,
+        secret_ref="missing:ref",
+    )
     with pytest.raises(BrokerDenied) as e:
         svc.redeem(ctx=_ctx(A), handle=g.handle)
     assert e.value.public_message == BrokerDenied.PUBLIC_MESSAGE
@@ -394,7 +431,8 @@ def test_tampered_ciphertext_fails_aead():
     bad = envelope.SealedSecret(
         wrapped_dek=sealed.wrapped_dek,
         nonce=sealed.nonce,
-        ciphertext=("A" if sealed.ciphertext[0] != "A" else "B") + sealed.ciphertext[1:],
+        ciphertext=("A" if sealed.ciphertext[0] != "A" else "B")
+        + sealed.ciphertext[1:],
     )
     with pytest.raises(Exception):
         envelope.open_sealed(bad, recipient_priv)
@@ -432,7 +470,9 @@ def test_rest_and_mcp_paths_agree_on_success(service):
     from app.broker import mcp_tools
 
     g = _grant(service, redeemer_identity=A.principal, single_use=False)
-    ctx_header = runtime.transport_from_headers({"x-verified-repo": "izzywdev/FuzeAgent"})
+    ctx_header = runtime.transport_from_headers(
+        {"x-verified-repo": "izzywdev/FuzeAgent"}
+    )
     assert ctx_header.authenticated.principal == A.principal
     out = mcp_tools.keys_redeem(service, ctx=ctx_header, grant_handle=g.handle)
     assert out["status"] == "released"
@@ -446,7 +486,9 @@ def test_mint_token_is_bound_to_authenticated_identity(service):
     from jose import jwt
 
     tok = service.mint_token(ctx=_ctx(A), audience="FuzeBI", scope="read:reports")
-    claims = jwt.decode(tok.access_token, SIGNING_KEY, algorithms=["HS256"], audience="FuzeBI")
+    claims = jwt.decode(
+        tok.access_token, SIGNING_KEY, algorithms=["HS256"], audience="FuzeBI"
+    )
     assert claims["sub"] == A.principal
     assert claims["act"]["sub"] == A.principal
     assert claims["aud"] == "FuzeBI"
@@ -457,19 +499,27 @@ def test_mint_token_cannot_impersonate_via_assertion(service):
     """Authenticated A asserting it is EVIL still mints a token bound to A, never EVIL."""
     from jose import jwt
 
-    tok = service.mint_token(ctx=_ctx(A, asserted=EVIL.principal), audience="X", scope="s")
-    claims = jwt.decode(tok.access_token, SIGNING_KEY, algorithms=["HS256"], audience="X")
+    tok = service.mint_token(
+        ctx=_ctx(A, asserted=EVIL.principal), audience="X", scope="s"
+    )
+    claims = jwt.decode(
+        tok.access_token, SIGNING_KEY, algorithms=["HS256"], audience="X"
+    )
     assert claims["sub"] == A.principal
 
 
 def test_mint_token_ttl_is_clamped_to_server_max(service):
-    tok = service.mint_token(ctx=_ctx(A), audience="X", scope="s", ttl_seconds=10_000_000)
+    tok = service.mint_token(
+        ctx=_ctx(A), audience="X", scope="s", ttl_seconds=10_000_000
+    )
     assert tok.expires_in <= 3600, f"mint_token TTL not clamped: {tok.expires_in}"
 
 
 def test_mint_token_requires_authenticated_identity(service):
     with pytest.raises(BrokerDenied):
-        service.mint_token(ctx=_ctx(None, asserted=A.principal), audience="X", scope="s")
+        service.mint_token(
+            ctx=_ctx(None, asserted=A.principal), audience="X", scope="s"
+        )
 
 
 # ======================================================================

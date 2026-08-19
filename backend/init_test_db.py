@@ -6,55 +6,60 @@ Populates the database with sample sites data
 
 import asyncio
 import json
-import sys
 import os
+import sys
 from datetime import datetime
 from pathlib import Path
 
 # Add the app directory to Python path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'app'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "app"))
 
-from app.database import get_db, engine
-from app.models.site import Site
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import engine, get_db
+from app.models.site import Site
+
 
 async def init_database():
     """Initialize database with sample data"""
     print("🔧 Initializing test database...")
-    
+
     # Create tables
     try:
         from app.models import Base
+
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         print("✅ Database tables created")
     except Exception as e:
         print(f"❌ Error creating tables: {e}")
         return False
-    
+
     # Load sample sites data
-    sites_file = Path(__file__).parent / "app" / "site_directory" / "supported_sites.json"
+    sites_file = (
+        Path(__file__).parent / "app" / "site_directory" / "supported_sites.json"
+    )
     if not sites_file.exists():
         print(f"❌ Sites data file not found: {sites_file}")
         return False
-    
-    with open(sites_file, 'r') as f:
+
+    with open(sites_file, "r") as f:
         sites_data = json.load(f)
-    
+
     # Insert sample sites
     async with AsyncSession(engine) as session:
         # Check if sites already exist
         result = await session.execute(text("SELECT COUNT(*) FROM sites"))
         count = result.scalar()
-        
+
         if count > 0:
             print(f"ℹ️  Database already has {count} sites, skipping initialization")
             return True
-        
+
         print("📝 Adding sample sites...")
         sites_to_add = []
-        
+
         for site_key, site_data in sites_data["sites"].items():
             site = Site(
                 name=site_key,
@@ -65,10 +70,13 @@ async def init_database():
                 description=f"{site_data['name']} - {', '.join(site_data['supported_actions'])}",
                 signup_difficulty=_get_random_difficulty(),
                 signin_difficulty=_get_random_difficulty(),
-                apikey_difficulty=_get_random_difficulty() if "apikey_creation" in site_data.get("supported_actions", []) else "not_applicable",
+                apikey_difficulty=_get_random_difficulty()
+                if "apikey_creation" in site_data.get("supported_actions", [])
+                else "not_applicable",
                 overall_difficulty=_get_random_difficulty(),
                 requires_email_verification=True,
-                requires_phone_verification=site_key == "google",  # Google requires phone
+                requires_phone_verification=site_key
+                == "google",  # Google requires phone
                 requires_sms_verification=False,
                 requires_authenticator=site_key in ["google", "github"],
                 has_captcha=site_key == "google",
@@ -84,10 +92,10 @@ async def init_database():
                 api_documentation_url=_get_api_docs_url(site_data["url"]),
                 api_rate_limits=_get_rate_limits_by_site(site_key),
                 notes=f"Generated test data for {site_data['name']}",
-                created_at=datetime.utcnow()
+                created_at=datetime.utcnow(),
             )
             sites_to_add.append(site)
-        
+
         # Add additional test sites for variety
         additional_sites = [
             {
@@ -98,7 +106,7 @@ async def init_database():
                 "description": "Professional networking platform",
                 "priority": 75,
                 "progress": 25.0,
-                "difficulty": "hard"
+                "difficulty": "hard",
             },
             {
                 "name": "twitter",
@@ -108,7 +116,7 @@ async def init_database():
                 "description": "Social media platform",
                 "priority": 60,
                 "progress": 80.0,
-                "difficulty": "medium"
+                "difficulty": "medium",
             },
             {
                 "name": "facebook",
@@ -118,7 +126,7 @@ async def init_database():
                 "description": "Social networking service",
                 "priority": 50,
                 "progress": 100.0,
-                "difficulty": "extreme"
+                "difficulty": "extreme",
             },
             # Add more sites to test pagination
             {
@@ -129,7 +137,7 @@ async def init_database():
                 "description": "Online marketplace and cloud platform",
                 "priority": 85,
                 "progress": 45.0,
-                "difficulty": "hard"
+                "difficulty": "hard",
             },
             {
                 "name": "microsoft",
@@ -139,7 +147,7 @@ async def init_database():
                 "description": "Technology and cloud services",
                 "priority": 90,
                 "progress": 60.0,
-                "difficulty": "extreme"
+                "difficulty": "extreme",
             },
             {
                 "name": "netflix",
@@ -149,7 +157,7 @@ async def init_database():
                 "description": "Streaming service platform",
                 "priority": 40,
                 "progress": 90.0,
-                "difficulty": "medium"
+                "difficulty": "medium",
             },
             {
                 "name": "spotify",
@@ -159,7 +167,7 @@ async def init_database():
                 "description": "Music streaming platform",
                 "priority": 35,
                 "progress": 100.0,
-                "difficulty": "easy"
+                "difficulty": "easy",
             },
             {
                 "name": "slack",
@@ -169,7 +177,7 @@ async def init_database():
                 "description": "Team communication platform",
                 "priority": 70,
                 "progress": 75.0,
-                "difficulty": "medium"
+                "difficulty": "medium",
             },
             {
                 "name": "discord",
@@ -179,7 +187,7 @@ async def init_database():
                 "description": "Gaming and community platform",
                 "priority": 55,
                 "progress": 30.0,
-                "difficulty": "hard"
+                "difficulty": "hard",
             },
             {
                 "name": "stripe",
@@ -189,10 +197,10 @@ async def init_database():
                 "description": "Payment processing platform",
                 "priority": 80,
                 "progress": 20.0,
-                "difficulty": "extreme"
-            }
+                "difficulty": "extreme",
+            },
         ]
-        
+
         for site_data in additional_sites:
             site = Site(
                 name=site_data["name"],
@@ -202,7 +210,9 @@ async def init_database():
                 category=site_data["category"],
                 description=site_data["description"],
                 signup_difficulty=site_data.get("difficulty", "medium"),
-                signin_difficulty="easy" if site_data.get("difficulty") == "easy" else "medium",
+                signin_difficulty="easy"
+                if site_data.get("difficulty") == "easy"
+                else "medium",
                 apikey_difficulty="not_applicable",
                 overall_difficulty=site_data.get("difficulty", "medium"),
                 requires_email_verification=True,
@@ -212,7 +222,9 @@ async def init_database():
                 has_captcha=True,
                 captcha_type="recaptcha",
                 anti_bot_techniques=_get_anti_bot_techniques_by_site(site_data["name"]),
-                signup_status="completed" if site_data["progress"] == 100.0 else "in_progress",
+                signup_status="completed"
+                if site_data["progress"] == 100.0
+                else "in_progress",
                 signin_status="completed",
                 apikey_status="not_applicable",
                 implementation_progress=site_data["progress"],
@@ -222,23 +234,24 @@ async def init_database():
                 api_documentation_url=f"{site_data['url']}/developers",
                 api_rate_limits="Standard rate limits apply",
                 notes=f"Test data for {site_data['display_name']}",
-                created_at=datetime.utcnow()
+                created_at=datetime.utcnow(),
             )
             sites_to_add.append(site)
-        
+
         # Add all sites to the session
         for site in sites_to_add:
             session.add(site)
-        
+
         await session.commit()
         print(f"✅ Added {len(sites_to_add)} sites to database")
-        
+
         # Verify the data
         result = await session.execute(text("SELECT COUNT(*) FROM sites"))
         final_count = result.scalar()
         print(f"📊 Total sites in database: {final_count}")
-        
+
         return True
+
 
 def _get_category_from_url(url: str) -> str:
     """Get category based on URL"""
@@ -253,110 +266,97 @@ def _get_category_from_url(url: str) -> str:
     else:
         return "general"
 
+
 def _get_random_difficulty() -> str:
     """Get a reasonable difficulty level"""
     import random
+
     return random.choice(["easy", "medium", "hard", "extreme"])
+
 
 def _get_progress_by_site(site_key: str) -> float:
     """Get progress based on site"""
-    progress_map = {
-        "google": 33.3,
-        "github": 100.0,
-        "openai": 66.7
-    }
+    progress_map = {"google": 33.3, "github": 100.0, "openai": 66.7}
     return progress_map.get(site_key, 0.0)
+
 
 def _get_priority_by_site(site_key: str) -> int:
     """Get priority based on site"""
-    priority_map = {
-        "google": 100,
-        "github": 85,
-        "openai": 90
-    }
+    priority_map = {"google": 100, "github": 85, "openai": 90}
     return priority_map.get(site_key, 50)
+
 
 def _get_estimated_hours_by_site(site_key: str) -> int:
     """Get estimated hours based on site"""
-    hours_map = {
-        "google": 40,
-        "github": 8,
-        "openai": 25
-    }
+    hours_map = {"google": 40, "github": 8, "openai": 25}
     return hours_map.get(site_key, 15)
+
 
 def _get_api_docs_url(base_url: str) -> str:
     """Generate API docs URL"""
     domain_to_docs = {
         "google.com": "https://developers.google.com",
         "github.com": "https://docs.github.com/en/rest",
-        "openai.com": "https://platform.openai.com/docs/api-reference"
+        "openai.com": "https://platform.openai.com/docs/api-reference",
     }
-    
+
     for domain, docs_url in domain_to_docs.items():
         if domain in base_url:
             return docs_url
-    
+
     return f"{base_url}/api/docs"
+
 
 def _get_rate_limits_by_site(site_key: str) -> str:
     """Get rate limits based on site"""
     limits_map = {
         "google": "Varies by service",
         "github": "5000 requests/hour",
-        "openai": "Rate limits vary by model"
+        "openai": "Rate limits vary by model",
     }
     return limits_map.get(site_key, "Standard rate limits")
+
 
 def _get_anti_bot_techniques_by_site(site_key: str) -> list:
     """Get anti-bot techniques based on site and difficulty"""
     techniques_map = {
         "google": [
             "fingerprinting",
-            "behavioral_analysis", 
+            "behavioral_analysis",
             "javascript_challenges",
             "canvas_fingerprinting",
             "timing_analysis",
             "session_validation",
             "csrf_tokens",
-            "dynamic_selectors"
+            "dynamic_selectors",
         ],
-        "github": [
-            "rate_limiting",
-            "csrf_tokens",
-            "user_agent_detection"
-        ],
+        "github": ["rate_limiting", "csrf_tokens", "user_agent_detection"],
         "openai": [
             "rate_limiting",
             "session_validation",
             "csrf_tokens",
-            "ip_reputation"
+            "ip_reputation",
         ],
         "linkedin": [
             "fingerprinting",
             "behavioral_analysis",
             "javascript_challenges",
-            "session_validation"
+            "session_validation",
         ],
-        "twitter": [
-            "rate_limiting",
-            "fingerprinting",
-            "hidden_fields",
-            "csrf_tokens"
-        ],
+        "twitter": ["rate_limiting", "fingerprinting", "hidden_fields", "csrf_tokens"],
         "facebook": [
             "fingerprinting",
             "behavioral_analysis",
             "javascript_challenges",
             "dynamic_selectors",
-            "obfuscated_javascript"
+            "obfuscated_javascript",
         ],
         "amazon": [
             "fingerprinting",
             "behavioral_analysis",
             "rate_limiting",
             "session_validation",
-            "csrf_tokens"
+            "csrf_tokens",
         ],
         "microsoft": [
             "fingerprinting",
@@ -364,26 +364,16 @@ def _get_anti_bot_techniques_by_site(site_key: str) -> list:
             "javascript_challenges",
             "canvas_fingerprinting",
             "session_validation",
-            "csrf_tokens"
-        ],
-        "netflix": [
-            "rate_limiting",
-            "session_validation",
-            "csrf_tokens"
-        ],
-        "spotify": [
-            "rate_limiting"
-        ],
-        "slack": [
-            "rate_limiting",
             "csrf_tokens",
-            "session_validation"
         ],
+        "netflix": ["rate_limiting", "session_validation", "csrf_tokens"],
+        "spotify": ["rate_limiting"],
+        "slack": ["rate_limiting", "csrf_tokens", "session_validation"],
         "discord": [
             "fingerprinting",
             "rate_limiting",
             "csrf_tokens",
-            "session_validation"
+            "session_validation",
         ],
         "stripe": [
             "fingerprinting",
@@ -391,10 +381,11 @@ def _get_anti_bot_techniques_by_site(site_key: str) -> list:
             "javascript_challenges",
             "csrf_tokens",
             "session_validation",
-            "ip_reputation"
-        ]
+            "ip_reputation",
+        ],
     }
     return techniques_map.get(site_key, ["rate_limiting"])
+
 
 async def main():
     """Main function"""
@@ -409,9 +400,11 @@ async def main():
     except Exception as e:
         print(f"💥 Unexpected error: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 
+
 if __name__ == "__main__":
     exit_code = asyncio.run(main())
-    sys.exit(exit_code) 
+    sys.exit(exit_code)

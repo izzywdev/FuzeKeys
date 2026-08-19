@@ -11,9 +11,12 @@ export default defineConfig({
       exposes: {
         './FuzeKeysApp': './src/MfeApp',
       },
+      // NOTE: `singleton` is a webpack Module Federation option. This plugin
+      // neither types it nor reads it at runtime (grep the dist bundle), so it
+      // was dead config that only broke `tsc --noEmit`.
       shared: {
-        react: { singleton: true, requiredVersion: '^18.0.0' },
-        'react-dom': { singleton: true, requiredVersion: '^18.0.0' },
+        react: { requiredVersion: '^18.0.0' },
+        'react-dom': { requiredVersion: '^18.0.0' },
       },
     }),
   ],

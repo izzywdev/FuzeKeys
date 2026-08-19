@@ -36,7 +36,6 @@ ENVIRONMENT CONSTRAINT (documented, not ours to fix):
 import asyncio
 
 import pytest
-
 from fastapi import HTTPException
 
 # Importing these specific modules is cv2-free (verified). Importing app.main is NOT.
@@ -109,8 +108,14 @@ class TestVerifyApiKeyFailsClosed:
             "scraper-service": "scraper-secret",
             "mobile-service": "mobile-secret",
         }
-        assert _run(credentials_mod.verify_api_key(x_api_key="scraper-secret")) == "scraper-service"
-        assert _run(credentials_mod.verify_api_key(x_api_key="mobile-secret")) == "mobile-service"
+        assert (
+            _run(credentials_mod.verify_api_key(x_api_key="scraper-secret"))
+            == "scraper-service"
+        )
+        assert (
+            _run(credentials_mod.verify_api_key(x_api_key="mobile-secret"))
+            == "mobile-service"
+        )
 
     def test_loader_excludes_unset_and_blank_env_keys(self, monkeypatch):
         """_load_service_api_keys() reads ONLY from env with NO defaults: unset or
@@ -144,7 +149,10 @@ class TestVerifyApiKeyFailsClosed:
         monkeypatch.setenv("SCRAPER_API_KEY", "env-only-key")
         credentials_mod.VALID_API_KEYS = credentials_mod._load_service_api_keys()
 
-        assert _run(credentials_mod.verify_api_key(x_api_key="env-only-key")) == "scraper-service"
+        assert (
+            _run(credentials_mod.verify_api_key(x_api_key="env-only-key"))
+            == "scraper-service"
+        )
         with pytest.raises(HTTPException) as exc:
             _run(credentials_mod.verify_api_key(x_api_key="env-only-key-WRONG"))
         assert exc.value.status_code == 401
@@ -196,9 +204,9 @@ class TestIdorOwnershipScoping:
         # Import the models AND database.Base. account/identity/user all bind to
         # app.database.Base; importing the modules registers their tables on it.
         from app.database import Base
-        from app.models.user import User
-        from app.models.identity import Identity
         from app.models.account import Account  # noqa: F401  (registers table)
+        from app.models.identity import Identity
+        from app.models.user import User
 
         engine = create_engine("sqlite:///:memory:")
         # Create only the tables defined on app.database.Base (not the separate
@@ -217,12 +225,16 @@ class TestIdorOwnershipScoping:
     def _seed_two_tenants(session, User, Identity, Account):
         """Create two users, each with one identity owning one account."""
         user_a = User(
-            email="<EMAIL_a>", username="user_a",
-            hashed_password="h", master_key_hash="m",
+            email="<EMAIL_a>",
+            username="user_a",
+            hashed_password="h",
+            master_key_hash="m",
         )
         user_b = User(
-            email="<EMAIL_b>", username="user_b",
-            hashed_password="h", master_key_hash="m",
+            email="<EMAIL_b>",
+            username="user_b",
+            hashed_password="h",
+            master_key_hash="m",
         )
         session.add_all([user_a, user_b])
         session.flush()
@@ -234,12 +246,14 @@ class TestIdorOwnershipScoping:
 
         account_a = Account(
             identity_id=identity_a.id,
-            website_name="SiteA", website_url="https://a.example",
+            website_name="SiteA",
+            website_url="https://a.example",
             encrypted_credentials=None,
         )
         account_b = Account(
             identity_id=identity_b.id,
-            website_name="SiteB", website_url="https://b.example",
+            website_name="SiteB",
+            website_url="https://b.example",
             encrypted_credentials=None,
         )
         session.add_all([account_a, account_b])
@@ -255,32 +269,41 @@ class TestIdorOwnershipScoping:
         )
 
         req = credentials_mod.AccountCredentialRequest(
-            identity_id=identity_a.id,        # WRONG owner for account_b
+            identity_id=identity_a.id,  # WRONG owner for account_b
             account_id=account_b.id,
             credential_types=[],
         )
         with pytest.raises(HTTPException) as exc:
-            _run(credentials_mod.request_account_credentials(req, "scraper-service", session))
+            _run(
+                credentials_mod.request_account_credentials(
+                    req, "scraper-service", session
+                )
+            )
         assert exc.value.status_code == 404
 
     def test_retrieve_with_correct_owner_succeeds(self, db_session):
         """The legitimate path: correct (identity, account) pair returns the
-        account (200), proving the 404 above is the scoping check, not a blanket deny."""
+        account (200), proving the 404 above is the scoping check, not a blanket deny.
+        """
         session, User, Identity, Account = db_session
         identity_a, identity_b, account_a, account_b = self._seed_two_tenants(
             session, User, Identity, Account
         )
 
         req = credentials_mod.AccountCredentialRequest(
-            identity_id=identity_b.id,        # correct owner of account_b
+            identity_id=identity_b.id,  # correct owner of account_b
             account_id=account_b.id,
             credential_types=[],
         )
-        resp = _run(credentials_mod.request_account_credentials(req, "scraper-service", session))
+        resp = _run(
+            credentials_mod.request_account_credentials(req, "scraper-service", session)
+        )
         assert resp.account_id == account_b.id
         assert resp.site_name == "SiteB"
 
-    def test_store_with_wrong_owning_identity_yields_404_and_no_mutation(self, db_session, monkeypatch):
+    def test_store_with_wrong_owning_identity_yields_404_and_no_mutation(
+        self, db_session, monkeypatch
+    ):
         """Store path enforces the same scoping AND does not mutate the victim's
         account when the wrong owner is named."""
         session, User, Identity, Account = db_session
@@ -291,23 +314,30 @@ class TestIdorOwnershipScoping:
         # before the scoping check — we want the 404 to come from scoping, and we
         # want to prove no write happened on the cross-tenant account.
         from cryptography.fernet import Fernet
+
         valid_key = Fernet.generate_key().decode()
         monkeypatch.setattr(credentials_mod, "ENCRYPTION_KEY", valid_key)
 
         before = account_b.encrypted_credentials  # None
         req = credentials_mod.CredentialUpdate(
-            identity_id=identity_a.id,        # WRONG owner for account_b
+            identity_id=identity_a.id,  # WRONG owner for account_b
             account_id=account_b.id,
             credentials={"password": "attacker-write"},
             metadata=None,
         )
         with pytest.raises(HTTPException) as exc:
-            _run(credentials_mod.store_account_credentials(req, "scraper-service", session))
+            _run(
+                credentials_mod.store_account_credentials(
+                    req, "scraper-service", session
+                )
+            )
         assert exc.value.status_code == 404
 
         session.expire_all()
         refreshed = session.get(Account, account_b.id)
-        assert refreshed.encrypted_credentials == before, "victim account must not be mutated"
+        assert (
+            refreshed.encrypted_credentials == before
+        ), "victim account must not be mutated"
         assert refreshed.encrypted_credentials is None
 
     def test_store_with_correct_owner_succeeds(self, db_session, monkeypatch):
@@ -317,16 +347,19 @@ class TestIdorOwnershipScoping:
             session, User, Identity, Account
         )
         from cryptography.fernet import Fernet
+
         valid_key = Fernet.generate_key().decode()
         monkeypatch.setattr(credentials_mod, "ENCRYPTION_KEY", valid_key)
 
         req = credentials_mod.CredentialUpdate(
-            identity_id=identity_b.id,        # correct owner
+            identity_id=identity_b.id,  # correct owner
             account_id=account_b.id,
             credentials={"password": "legit"},
             metadata=None,
         )
-        result = _run(credentials_mod.store_account_credentials(req, "scraper-service", session))
+        result = _run(
+            credentials_mod.store_account_credentials(req, "scraper-service", session)
+        )
         assert result["success"] is True
         session.expire_all()
         refreshed = session.get(Account, account_b.id)
@@ -400,8 +433,10 @@ class TestOtpDeviceAuthAndBinding:
     def _stub_broadcast(self, monkeypatch):
         """Stub the websocket broadcast so the success path doesn't need a real
         connection manager; record that it was (not) called."""
+
         async def _noop_broadcast(*a, **k):
             return None
+
         monkeypatch.setattr(sms_mod.sms_manager, "broadcast", _noop_broadcast)
 
     @staticmethod
@@ -419,12 +454,14 @@ class TestOtpDeviceAuthAndBinding:
     @staticmethod
     def _future_ts():
         from datetime import datetime, timedelta
+
         return (datetime.utcnow() + timedelta(seconds=300)).timestamp()
 
     def test_unknown_device_rejected_401(self):
         """No X-Device-Key / device not registered -> 401 (device auth fails)."""
         sms_mod.pending_otp_requests["req-1"] = {
-            "status": "waiting", "timeout": self._future_ts(),
+            "status": "waiting",
+            "timeout": self._future_ts(),
         }
         req = self._make_request(device_id="dev-unknown", request_id="req-1")
 
@@ -442,11 +479,14 @@ class TestOtpDeviceAuthAndBinding:
         """A registered device but the WRONG key -> 401."""
         sms_mod.registered_device_keys["dev-1"] = "correct-key"
         sms_mod.pending_otp_requests["req-1"] = {
-            "status": "waiting", "timeout": self._future_ts(),
+            "status": "waiting",
+            "timeout": self._future_ts(),
         }
         req = self._make_request(device_id="dev-1", request_id="req-1")
         with pytest.raises(HTTPException) as exc:
-            _run(sms_mod.receive_otp(req, x_device_key="wrong-key", db=_FakeDbSession()))
+            _run(
+                sms_mod.receive_otp(req, x_device_key="wrong-key", db=_FakeDbSession())
+            )
         assert exc.value.status_code == 401
 
     def test_unknown_request_id_yields_404(self):
@@ -455,7 +495,11 @@ class TestOtpDeviceAuthAndBinding:
         # No pending_otp_requests entries.
         req = self._make_request(device_id="dev-1", request_id="does-not-exist")
         with pytest.raises(HTTPException) as exc:
-            _run(sms_mod.receive_otp(req, x_device_key="correct-key", db=_FakeDbSession()))
+            _run(
+                sms_mod.receive_otp(
+                    req, x_device_key="correct-key", db=_FakeDbSession()
+                )
+            )
         assert exc.value.status_code == 404
 
     def test_invalid_otp_format_yields_400(self):
@@ -463,12 +507,17 @@ class TestOtpDeviceAuthAndBinding:
         OTP -> 400 (format validation)."""
         sms_mod.registered_device_keys["dev-1"] = "correct-key"
         sms_mod.pending_otp_requests["req-1"] = {
-            "status": "waiting", "timeout": self._future_ts(),
+            "status": "waiting",
+            "timeout": self._future_ts(),
         }
         for bad_otp in ("abc123", "12", "123456789012"):
             req = self._make_request(device_id="dev-1", request_id="req-1", otp=bad_otp)
             with pytest.raises(HTTPException) as exc:
-                _run(sms_mod.receive_otp(req, x_device_key="correct-key", db=_FakeDbSession()))
+                _run(
+                    sms_mod.receive_otp(
+                        req, x_device_key="correct-key", db=_FakeDbSession()
+                    )
+                )
             assert exc.value.status_code == 400, f"otp {bad_otp!r} should be 400"
 
     def test_device_not_assigned_to_request_yields_403(self):
@@ -479,7 +528,7 @@ class TestOtpDeviceAuthAndBinding:
         sms_mod.pending_otp_requests["req-1"] = {
             "status": "waiting",
             "timeout": self._future_ts(),
-            "assigned_device_id": "dev-1",   # request belongs to dev-1
+            "assigned_device_id": "dev-1",  # request belongs to dev-1
         }
         req = self._make_request(device_id="dev-2", request_id="req-1")
         with pytest.raises(HTTPException) as exc:
@@ -511,7 +560,8 @@ class TestOtpDeviceAuthAndBinding:
         sms_mod.registered_device_keys["dev-1"] = "key-1"
         sms_mod.registered_device_keys["dev-2"] = "key-2"
         sms_mod.pending_otp_requests["req-1"] = {
-            "status": "waiting", "timeout": self._future_ts(),
+            "status": "waiting",
+            "timeout": self._future_ts(),
             # no assigned_device_id
         }
         # First device completes it.
@@ -530,6 +580,7 @@ class TestOtpDeviceAuthAndBinding:
             captured["nbytes"] = n
             captured["value"] = val
             return val
+
         monkeypatch.setattr(sms_mod.secrets, "token_urlsafe", _spy)
 
         reg = sms_mod.DeviceRegistrationRequest(
@@ -631,14 +682,18 @@ class TestServiceKeyIdentityScoping:
 
         class _ExplodingDb:
             def query(self, *a, **k):
-                raise AssertionError("DB must not be queried for an out-of-scope identity")
+                raise AssertionError(
+                    "DB must not be queried for an out-of-scope identity"
+                )
 
         with pytest.raises(HTTPException) as exc:
-            _run(credentials_mod.get_identity_accounts(
-                identity_id=99,                 # not in {1}
-                service_name="scraper-service",
-                db=_ExplodingDb(),
-            ))
+            _run(
+                credentials_mod.get_identity_accounts(
+                    identity_id=99,  # not in {1}
+                    service_name="scraper-service",
+                    db=_ExplodingDb(),
+                )
+            )
         assert exc.value.status_code == 403
 
     def test_request_account_credentials_out_of_scope_denied_403(self):
@@ -648,15 +703,25 @@ class TestServiceKeyIdentityScoping:
 
         class _ExplodingDb:
             def query(self, *a, **k):
-                raise AssertionError("DB must not be queried for an out-of-scope identity")
+                raise AssertionError(
+                    "DB must not be queried for an out-of-scope identity"
+                )
 
         req = credentials_mod.AccountCredentialRequest(
-            identity_id=99, account_id=5, credential_types=[],
+            identity_id=99,
+            account_id=5,
+            credential_types=[],
         )
         with pytest.raises(HTTPException) as exc:
-            _run(credentials_mod.request_account_credentials(req, "scraper-service", _ExplodingDb()))
+            _run(
+                credentials_mod.request_account_credentials(
+                    req, "scraper-service", _ExplodingDb()
+                )
+            )
         assert exc.value.status_code == 403
 
+
+import app.routers.llm_scraper as llm_mod  # cv2-free
 
 # ===========================================================================
 # AREA 5: Auth coverage on site_integrations + llm_scraper routes
@@ -673,7 +738,6 @@ class TestServiceKeyIdentityScoping:
 #     (incl. the destructive DELETE and the LLM-invoking POSTs) is gated.
 # ===========================================================================
 import app.routers.site_integrations as site_mod  # cv2-free
-import app.routers.llm_scraper as llm_mod          # cv2-free
 from app.routers.auth import get_current_user
 
 
@@ -707,26 +771,29 @@ class TestRouteAuthCoverage:
     def test_site_integrations_operational_routes_require_auth(self, method, path):
         """HIGH-1: signup/signin/apikey must be gated by get_current_user."""
         matched = [
-            r for r in site_mod.router.routes
-            if getattr(r, "path", None) == path and method in getattr(r, "methods", set())
+            r
+            for r in site_mod.router.routes
+            if getattr(r, "path", None) == path
+            and method in getattr(r, "methods", set())
         ]
         assert matched, f"route {method} {path} not found"
         for route in matched:
-            assert get_current_user in _route_dependency_calls(route), (
-                f"{method} {path} is not gated by get_current_user"
-            )
+            assert get_current_user in _route_dependency_calls(
+                route
+            ), f"{method} {path} is not gated by get_current_user"
 
     def test_llm_scraper_router_level_auth_gates_every_route(self):
         """CRITICAL-2: get_current_user is a router-level dependency, so every
         route (DELETE + LLM POSTs + reads) inherits it."""
         # Router-level dependency present.
         router_dep_calls = {
-            d.dependency for d in llm_mod.router.dependencies
+            d.dependency
+            for d in llm_mod.router.dependencies
             if getattr(d, "dependency", None) is not None
         }
-        assert get_current_user in router_dep_calls, (
-            "llm_scraper router is missing the router-level get_current_user dependency"
-        )
+        assert (
+            get_current_user in router_dep_calls
+        ), "llm_scraper router is missing the router-level get_current_user dependency"
         # And it actually propagates to the routes (spot-check the destructive DELETE
         # and an LLM-invoking POST).
         for method, path in [
@@ -734,11 +801,13 @@ class TestRouteAuthCoverage:
             ("POST", "/api/llm-scraper/generate"),
         ]:
             matched = [
-                r for r in llm_mod.router.routes
-                if getattr(r, "path", None) == path and method in getattr(r, "methods", set())
+                r
+                for r in llm_mod.router.routes
+                if getattr(r, "path", None) == path
+                and method in getattr(r, "methods", set())
             ]
             assert matched, f"route {method} {path} not found"
             for route in matched:
-                assert get_current_user in _route_dependency_calls(route), (
-                    f"{method} {path} is not gated by get_current_user"
-                )
+                assert get_current_user in _route_dependency_calls(
+                    route
+                ), f"{method} {path} is not gated by get_current_user"

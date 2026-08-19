@@ -37,7 +37,7 @@ TOKEN_TYPE_JWT = "urn:ietf:params:oauth:token-type:jwt"  # noqa: S105
 class DerivedCredential:
     """A short-lived credential derived from (but never equal to) the root."""
 
-    value: str          # the derived credential material (safe to release)
+    value: str  # the derived credential material (safe to release)
     expires_at: datetime
     scope: str
     secret_ref: str
@@ -87,7 +87,7 @@ def mint_exchanged_token(
     *,
     signing_key: str,
     algorithm: str,
-    subject_principal: str,   # the VERIFIED transport identity (not asserted)
+    subject_principal: str,  # the VERIFIED transport identity (not asserted)
     audience: str,
     scope: str,
     ttl_seconds: int,
