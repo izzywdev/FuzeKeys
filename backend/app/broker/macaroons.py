@@ -53,8 +53,12 @@ def mint_handle(
     m = Macaroon(location=LOCATION, identifier=grant_id, key=root_key)
     m.add_first_party_caveat(f"grant = {grant_id}")
     m.add_first_party_caveat(f"redeemer = {redeemer}")
-    m.add_first_party_caveat(f"expires <= {expires_at.astimezone(timezone.utc).isoformat()}")
-    m.add_first_party_caveat(f"scope <= {json.dumps(scope, sort_keys=True, separators=(',', ':'))}")
+    m.add_first_party_caveat(
+        f"expires <= {expires_at.astimezone(timezone.utc).isoformat()}"
+    )
+    m.add_first_party_caveat(
+        f"scope <= {json.dumps(scope, sort_keys=True, separators=(',', ':'))}"
+    )
     m.add_first_party_caveat(f"single_use = {'true' if single_use else 'false'}")
     return m.serialize()
 
@@ -103,24 +107,24 @@ def verify_handle(
         # predicate; also records the tightest ceiling for the broker.
         try:
             if predicate.startswith("grant = "):
-                val = predicate[len("grant = "):]
+                val = predicate[len("grant = ") :]
                 bounds.grant = val
                 return val == grant_id
             if predicate.startswith("redeemer = "):
-                val = predicate[len("redeemer = "):]
+                val = predicate[len("redeemer = ") :]
                 bounds.redeemer = val
                 return val == caller
             if predicate.startswith("expires <= "):
-                val = _parse_iso(predicate[len("expires <= "):])
+                val = _parse_iso(predicate[len("expires <= ") :])
                 if bounds.expires_at is None or val < bounds.expires_at:
                     bounds.expires_at = val
                 return now <= val
             if predicate.startswith("scope <= "):
-                val = json.loads(predicate[len("scope <= "):])
+                val = json.loads(predicate[len("scope <= ") :])
                 bounds.scope = _narrow_scope(bounds.scope, val)
                 return True  # scope containment is enforced by the broker vs request
             if predicate.startswith("single_use = "):
-                val = predicate[len("single_use = "):].strip() == "true"
+                val = predicate[len("single_use = ") :].strip() == "true"
                 # single_use can only be tightened false->true
                 if bounds.single_use is None:
                     bounds.single_use = val

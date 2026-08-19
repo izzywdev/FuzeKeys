@@ -1,23 +1,24 @@
 import os
 import sys
 from pathlib import Path
+from typing import Any, Dict
+
 from loguru import logger
-from typing import Dict, Any
 
 
 def setup_logging():
     """Setup application logging configuration."""
-    
+
     # Remove default logger
     logger.remove()
-    
+
     # Get log level from environment
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
-    
+
     # Create logs directory if it doesn't exist
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)
-    
+
     # Console logging format
     console_format = (
         "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
@@ -25,7 +26,7 @@ def setup_logging():
         "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | "
         "<level>{message}</level>"
     )
-    
+
     # File logging format
     file_format = (
         "{time:YYYY-MM-DD HH:mm:ss} | "
@@ -33,7 +34,7 @@ def setup_logging():
         "{name}:{function}:{line} | "
         "{message}"
     )
-    
+
     # Add console handler
     logger.add(
         sys.stdout,
@@ -42,7 +43,7 @@ def setup_logging():
         colorize=True,
         diagnose=True,
     )
-    
+
     # Add file handler for general logs
     logger.add(
         log_dir / "fuzekeys.log",
@@ -53,7 +54,7 @@ def setup_logging():
         compression="zip",
         diagnose=True,
     )
-    
+
     # Add separate file handler for errors
     logger.add(
         log_dir / "errors.log",
@@ -65,7 +66,7 @@ def setup_logging():
         diagnose=True,
         backtrace=True,
     )
-    
+
     # Add separate file handler for automation logs
     logger.add(
         log_dir / "automation.log",
@@ -76,7 +77,7 @@ def setup_logging():
         compression="zip",
         filter=lambda record: "automation" in record["extra"],
     )
-    
+
     logger.info("Logging initialized", level=log_level)
 
 
@@ -91,28 +92,32 @@ def log_automation_event(event_type: str, details: Dict[str, Any], website: str 
         f"Automation {event_type}",
         event_type=event_type,
         website=website,
-        details=details
+        details=details,
     )
 
 
-def log_security_event(event_type: str, user_id: int = None, details: Dict[str, Any] = None):
+def log_security_event(
+    event_type: str, user_id: int = None, details: Dict[str, Any] = None
+):
     """Log security-related events."""
     logger.warning(
         f"Security event: {event_type}",
         event_type=event_type,
         user_id=user_id,
-        details=details or {}
+        details=details or {},
     )
 
 
-def log_api_request(method: str, endpoint: str, user_id: int = None, response_time: float = None):
+def log_api_request(
+    method: str, endpoint: str, user_id: int = None, response_time: float = None
+):
     """Log API request information."""
     logger.info(
         f"API {method} {endpoint}",
         method=method,
         endpoint=endpoint,
         user_id=user_id,
-        response_time=response_time
+        response_time=response_time,
     )
 
 
@@ -123,7 +128,7 @@ def log_database_error(operation: str, table: str, error: Exception):
         operation=operation,
         table=table,
         error_type=type(error).__name__,
-        error_message=str(error)
+        error_message=str(error),
     )
 
 
@@ -133,5 +138,5 @@ def log_encryption_error(operation: str, error: Exception):
         f"Encryption error in {operation}",
         operation=operation,
         error_type=type(error).__name__,
-        error_message=str(error)
-    ) 
+        error_message=str(error),
+    )

@@ -24,10 +24,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.database import Base
 import app.models  # noqa: F401  registers every table on Base.metadata
-from app.models.grant import Grant
-
 from app.broker import (
     BrokerConfig,
     BrokerDenied,
@@ -35,12 +32,13 @@ from app.broker import (
     InMemoryVault,
     TransportContext,
     TransportIdentity,
+    macaroons,
     transport_from_oidc,
 )
-from app.broker import macaroons
 from app.broker.errors import ApprovalRequired
 from app.broker.service import _sha256_hex
-
+from app.database import Base
+from app.models.grant import Grant
 
 ROOT_SECRET = b"super-long-lived-root-token-DO-NOT-LEAK"
 SECRET_REF = "openbao:kv/identities/1/github/ci-token"
@@ -68,7 +66,9 @@ def vault():
 
 @pytest.fixture()
 def service(db, vault):
-    cfg = BrokerConfig(signing_key="a-strong-broker-signing-key-1234567890", max_ttl_seconds=3600)
+    cfg = BrokerConfig(
+        signing_key="a-strong-broker-signing-key-1234567890", max_ttl_seconds=3600
+    )
     return BrokerService(db, config=cfg, vault=vault)
 
 
@@ -192,16 +192,16 @@ def test_caller_asserted_identity_is_ignored(service):
     # Grant bound to A. Caller authenticates as B but ASSERTS it is A.
     g = _grant(service, redeemer_identity=AGENT_A.principal)
     with pytest.raises(BrokerDenied):
-        service.redeem(
-            ctx=_ctx(AGENT_B, asserted=AGENT_A.principal), handle=g.handle
-        )
+        service.redeem(ctx=_ctx(AGENT_B, asserted=AGENT_A.principal), handle=g.handle)
 
 
 def test_asserted_identity_cannot_upgrade_authenticated(service):
     # Grant bound to B; caller authenticated as B but asserts it is A. Authz uses
     # the authenticated B, so it still succeeds (assertion neither helps nor hurts).
     g = _grant(service, redeemer_identity=AGENT_B.principal, single_use=False)
-    res = service.redeem(ctx=_ctx(AGENT_B, asserted="repo:evil/attacker"), handle=g.handle)
+    res = service.redeem(
+        ctx=_ctx(AGENT_B, asserted="repo:evil/attacker"), handle=g.handle
+    )
     assert res.credential
 
 
@@ -211,9 +211,14 @@ def test_macaroon_attenuation_narrows_and_cannot_widen(service, db):
     row = db.query(Grant).filter(Grant.grant_id == g.grant_id).one()
 
     # A narrower handle (drop FuzeBI) still verifies for A.
-    narrowed = macaroons.attenuate(g.handle, caveat='scope <= {"action":"read","repos":["FuzeAgent"]}')
+    narrowed = macaroons.attenuate(
+        g.handle, caveat='scope <= {"action":"read","repos":["FuzeAgent"]}'
+    )
     bounds = macaroons.verify_handle(
-        handle=narrowed, root_key=row.root_key, grant_id=g.grant_id, caller=AGENT_A.principal
+        handle=narrowed,
+        root_key=row.root_key,
+        grant_id=g.grant_id,
+        caller=AGENT_A.principal,
     )
     assert bounds.scope["repos"] == ["FuzeAgent"]
 
@@ -222,12 +227,18 @@ def test_macaroon_attenuation_narrows_and_cannot_widen(service, db):
     widened = macaroons.attenuate(g.handle, caveat=f"redeemer = {AGENT_B.principal}")
     with pytest.raises(ValueError):
         macaroons.verify_handle(
-            handle=widened, root_key=row.root_key, grant_id=g.grant_id, caller=AGENT_B.principal
+            handle=widened,
+            root_key=row.root_key,
+            grant_id=g.grant_id,
+            caller=AGENT_B.principal,
         )
     # And the original bound caller A can't satisfy the extra conflicting caveat.
     with pytest.raises(ValueError):
         macaroons.verify_handle(
-            handle=widened, root_key=row.root_key, grant_id=g.grant_id, caller=AGENT_A.principal
+            handle=widened,
+            root_key=row.root_key,
+            grant_id=g.grant_id,
+            caller=AGENT_A.principal,
         )
 
 
@@ -263,8 +274,12 @@ def test_denials_are_nondisclosing(service):
     g = _grant(service)
     # unknown grant
     fake = macaroons.mint_handle(
-        root_key=b"x" * 32, grant_id="deadbeef", redeemer=AGENT_A.principal,
-        expires_at=datetime.now(timezone.utc) + timedelta(minutes=5), scope={}, single_use=True,
+        root_key=b"x" * 32,
+        grant_id="deadbeef",
+        redeemer=AGENT_A.principal,
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+        scope={},
+        single_use=True,
     )
     try:
         service.redeem(ctx=_ctx(AGENT_A), handle=fake)
@@ -292,9 +307,14 @@ def test_operation_grant_returns_scoped_token_not_secret(service):
 def test_mint_token_exchange_binds_authenticated_identity(service):
     from jose import jwt
 
-    token = service.mint_token(ctx=_ctx(AGENT_A), audience="FuzeBI", scope="read:reports")
+    token = service.mint_token(
+        ctx=_ctx(AGENT_A), audience="FuzeBI", scope="read:reports"
+    )
     claims = jwt.decode(
-        token.access_token, "a-strong-broker-signing-key-1234567890", algorithms=["HS256"], audience="FuzeBI"
+        token.access_token,
+        "a-strong-broker-signing-key-1234567890",
+        algorithms=["HS256"],
+        audience="FuzeBI",
     )
     assert claims["sub"] == AGENT_A.principal
     assert claims["act"]["sub"] == AGENT_A.principal
@@ -304,7 +324,9 @@ def test_mint_token_exchange_binds_authenticated_identity(service):
 
 def test_mint_token_requires_authenticated_identity(service):
     with pytest.raises(BrokerDenied):
-        service.mint_token(ctx=_ctx(None, asserted=AGENT_A.principal), audience="x", scope="y")
+        service.mint_token(
+            ctx=_ctx(None, asserted=AGENT_A.principal), audience="x", scope="y"
+        )
 
 
 # high sensitivity -> approval gate ---------------------------------------
@@ -321,7 +343,11 @@ def test_high_sensitivity_releases_after_approval(service, db):
     with pytest.raises(ApprovalRequired):
         service.redeem(ctx=_ctx(AGENT_A), handle=g.handle)
     row = db.query(Grant).filter(Grant.grant_id == g.grant_id).one()
-    req = db.query(ApprovalRequest).filter(ApprovalRequest.id == row.approval_request_id).one()
+    req = (
+        db.query(ApprovalRequest)
+        .filter(ApprovalRequest.id == row.approval_request_id)
+        .one()
+    )
     req.status = "approved"
     db.commit()
     res = service.redeem(ctx=_ctx(AGENT_A), handle=g.handle)

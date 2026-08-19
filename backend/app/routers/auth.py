@@ -1,18 +1,22 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
+import os
 from datetime import datetime, timedelta
 from typing import Optional
-import os
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from pydantic import BaseModel, EmailStr
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 
 from app.database import get_db
 from app.models.user import User
 from app.utils.encryption import (
-    hash_password, verify_password, generate_master_key_hash, 
-    verify_master_key, set_global_encryption_manager
+    generate_master_key_hash,
+    hash_password,
+    set_global_encryption_manager,
+    verify_master_key,
+    verify_password,
 )
 from app.utils.logging import get_logger, log_security_event
 
@@ -36,7 +40,10 @@ ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 
 # Known-insecure placeholder values that must never be used to sign/verify tokens.
-_INSECURE_SECRET_VALUES = {"your-secret-key", "your-super-secret-key-here-change-this-in-production"}
+_INSECURE_SECRET_VALUES = {
+    "your-secret-key",
+    "your-super-secret-key-here-change-this-in-production",
+}
 
 if not SECRET_KEY or not SECRET_KEY.strip():
     logger.warning(
@@ -114,7 +121,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ) -> User:
     """Get current authenticated user."""
     credentials_exception = HTTPException(
@@ -122,20 +129,22 @@ async def get_current_user(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    
+
     try:
-        payload = jwt.decode(credentials.credentials, _require_secret_key(), algorithms=[ALGORITHM])
+        payload = jwt.decode(
+            credentials.credentials, _require_secret_key(), algorithms=[ALGORITHM]
+        )
         user_id: int = payload.get("sub")
         if user_id is None:
             raise credentials_exception
     except JWTError:
         raise credentials_exception
-    
+
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if user is None:
         raise credentials_exception
-    
+
     return user
 
 
@@ -150,17 +159,17 @@ async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
             )
         )
         existing_user = result.scalar_one_or_none()
-        
+
         if existing_user:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="User with this email or username already exists"
+                detail="User with this email or username already exists",
             )
-        
+
         # Create new user
         hashed_password = hash_password(user_data.password)
         master_key_hash = generate_master_key_hash(user_data.master_key)
-        
+
         new_user = User(
             username=user_data.username,
             email=user_data.email,
@@ -169,14 +178,17 @@ async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
             first_name=user_data.first_name,
             last_name=user_data.last_name,
         )
-        
+
         db.add(new_user)
         await db.commit()
         await db.refresh(new_user)
-        
-        log_security_event("user_registered", user_id=new_user.id, 
-                          details={"email": user_data.email, "username": user_data.username})
-        
+
+        log_security_event(
+            "user_registered",
+            user_id=new_user.id,
+            details={"email": user_data.email, "username": user_data.username},
+        )
+
         return UserResponse(
             id=new_user.id,
             username=new_user.username,
@@ -185,16 +197,16 @@ async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
             last_name=new_user.last_name,
             is_active=new_user.is_active,
             is_verified=new_user.is_verified,
-            created_at=new_user.created_at
+            created_at=new_user.created_at,
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error registering user: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
+            detail="Internal server error",
         )
 
 
@@ -205,62 +217,67 @@ async def login(user_data: UserLogin, db: AsyncSession = Depends(get_db)):
         # Find user by email
         result = await db.execute(select(User).where(User.email == user_data.email))
         user = result.scalar_one_or_none()
-        
+
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect email or password"
+                detail="Incorrect email or password",
             )
-        
+
         # Verify password
         if not verify_password(user_data.password, user.hashed_password):
-            log_security_event("failed_login_attempt", user_id=user.id, 
-                              details={"reason": "invalid_password"})
+            log_security_event(
+                "failed_login_attempt",
+                user_id=user.id,
+                details={"reason": "invalid_password"},
+            )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect email or password"
+                detail="Incorrect email or password",
             )
-        
+
         # Verify master key
         if not verify_master_key(user_data.master_key, user.master_key_hash):
-            log_security_event("failed_login_attempt", user_id=user.id, 
-                              details={"reason": "invalid_master_key"})
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect master key"
+            log_security_event(
+                "failed_login_attempt",
+                user_id=user.id,
+                details={"reason": "invalid_master_key"},
             )
-        
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect master key"
+            )
+
         # Check if user is active
         if not user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Account is deactivated"
+                detail="Account is deactivated",
             )
-        
+
         # Set up encryption manager for this session
         set_global_encryption_manager(user_data.master_key)
-        
+
         # Update last login
         user.last_login = datetime.utcnow()
         await db.commit()
-        
+
         # Create access token
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
             data={"sub": str(user.id)}, expires_delta=access_token_expires
         )
-        
+
         log_security_event("successful_login", user_id=user.id)
-        
+
         return {"access_token": access_token, "token_type": "bearer"}
-        
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error during login: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Internal server error"
+            detail="Internal server error",
         )
 
 
@@ -275,7 +292,7 @@ async def get_current_user_info(current_user: User = Depends(get_current_user)):
         last_name=current_user.last_name,
         is_active=current_user.is_active,
         is_verified=current_user.is_verified,
-        created_at=current_user.created_at
+        created_at=current_user.created_at,
     )
 
 
@@ -283,4 +300,4 @@ async def get_current_user_info(current_user: User = Depends(get_current_user)):
 async def logout():
     """Logout user (client should discard token)."""
     # In a more sophisticated setup, you might want to blacklist the token
-    return {"message": "Successfully logged out"} 
+    return {"message": "Successfully logged out"}

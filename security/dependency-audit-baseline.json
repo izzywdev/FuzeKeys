@@ -1,0 +1,772 @@
+{
+  "_comment": "Known, pre-existing dependency advisories. The gate in scripts/dependency_audit.py fails on anything NOT listed here, so a pull request that introduces a new vulnerable dependency is blocked. Entries are debt to burn down, not an approval -- shrink this file, do not grow it.",
+  "npm": {
+    "1095141": {
+      "package": "nth-check",
+      "severity": "high",
+      "title": "Inefficient Regular Expression Complexity in nth-check"
+    },
+    "1102341": {
+      "package": "esbuild",
+      "severity": "moderate",
+      "title": "esbuild enables any website to send any requests to the development server and read the response"
+    },
+    "1108429": {
+      "package": "webpack-dev-server",
+      "severity": "moderate",
+      "title": "webpack-dev-server users' source code may be stolen when they access a malicious web site with non-Chromium based browser"
+    },
+    "1108430": {
+      "package": "webpack-dev-server",
+      "severity": "moderate",
+      "title": "webpack-dev-server users' source code may be stolen when they access a malicious web site"
+    },
+    "1109574": {
+      "package": "postcss",
+      "severity": "moderate",
+      "title": "PostCSS line return parsing error"
+    },
+    "1113686": {
+      "package": "serialize-javascript",
+      "severity": "high",
+      "title": "Serialize JavaScript is Vulnerable to RCE via RegExp.flags and Date.prototype.toISOString()"
+    },
+    "1116229": {
+      "package": "vite",
+      "severity": "moderate",
+      "title": "Vite Vulnerable to Path Traversal in Optimized Deps `.map` Handling"
+    },
+    "1117015": {
+      "package": "postcss",
+      "severity": "moderate",
+      "title": "PostCSS has XSS via Unescaped </style> in its CSS Stringify Output"
+    },
+    "1117689": {
+      "package": "underscore",
+      "severity": "high",
+      "title": "Underscore has unlimited recursion in _.flatten and _.isEqual, potential for DoS attack"
+    },
+    "1119074": {
+      "package": "webpack-dev-server",
+      "severity": "moderate",
+      "title": "webpack-dev-server vulnerable to cross-origin source code exposure on non-HTTPS origins"
+    },
+    "1119438": {
+      "package": "@tootallnate/once",
+      "severity": "low",
+      "title": "@tootallnate/once vulnerable to Incorrect Control Flow Scoping"
+    },
+    "1119440": {
+      "package": "serialize-javascript",
+      "severity": "moderate",
+      "title": "Serialize JavaScript has CPU Exhaustion Denial of Service via crafted array-like objects"
+    },
+    "1119441": {
+      "package": "uuid",
+      "severity": "moderate",
+      "title": "uuid: Missing buffer bounds check in v3/v5/v6 when buf is provided"
+    },
+    "1120784": {
+      "package": "vite",
+      "severity": "moderate",
+      "title": "launch-editor: NTLMv2 hash disclosure via UNC path handling on Windows"
+    },
+    "1121087": {
+      "package": "webpack-dev-server",
+      "severity": "moderate",
+      "title": "webpack-dev-server vulnerable to HMR WebSocket interception via permissive user proxies"
+    },
+    "1123525": {
+      "package": "vite",
+      "severity": "high",
+      "title": "vite: `server.fs.deny` bypass on Windows alternate paths"
+    },
+    "1123965": {
+      "package": "webpack-dev-server",
+      "severity": "moderate",
+      "title": "webpack-dev-server vulnerable to cross-site request forgery via internal developer endpoints"
+    },
+    "1123966": {
+      "package": "webpack-dev-server",
+      "severity": "moderate",
+      "title": "webpack-dev-server vulnerable to denial of service via a malformed Host or Origin header"
+    },
+    "1124252": {
+      "package": "postcss",
+      "severity": "high",
+      "title": "PostCSS: Arbitrary file read and information disclosure via attacker-controlled sourceMappingURL in CSS comments"
+    },
+    "1124268": {
+      "package": "react-router",
+      "severity": "moderate",
+      "title": "React Router: Open redirect via backslash in <Link> and useNavigate (CVE-2025-68470 bypass)"
+    },
+    "1124270": {
+      "package": "react-router-dom",
+      "severity": "moderate",
+      "title": "React Router: Open redirect leading to XSS"
+    },
+    "1124272": {
+      "package": "react-router",
+      "severity": "moderate",
+      "title": "React Router: Arbitrary Constructor Injection via deserializeErrors() in React Router SSR Hydration"
+    },
+    "1130709": {
+      "package": "postcss",
+      "severity": "moderate",
+      "title": "PostCSS: incomplete fix of GHSA-6g55-p6wh-862q \u2014 attacker-controlled sourceMappingURL reads arbitrary .map files when `from` is unset"
+    },
+    "1139510": {
+      "package": "postcss",
+      "severity": "high",
+      "title": "PostCSS: Path Traversal in Previous Source Map Auto-Loading (sourceMappingURL) leads to Arbitrary .map File Disclosure"
+    },
+    "1139520": {
+      "package": "svgo",
+      "severity": "high",
+      "title": "SVGO removeScripts plugin leaves some executable scripts intact"
+    }
+  },
+  "python": {
+    "CVE-2024-7774": {
+      "fix_versions": [],
+      "package": "langchain",
+      "version": "0.0.335"
+    },
+    "GHSA-f4xh-w4cj-qxq8": {
+      "fix_versions": [
+        "0.8.18"
+      ],
+      "package": "langsmith",
+      "version": "0.0.92"
+    },
+    "PYSEC-2024-118": {
+      "fix_versions": [
+        "0.2.5"
+      ],
+      "package": "langchain",
+      "version": "0.0.335"
+    },
+    "PYSEC-2024-24": {
+      "fix_versions": [
+        "3.9.2"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2024-26": {
+      "fix_versions": [
+        "3.9.2"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2024-323": {
+      "fix_versions": [
+        "0.2.9"
+      ],
+      "package": "langchain",
+      "version": "0.0.335"
+    },
+    "PYSEC-2024-38": {
+      "fix_versions": [
+        "0.0.7"
+      ],
+      "package": "python-multipart",
+      "version": "0.0.6"
+    },
+    "PYSEC-2024-43": {
+      "fix_versions": [
+        "0.1.11"
+      ],
+      "package": "langchain",
+      "version": "0.0.335"
+    },
+    "PYSEC-2024-48": {
+      "fix_versions": [
+        "24.3.0"
+      ],
+      "package": "black",
+      "version": "23.11.0"
+    },
+    "PYSEC-2026-1097": {
+      "fix_versions": [
+        "3.13.3"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-1098": {
+      "fix_versions": [
+        "3.9.4"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-1099": {
+      "fix_versions": [
+        "3.13.3"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-1100": {
+      "fix_versions": [
+        "3.13.3"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-1101": {
+      "fix_versions": [
+        "3.13.3"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-1102": {
+      "fix_versions": [
+        "3.9.4"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-1103": {
+      "fix_versions": [
+        "3.10.11"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-1104": {
+      "fix_versions": [
+        "3.12.14"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-1105": {
+      "fix_versions": [
+        "3.13.3"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-1106": {
+      "fix_versions": [
+        "3.13.3"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-1107": {
+      "fix_versions": [
+        "3.13.3"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-1109": {
+      "fix_versions": [
+        "3.13.3"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-1325": {
+      "fix_versions": [],
+      "package": "ecdsa",
+      "version": "0.19.2"
+    },
+    "PYSEC-2026-1507": {
+      "fix_versions": [
+        "0.2.0"
+      ],
+      "package": "langchain",
+      "version": "0.0.335"
+    },
+    "PYSEC-2026-1509": {
+      "fix_versions": [
+        "0.1.0"
+      ],
+      "package": "langchain",
+      "version": "0.0.335"
+    },
+    "PYSEC-2026-1510": {
+      "fix_versions": [
+        "0.0.353"
+      ],
+      "package": "langchain",
+      "version": "0.0.335"
+    },
+    "PYSEC-2026-161": {
+      "fix_versions": [
+        "1.0.1"
+      ],
+      "package": "starlette",
+      "version": "0.27.0"
+    },
+    "PYSEC-2026-165": {
+      "fix_versions": [
+        "12.2.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "PYSEC-2026-1793": {
+      "fix_versions": [
+        "10.3.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "PYSEC-2026-1845": {
+      "fix_versions": [
+        "9.0.3"
+      ],
+      "package": "pytest",
+      "version": "7.4.3"
+    },
+    "PYSEC-2026-1850": {
+      "fix_versions": [
+        "0.0.7"
+      ],
+      "package": "python-multipart",
+      "version": "0.0.6"
+    },
+    "PYSEC-2026-1851": {
+      "fix_versions": [
+        "0.0.18"
+      ],
+      "package": "python-multipart",
+      "version": "0.0.6"
+    },
+    "PYSEC-2026-1852": {
+      "fix_versions": [
+        "0.0.22"
+      ],
+      "package": "python-multipart",
+      "version": "0.0.6"
+    },
+    "PYSEC-2026-1872": {
+      "fix_versions": [
+        "2.32.4"
+      ],
+      "package": "requests",
+      "version": "2.31.0"
+    },
+    "PYSEC-2026-1873": {
+      "fix_versions": [
+        "2.32.0"
+      ],
+      "package": "requests",
+      "version": "2.31.0"
+    },
+    "PYSEC-2026-1941": {
+      "fix_versions": [
+        "0.47.2"
+      ],
+      "package": "starlette",
+      "version": "0.27.0"
+    },
+    "PYSEC-2026-1943": {
+      "fix_versions": [
+        "0.40.0"
+      ],
+      "package": "starlette",
+      "version": "0.27.0"
+    },
+    "PYSEC-2026-2094": {
+      "fix_versions": [
+        "3.13.4"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-2095": {
+      "fix_versions": [
+        "3.13.4"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-2096": {
+      "fix_versions": [
+        "3.13.4"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-2097": {
+      "fix_versions": [
+        "3.13.4"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-2098": {
+      "fix_versions": [
+        "3.13.4"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-2099": {
+      "fix_versions": [
+        "3.13.4"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-2100": {
+      "fix_versions": [
+        "3.13.4"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-2101": {
+      "fix_versions": [
+        "3.13.4"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-2102": {
+      "fix_versions": [
+        "3.13.4"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-2103": {
+      "fix_versions": [
+        "3.13.4"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-2104": {
+      "fix_versions": [
+        "3.14.0"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-2105": {
+      "fix_versions": [
+        "3.14.0"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-2106": {
+      "fix_versions": [
+        "3.14.0"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-2107": {
+      "fix_versions": [
+        "3.14.1"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-2108": {
+      "fix_versions": [
+        "3.14.1"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-2109": {
+      "fix_versions": [
+        "3.14.1"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-2110": {
+      "fix_versions": [
+        "3.14.1"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-2111": {
+      "fix_versions": [
+        "3.14.1"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-2112": {
+      "fix_versions": [
+        "3.14.1"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-2113": {
+      "fix_versions": [
+        "3.14.1"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-2120": {
+      "fix_versions": [
+        "26.3.0"
+      ],
+      "package": "black",
+      "version": "23.11.0"
+    },
+    "PYSEC-2026-2121": {
+      "fix_versions": [
+        "26.3.1"
+      ],
+      "package": "black",
+      "version": "23.11.0"
+    },
+    "PYSEC-2026-2192": {
+      "fix_versions": [
+        "1.3.9"
+      ],
+      "package": "langchain",
+      "version": "0.0.335"
+    },
+    "PYSEC-2026-2253": {
+      "fix_versions": [
+        "12.3.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "PYSEC-2026-2254": {
+      "fix_versions": [
+        "12.3.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "PYSEC-2026-2255": {
+      "fix_versions": [
+        "12.3.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "PYSEC-2026-2256": {
+      "fix_versions": [
+        "12.3.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "PYSEC-2026-2257": {
+      "fix_versions": [
+        "12.3.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "PYSEC-2026-2270": {
+      "fix_versions": [
+        "1.2.2"
+      ],
+      "package": "python-dotenv",
+      "version": "1.0.0"
+    },
+    "PYSEC-2026-2275": {
+      "fix_versions": [
+        "2.33.0"
+      ],
+      "package": "requests",
+      "version": "2.31.0"
+    },
+    "PYSEC-2026-2280": {
+      "fix_versions": [
+        "1.1.0"
+      ],
+      "package": "starlette",
+      "version": "0.27.0"
+    },
+    "PYSEC-2026-2281": {
+      "fix_versions": [
+        "1.1.0"
+      ],
+      "package": "starlette",
+      "version": "0.27.0"
+    },
+    "PYSEC-2026-237": {
+      "fix_versions": [
+        "3.14.1"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-248": {
+      "fix_versions": [
+        "1.3.0"
+      ],
+      "package": "starlette",
+      "version": "0.27.0"
+    },
+    "PYSEC-2026-249": {
+      "fix_versions": [
+        "1.3.1"
+      ],
+      "package": "starlette",
+      "version": "0.27.0"
+    },
+    "PYSEC-2026-2555": {
+      "fix_versions": [
+        "0.3.30"
+      ],
+      "package": "langchain",
+      "version": "0.0.335"
+    },
+    "PYSEC-2026-2582": {
+      "fix_versions": [
+        "0.8.0"
+      ],
+      "package": "langsmith",
+      "version": "0.0.92"
+    },
+    "PYSEC-2026-2583": {
+      "fix_versions": [
+        "0.7.31"
+      ],
+      "package": "langsmith",
+      "version": "0.0.92"
+    },
+    "PYSEC-2026-2874": {
+      "fix_versions": [
+        "12.2.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "PYSEC-2026-3036": {
+      "fix_versions": [
+        "0.0.30"
+      ],
+      "package": "python-multipart",
+      "version": "0.0.6"
+    },
+    "PYSEC-2026-3037": {
+      "fix_versions": [
+        "0.0.30"
+      ],
+      "package": "python-multipart",
+      "version": "0.0.6"
+    },
+    "PYSEC-2026-3038": {
+      "fix_versions": [
+        "0.0.26"
+      ],
+      "package": "python-multipart",
+      "version": "0.0.6"
+    },
+    "PYSEC-2026-3039": {
+      "fix_versions": [
+        "0.0.27"
+      ],
+      "package": "python-multipart",
+      "version": "0.0.6"
+    },
+    "PYSEC-2026-3040": {
+      "fix_versions": [
+        "0.0.31"
+      ],
+      "package": "python-multipart",
+      "version": "0.0.6"
+    },
+    "PYSEC-2026-3451": {
+      "fix_versions": [
+        "12.3.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "PYSEC-2026-3453": {
+      "fix_versions": [
+        "12.3.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "PYSEC-2026-3454": {
+      "fix_versions": [
+        "12.3.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "PYSEC-2026-3493": {
+      "fix_versions": [
+        "12.3.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "PYSEC-2026-3494": {
+      "fix_versions": [
+        "12.3.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "PYSEC-2026-3495": {
+      "fix_versions": [
+        "12.3.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "PYSEC-2026-3496": {
+      "fix_versions": [
+        "12.3.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "PYSEC-2026-3545": {
+      "fix_versions": [
+        "3.14.3"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-3546": {
+      "fix_versions": [
+        "3.14.2"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-3547": {
+      "fix_versions": [
+        "3.14.2"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "PYSEC-2026-457": {
+      "fix_versions": [
+        "10.2.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "PYSEC-2026-87": {
+      "fix_versions": [
+        "6.1.0"
+      ],
+      "package": "lxml",
+      "version": "4.9.3"
+    }
+  }
+}

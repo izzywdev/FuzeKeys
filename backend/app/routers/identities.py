@@ -1,15 +1,16 @@
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from pydantic import BaseModel, EmailStr
-from typing import List, Optional, Dict, Any
-from datetime import datetime
 
 from app.database import get_db
-from app.models.user import User
 from app.models.identity import Identity
+from app.models.user import User
 from app.routers.auth import get_current_user
-from app.utils.encryption import encrypt_field, decrypt_field, decrypt_json_field
+from app.utils.encryption import decrypt_field, decrypt_json_field, encrypt_field
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -113,13 +114,13 @@ def decrypt_identity_data(identity: Identity) -> IdentityResponse:
             custom_fields=decrypt_json_field(identity.encrypted_custom_fields),
             preferred_username_pattern=identity.preferred_username_pattern,
             created_at=identity.created_at,
-            updated_at=identity.updated_at
+            updated_at=identity.updated_at,
         )
     except Exception as e:
         logger.error(f"Error decrypting identity data: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error decrypting identity data"
+            detail="Error decrypting identity data",
         )
 
 
@@ -127,7 +128,7 @@ def decrypt_identity_data(identity: Identity) -> IdentityResponse:
 async def create_identity(
     identity_data: IdentityCreate,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """Create a new identity."""
     try:
@@ -139,41 +140,64 @@ async def create_identity(
             encrypted_first_name=encrypt_field(identity_data.first_name),
             encrypted_last_name=encrypt_field(identity_data.last_name),
             encrypted_email=encrypt_field(identity_data.email),
-            encrypted_phone=encrypt_field(identity_data.phone) if identity_data.phone else None,
-            encrypted_date_of_birth=encrypt_field(identity_data.date_of_birth) if identity_data.date_of_birth else None,
-            encrypted_address_line1=encrypt_field(identity_data.address_line1) if identity_data.address_line1 else None,
-            encrypted_address_line2=encrypt_field(identity_data.address_line2) if identity_data.address_line2 else None,
-            encrypted_city=encrypt_field(identity_data.city) if identity_data.city else None,
-            encrypted_state=encrypt_field(identity_data.state) if identity_data.state else None,
-            encrypted_zip_code=encrypt_field(identity_data.zip_code) if identity_data.zip_code else None,
-            encrypted_country=encrypt_field(identity_data.country) if identity_data.country else None,
-            encrypted_profession=encrypt_field(identity_data.profession) if identity_data.profession else None,
-            encrypted_company=encrypt_field(identity_data.company) if identity_data.company else None,
-            encrypted_bio=encrypt_field(identity_data.bio) if identity_data.bio else None,
-            encrypted_custom_fields=encrypt_field(identity_data.custom_fields) if identity_data.custom_fields else None,
-            preferred_username_pattern=identity_data.preferred_username_pattern
+            encrypted_phone=encrypt_field(identity_data.phone)
+            if identity_data.phone
+            else None,
+            encrypted_date_of_birth=encrypt_field(identity_data.date_of_birth)
+            if identity_data.date_of_birth
+            else None,
+            encrypted_address_line1=encrypt_field(identity_data.address_line1)
+            if identity_data.address_line1
+            else None,
+            encrypted_address_line2=encrypt_field(identity_data.address_line2)
+            if identity_data.address_line2
+            else None,
+            encrypted_city=encrypt_field(identity_data.city)
+            if identity_data.city
+            else None,
+            encrypted_state=encrypt_field(identity_data.state)
+            if identity_data.state
+            else None,
+            encrypted_zip_code=encrypt_field(identity_data.zip_code)
+            if identity_data.zip_code
+            else None,
+            encrypted_country=encrypt_field(identity_data.country)
+            if identity_data.country
+            else None,
+            encrypted_profession=encrypt_field(identity_data.profession)
+            if identity_data.profession
+            else None,
+            encrypted_company=encrypt_field(identity_data.company)
+            if identity_data.company
+            else None,
+            encrypted_bio=encrypt_field(identity_data.bio)
+            if identity_data.bio
+            else None,
+            encrypted_custom_fields=encrypt_field(identity_data.custom_fields)
+            if identity_data.custom_fields
+            else None,
+            preferred_username_pattern=identity_data.preferred_username_pattern,
         )
-        
+
         db.add(new_identity)
         await db.commit()
         await db.refresh(new_identity)
-        
+
         logger.info(f"Created identity {new_identity.id} for user {current_user.id}")
-        
+
         return decrypt_identity_data(new_identity)
-        
+
     except Exception as e:
         logger.error(f"Error creating identity: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error creating identity"
+            detail="Error creating identity",
         )
 
 
 @router.get("/", response_model=List[IdentityListResponse])
 async def list_identities(
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
     """List all identities for the current user."""
     try:
@@ -181,22 +205,22 @@ async def list_identities(
             select(Identity).where(Identity.user_id == current_user.id)
         )
         identities = result.scalars().all()
-        
+
         return [
             IdentityListResponse(
                 id=identity.id,
                 name=identity.name,
                 description=identity.description,
-                created_at=identity.created_at
+                created_at=identity.created_at,
             )
             for identity in identities
         ]
-        
+
     except Exception as e:
         logger.error(f"Error listing identities: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error retrieving identities"
+            detail="Error retrieving identities",
         )
 
 
@@ -204,7 +228,7 @@ async def list_identities(
 async def get_identity(
     identity_id: int,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """Get a specific identity."""
     try:
@@ -214,22 +238,21 @@ async def get_identity(
             )
         )
         identity = result.scalar_one_or_none()
-        
+
         if not identity:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Identity not found"
+                status_code=status.HTTP_404_NOT_FOUND, detail="Identity not found"
             )
-        
+
         return decrypt_identity_data(identity)
-        
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error getting identity {identity_id}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error retrieving identity"
+            detail="Error retrieving identity",
         )
 
 
@@ -238,7 +261,7 @@ async def update_identity(
     identity_id: int,
     identity_data: IdentityUpdate,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """Update an identity."""
     try:
@@ -248,13 +271,12 @@ async def update_identity(
             )
         )
         identity = result.scalar_one_or_none()
-        
+
         if not identity:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Identity not found"
+                status_code=status.HTTP_404_NOT_FOUND, detail="Identity not found"
             )
-        
+
         # Update fields
         if identity_data.name is not None:
             identity.name = identity_data.name
@@ -269,11 +291,17 @@ async def update_identity(
         if identity_data.phone is not None:
             identity.encrypted_phone = encrypt_field(identity_data.phone)
         if identity_data.date_of_birth is not None:
-            identity.encrypted_date_of_birth = encrypt_field(identity_data.date_of_birth)
+            identity.encrypted_date_of_birth = encrypt_field(
+                identity_data.date_of_birth
+            )
         if identity_data.address_line1 is not None:
-            identity.encrypted_address_line1 = encrypt_field(identity_data.address_line1)
+            identity.encrypted_address_line1 = encrypt_field(
+                identity_data.address_line1
+            )
         if identity_data.address_line2 is not None:
-            identity.encrypted_address_line2 = encrypt_field(identity_data.address_line2)
+            identity.encrypted_address_line2 = encrypt_field(
+                identity_data.address_line2
+            )
         if identity_data.city is not None:
             identity.encrypted_city = encrypt_field(identity_data.city)
         if identity_data.state is not None:
@@ -289,24 +317,28 @@ async def update_identity(
         if identity_data.bio is not None:
             identity.encrypted_bio = encrypt_field(identity_data.bio)
         if identity_data.custom_fields is not None:
-            identity.encrypted_custom_fields = encrypt_field(identity_data.custom_fields)
+            identity.encrypted_custom_fields = encrypt_field(
+                identity_data.custom_fields
+            )
         if identity_data.preferred_username_pattern is not None:
-            identity.preferred_username_pattern = identity_data.preferred_username_pattern
-        
+            identity.preferred_username_pattern = (
+                identity_data.preferred_username_pattern
+            )
+
         await db.commit()
         await db.refresh(identity)
-        
+
         logger.info(f"Updated identity {identity_id} for user {current_user.id}")
-        
+
         return decrypt_identity_data(identity)
-        
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error updating identity {identity_id}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error updating identity"
+            detail="Error updating identity",
         )
 
 
@@ -314,7 +346,7 @@ async def update_identity(
 async def delete_identity(
     identity_id: int,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """Delete an identity."""
     try:
@@ -324,25 +356,24 @@ async def delete_identity(
             )
         )
         identity = result.scalar_one_or_none()
-        
+
         if not identity:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Identity not found"
+                status_code=status.HTTP_404_NOT_FOUND, detail="Identity not found"
             )
-        
+
         await db.delete(identity)
         await db.commit()
-        
+
         logger.info(f"Deleted identity {identity_id} for user {current_user.id}")
-        
+
         return {"message": "Identity deleted successfully"}
-        
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error deleting identity {identity_id}: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error deleting identity"
-        ) 
+            detail="Error deleting identity",
+        )

@@ -1,16 +1,29 @@
+import os
+from datetime import datetime, timezone
+
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-import os
-from dotenv import load_dotenv
 
 # Load environment variables BEFORE importing routers: database.py builds its
 # async engine from DATABASE_URL_ASYNC at import time, so .env must be applied
 # first or the configured DB (e.g. :5433) is ignored in favor of the default.
 load_dotenv()
 
-from app.routers import auth, identities, accounts, automation, chat, sms, infrastructure, llm_scraper, credentials, google_integration, site_integrations
+from app.routers import accounts, auth, automation
 from app.routers import broker as broker_router
+from app.routers import (
+    chat,
+    credentials,
+    google_integration,
+    identities,
+    infrastructure,
+    llm_scraper,
+    site_integrations,
+    sms,
+)
+
 # Temporarily use mock sites router
 # from app.routers import sites
 from app.utils.logging import setup_logging
@@ -18,9 +31,10 @@ from app.utils.logging import setup_logging
 # Setup logging
 setup_logging()
 
+from typing import List, Optional
+
 # Mock sites router for testing
 from fastapi import APIRouter, Query
-from typing import List, Optional
 from pydantic import BaseModel
 
 # Create mock sites router
@@ -82,6 +96,7 @@ tags_metadata = [
     },
 ]
 
+
 class SiteResponse(BaseModel):
     id: int
     name: str
@@ -113,6 +128,7 @@ class SiteResponse(BaseModel):
     notes: Optional[str]
     created_at: Optional[str]
     updated_at: Optional[str]
+
 
 # Mock data
 MOCK_SITES = [
@@ -146,7 +162,7 @@ MOCK_SITES = [
         "api_rate_limits": "Varies by service",
         "notes": "Complex authentication flow with multiple verification steps",
         "created_at": "2024-01-01T00:00:00Z",
-        "updated_at": "2024-01-15T10:30:00Z"
+        "updated_at": "2024-01-15T10:30:00Z",
     },
     {
         "id": 2,
@@ -178,7 +194,7 @@ MOCK_SITES = [
         "api_rate_limits": "5000 requests/hour",
         "notes": "Well documented API with straightforward authentication",
         "created_at": "2024-01-02T00:00:00Z",
-        "updated_at": "2024-01-10T14:20:00Z"
+        "updated_at": "2024-01-10T14:20:00Z",
     },
     {
         "id": 3,
@@ -210,7 +226,7 @@ MOCK_SITES = [
         "api_rate_limits": "Varies by service",
         "notes": "Requires credit card verification and complex setup",
         "created_at": "2024-01-03T00:00:00Z",
-        "updated_at": "2024-01-03T00:00:00Z"
+        "updated_at": "2024-01-03T00:00:00Z",
     },
     {
         "id": 4,
@@ -242,7 +258,7 @@ MOCK_SITES = [
         "api_rate_limits": "Rate limits by tier",
         "notes": "Phone verification required for API access",
         "created_at": "2024-01-04T00:00:00Z",
-        "updated_at": "2024-01-12T09:15:00Z"
+        "updated_at": "2024-01-12T09:15:00Z",
     },
     {
         "id": 5,
@@ -274,8 +290,8 @@ MOCK_SITES = [
         "api_rate_limits": "Strict rate limiting",
         "notes": "Strong anti-bot measures, requires careful approach",
         "created_at": "2024-01-05T00:00:00Z",
-        "updated_at": "2024-01-14T16:45:00Z"
-    }
+        "updated_at": "2024-01-14T16:45:00Z",
+    },
 ]
 
 MOCK_CATEGORIES = [
@@ -284,7 +300,7 @@ MOCK_CATEGORIES = [
     {"name": "developer-tools", "count": 25},
     {"name": "social-media", "count": 20},
     {"name": "ai-ml", "count": 12},
-    {"name": "finance", "count": 18}
+    {"name": "finance", "count": 18},
 ]
 
 MOCK_STATS = {
@@ -294,26 +310,24 @@ MOCK_STATS = {
         "signup_completed": 45,
         "signin_completed": 52,
         "apikey_completed": 38,
-        "total_completed": 67
+        "total_completed": 67,
     },
-    "difficulty_distribution": {
-        "easy": 45,
-        "medium": 89,
-        "hard": 52,
-        "extreme": 13
-    },
-    "estimated_total_hours": 2847
+    "difficulty_distribution": {"easy": 45, "medium": 89, "hard": 52, "extreme": 13},
+    "estimated_total_hours": 2847,
 }
+
 
 @sites_router.get("/categories")
 async def list_categories():
     """Get list of all categories."""
     return MOCK_CATEGORIES
 
+
 @sites_router.get("/stats/overview")
 async def get_sites_overview():
     """Get overview statistics of sites."""
     return MOCK_STATS
+
 
 @sites_router.get("/", response_model=List[SiteResponse])
 async def list_sites(
@@ -324,49 +338,58 @@ async def list_sites(
     status: Optional[str] = Query(None),
     priority_min: Optional[int] = Query(None, ge=1, le=100),
     search: Optional[str] = Query(None),
-    sort_by: str = Query("priority", regex="^(name|priority|difficulty|progress|created_at)$"),
-    sort_order: str = Query("desc", regex="^(asc|desc)$")
+    sort_by: str = Query(
+        "priority", regex="^(name|priority|difficulty|progress|created_at)$"
+    ),
+    sort_order: str = Query("desc", regex="^(asc|desc)$"),
 ):
     """Get list of sites with filtering and pagination."""
-    
+
     # Apply basic filtering for demo
     filtered_sites = MOCK_SITES.copy()
-    
+
     if search:
         search_lower = search.lower()
         filtered_sites = [
-            site for site in filtered_sites 
-            if search_lower in site["name"].lower() or 
-               search_lower in site["display_name"].lower() or
-               search_lower in site["description"].lower()
+            site
+            for site in filtered_sites
+            if search_lower in site["name"].lower()
+            or search_lower in site["display_name"].lower()
+            or search_lower in site["description"].lower()
         ]
-    
+
     if category:
-        filtered_sites = [site for site in filtered_sites if site["category"] == category]
-    
+        filtered_sites = [
+            site for site in filtered_sites if site["category"] == category
+        ]
+
     if priority_min:
-        filtered_sites = [site for site in filtered_sites if site["priority"] >= priority_min]
-    
+        filtered_sites = [
+            site for site in filtered_sites if site["priority"] >= priority_min
+        ]
+
     if difficulty:
         filtered_sites = [
-            site for site in filtered_sites 
-            if site["signup_difficulty"] == difficulty or 
-               site["signin_difficulty"] == difficulty or 
-               site["apikey_difficulty"] == difficulty
+            site
+            for site in filtered_sites
+            if site["signup_difficulty"] == difficulty
+            or site["signin_difficulty"] == difficulty
+            or site["apikey_difficulty"] == difficulty
         ]
-    
+
     # Apply sorting
     if sort_by == "priority":
         filtered_sites.sort(key=lambda x: x["priority"], reverse=(sort_order == "desc"))
     elif sort_by == "name":
         filtered_sites.sort(key=lambda x: x["name"], reverse=(sort_order == "desc"))
-    
+
     # Apply pagination
     start_idx = skip
     end_idx = skip + limit
     paginated_sites = filtered_sites[start_idx:end_idx]
-    
+
     return paginated_sites
+
 
 @sites_router.get("/{site_id}", response_model=SiteResponse)
 async def get_site(site_id: int):
@@ -374,9 +397,11 @@ async def get_site(site_id: int):
     for site in MOCK_SITES:
         if site["id"] == site_id:
             return site
-    
+
     from fastapi import HTTPException
+
     raise HTTPException(status_code=404, detail="Site not found")
+
 
 # Create FastAPI application
 app = FastAPI(
@@ -453,7 +478,9 @@ app.add_middleware(
 )
 
 # Add trusted host middleware for security
-_allowed_hosts = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,*.localhost").split(",")
+_allowed_hosts = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1,*.localhost").split(
+    ","
+)
 app.add_middleware(
     TrustedHostMiddleware,
     allowed_hosts=[h.strip() for h in _allowed_hosts],
@@ -475,10 +502,12 @@ app.include_router(broker_router.router, tags=["Secret Broker"])
 app.include_router(sites_router, tags=["Sites Management"])
 
 
-@app.get("/", 
-         summary="API Health Check",
-         description="Root endpoint that returns API status and basic information",
-         response_description="API status and version information")
+@app.get(
+    "/",
+    summary="API Health Check",
+    description="Root endpoint that returns API status and basic information",
+    response_description="API status and version information",
+)
 async def root():
     """Health check endpoint."""
     return {
@@ -487,22 +516,24 @@ async def root():
         "status": "healthy",
         "features": [
             "AI-Powered Scraper Generation",
-            "Secure Credential Management", 
+            "Secure Credential Management",
             "Mobile Integration",
             "Docker Isolation",
-            "Continuous Validation"
-        ]
+            "Continuous Validation",
+        ],
     }
 
 
-@app.get("/health",
-         summary="Detailed Health Check", 
-         description="Comprehensive health check with service status details",
-         response_description="Detailed health status of all services")
+@app.get(
+    "/health",
+    summary="Detailed Health Check",
+    description="Comprehensive health check with service status details",
+    response_description="Detailed health status of all services",
+)
 async def health_check():
     """Detailed health check endpoint."""
     from app.database import DATABASE_URL, check_connection
-    
+
     # Detect database type from URL
     if "postgresql" in DATABASE_URL:
         db_type = "PostgreSQL"
@@ -510,34 +541,53 @@ async def health_check():
         db_type = "SQLite"
     else:
         db_type = "Unknown"
-    
+
     # Check database connection
     db_connected = await check_connection()
-    db_status = f"connected ({db_type})" if db_connected else f"disconnected ({db_type})"
-    
+    db_status = (
+        f"connected ({db_type})" if db_connected else f"disconnected ({db_type})"
+    )
+
     return {
         "status": "healthy",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "database": db_status,
         "services": {
             "automation": "available",
             "encryption": "enabled",
             "ai": "connected",
             "docker": "available",
-            "mobile": "connected"
+            "mobile": "connected",
         },
         "apis": {
             "credentials": "enabled",
-            "llm_scraper": "enabled", 
-            "infrastructure": "enabled"
-        }
+            "llm_scraper": "enabled",
+            "infrastructure": "enabled",
+        },
+    }
+
+
+@app.get(
+    "/api/info",
+    summary="API Metadata",
+    description="Name and version of this API, for clients and smoke checks",
+    response_description="API name and version",
+)
+async def api_info():
+    """Return the API's identifying metadata."""
+    return {
+        "name": app.title,
+        "version": app.version,
     }
 
 
 # Demo endpoints (kept for backward compatibility)
-@app.get("/api/v1/demo/identities",
-         tags=["Demo"],
-         summary="Demo Identities",
-         description="Sample identity data for testing and demonstration")
+@app.get(
+    "/api/v1/demo/identities",
+    tags=["Demo"],
+    summary="Demo Identities",
+    description="Sample identity data for testing and demonstration",
+)
 async def demo_identities():
     """Demo identities endpoint."""
     return [
@@ -545,21 +595,23 @@ async def demo_identities():
             "id": 1,
             "name": "Professional Identity",
             "description": "For business and professional accounts",
-            "created_at": "2024-01-01T00:00:00"
+            "created_at": "2024-01-01T00:00:00",
         },
         {
             "id": 2,
-            "name": "Personal Identity", 
+            "name": "Personal Identity",
             "description": "For personal social media accounts",
-            "created_at": "2024-01-01T00:00:00"
-        }
+            "created_at": "2024-01-01T00:00:00",
+        },
     ]
 
 
-@app.get("/api/v1/demo/accounts",
-         tags=["Demo"],
-         summary="Demo Accounts", 
-         description="Sample account data for testing and demonstration")
+@app.get(
+    "/api/v1/demo/accounts",
+    tags=["Demo"],
+    summary="Demo Accounts",
+    description="Sample account data for testing and demonstration",
+)
 async def demo_accounts():
     """Demo accounts endpoint."""
     return [
@@ -569,51 +621,53 @@ async def demo_accounts():
             "website_url": "https://github.com",
             "is_active": True,
             "signup_completed": True,
-            "created_at": "2024-01-01T00:00:00"
+            "created_at": "2024-01-01T00:00:00",
         },
         {
             "id": 2,
             "website_name": "LinkedIn",
-            "website_url": "https://linkedin.com", 
+            "website_url": "https://linkedin.com",
             "is_active": True,
             "signup_completed": False,
-            "created_at": "2024-01-01T00:00:00"
-        }
+            "created_at": "2024-01-01T00:00:00",
+        },
     ]
 
 
-@app.post("/api/v1/demo/chat",
-          tags=["Demo"],
-          summary="Demo Chat",
-          description="Demo AI chat interface for testing conversational features")
+@app.post(
+    "/api/v1/demo/chat",
+    tags=["Demo"],
+    summary="Demo Chat",
+    description="Demo AI chat interface for testing conversational features",
+)
 async def demo_chat(message: dict):
     """Demo chat endpoint."""
     user_message = message.get("message", "")
-    
+
     if "sign me up" in user_message.lower():
         response = "I'd be happy to help you sign up! In the full version, I would analyze the website, create automation scripts, and handle the signup process for you."
     elif "identity" in user_message.lower():
         response = "You can create multiple identities to use for different types of accounts. Each identity can have its own personal information, preferences, and use cases."
     else:
         response = "Hello! I'm the FuzeKeys assistant. I can help you manage identities and automate account creation. Try asking me to 'sign me up for a service' or about 'creating identities'."
-    
+
     return {
         "response": response,
         "action_type": "demo",
         "suggested_actions": [
             "Learn about identities",
             "See demo automation",
-            "View sample accounts"
-        ]
+            "View sample accounts",
+        ],
     }
 
 
 if __name__ == "__main__":
     import uvicorn
-    
+
     uvicorn.run(
         "app.main:app",
         host=os.getenv("HOST", "localhost"),
         port=int(os.getenv("PORT", 8000)),
         reload=os.getenv("DEBUG", "False").lower() == "true",
-    ) 
+    )

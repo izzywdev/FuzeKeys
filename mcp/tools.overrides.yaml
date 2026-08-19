@@ -1,0 +1,113 @@
+# FuzeKeys — MCP mutation/reversibility overrides.
+#
+# Consumed by @fuzefront/mcp-gateway (MCP_TOOL_OVERRIDES). The gateway derives a
+# default classification from the HTTP method; this file NARROWS it where the
+# method lies about the consequence. The gateway REFUSES TO START if an entry
+# here violates one of its invariants, so a bad edit fails at boot rather than at
+# the first dangerous call.
+#
+# Keys are the `operationId`s in contracts/openapi.yaml (regenerate that file
+# with `python scripts/export-openapi.py`; the ids are derived from METHOD+path
+# and are stable as long as the route is).
+#
+# THE RULE APPLIED HERE
+# ---------------------
+# "Irreversible" means: the caller has no operation available to undo it. That is
+# not the same as "DELETE". Two FuzeKeys-specific consequences drive most of this
+# file, and neither is visible from the HTTP method:
+#
+#   1. DISCLOSING A SECRET IS NOT A READ. This repo is a credential vault. An
+#      operation that returns plaintext has permanently widened the blast radius
+#      of that secret the moment it responds; there is no un-disclosing it. The
+#      gateway cannot declare a GET `irreversible` (its invariant 3 — if a GET
+#      really changed state the SPEC would be what needs fixing), so the strongest
+#      correct signal available is `mutates: true`: it removes the operation from
+#      the read-only set, so a client that auto-approves reads can never reach it.
+#
+#   2. THIS API REACHES OUT OF THE PRODUCT. Several operations create a real
+#      account or a real API key on a THIRD-PARTY site. FuzeKeys cannot delete a
+#      Google account it created. The write happened somewhere FuzeKeys does not
+#      own, so no compensating FuzeKeys operation exists — irreversible.
+
+tools:
+
+  # --- 1. Secret disclosure over a safe method ------------------------------
+  # GET, but it delegates straight to request_account_credentials and returns
+  # DECRYPTED credentials. Classified as a write so it is never reachable from a
+  # context that believes it is only looking.
+  get_credentials_account_by_account_id_credentials:
+    mutates: true
+    reason: >-
+      Returns decrypted account credentials. A secret that has been handed out
+      cannot be un-handed-out, so this is never a read even though it is a GET
+
+  # POST already defaults to a write; the reason is recorded so the classification
+  # survives a future reader who assumes "POST that only reads" and downgrades it.
+  post_credentials_request_account_credentials:
+    mutates: true
+    reason: >-
+      Returns decrypted account credentials — disclosure is permanent, and this
+      is NOT a query-shaped read despite taking a request body
+  post_credentials_request_identity_credentials:
+    mutates: true
+    reason: >-
+      Generates and returns credentials for an identity — disclosure is permanent
+
+  # --- 2. Effects outside FuzeKeys ------------------------------------------
+  post_integrations_signup:
+    reversibility: irreversible
+    reason: >-
+      Creates a REAL account on a third-party site. FuzeKeys has no operation
+      that deletes it; the account exists on someone else's system
+  post_integrations_apikey:
+    reversibility: irreversible
+    reason: >-
+      Creates a REAL API key at a third-party site. The secret is typically shown
+      once and FuzeKeys cannot revoke it
+  post_google_signup_by_identity_id:
+    reversibility: irreversible
+    reason: >-
+      Runs the automated Google signup flow — creates a real Google account that
+      FuzeKeys cannot delete
+  post_google_signup_manual:
+    reversibility: irreversible
+    reason: >-
+      Runs the manual-input Google signup flow — creates a real Google account
+      that FuzeKeys cannot delete
+  post_chat_signup:
+    reversibility: irreversible
+    reason: >-
+      Starts the automated signup workflow against a live site; once it runs, the
+      remote account exists and FuzeKeys cannot remove it
+  post_infrastructure_mobile_send_command:
+    reversibility: irreversible
+    reason: >-
+      Dispatches a command to a physical paired device. A delivered command has
+      already executed; there is no recall
+
+  # --- 3. Capability-token lifecycle (backend/app/broker) -------------------
+  post_broker_redeem:
+    reversibility: irreversible
+    reason: >-
+      Redeems a capability handle: grants default to single-use, so this both
+      BURNS the grant (redemption_count check in broker/service.py) and discloses
+      the referenced secret. Neither half can be undone
+  post_broker_revoke:
+    reversibility: irreversible
+    reason: >-
+      Revocation is permanent for that grant id — a revoked grant is never
+      re-armed, only a NEW grant can be issued
+  # `grant` and `mint-token` stay the default (write / reversible): both can be
+  # undone by post_broker_revoke, which is exactly what "reversible" means here.
+
+  # --- 4. DELETEs: the default is already correct, recorded explicitly ------
+  delete_identities_by_identity_id:
+    reversibility: irreversible
+    reason: >-
+      Deletes the identity and cascades to its accounts and stored vault
+      material; there is no undelete
+  delete_llm_scraper_scrapers_by_site_name_by_action_type:
+    reversibility: irreversible
+    reason: >-
+      Removes the generated scraper. The version history endpoint does not expose
+      a restore operation, so this is not recoverable through the API

@@ -40,17 +40,55 @@ die()  { echo "[fuzefront-register] FATAL: $*" >&2; exit 1; }
 [ -f "$MANIFEST" ] || die "no manifest at $MANIFEST"
 
 command -v curl >/dev/null 2>&1 || die "curl is required but not installed"
-command -v jq   >/dev/null 2>&1 || die "jq is required but not installed"
 
-jq empty "$MANIFEST" 2>/dev/null || die "$MANIFEST is not valid JSON"
+# ---- curl-only JSON helpers ---------------------------------------------------
+# The init image is curlimages/curl:8.8.0, which ships busybox + sh + curl and
+# NOTHING else — verified from its three layers: bin/busybox, bin/sh, usr/bin/curl.
+# There is no jq. The `command -v jq || die` preflight this file used to carry
+# meant the container died BEFORE it ever contacted the registry, so the pod
+# CrashLoopBackOff'd with a failure that looks identical to a bad token — the same
+# pod state, a completely different cause. FuzeMarket, the one product whose
+# registration actually works in prod, has always parsed with grep/sed for exactly
+# this reason; these helpers are that technique, factored out.
+#
+# Manifests are pretty-printed, so every extraction flattens newlines first rather
+# than assuming a key and its value share a line.
+json_flat() { tr -d '\n' < "$1"; }
 
-SLUG="$(jq -r '.slug // empty' "$MANIFEST")"
+# Deliberately NOT a validator. Real validation is the platform's 400, which this
+# script already surfaces. This only catches an empty or truncated file — the
+# failure a missing or mis-mounted ConfigMap key actually produces.
+json_nonempty_object() {
+  [ -s "$1" ] || return 1
+  json_flat "$1" | grep -q '^[[:space:]]*{'
+}
+
+# Top-level "key": "value". The [[:space:]]* after the colon is load-bearing:
+# FuzeMarket shipped a version requiring `"status":"x"` with no space, so any
+# response serialised as `"status": "x"` parsed to empty and silently took the
+# wrong branch.
+json_str() {
+  json_flat "$1" | grep -o "\"$2\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" \
+    | head -1 | sed 's/.*:[[:space:]]*"//; s/"$//'
+}
+
+# "parent": { ... "key": "value" ... } — scoped so a same-named key elsewhere in
+# the document cannot be picked up by accident.
+json_nested_str() {
+  json_flat "$1" | sed "s/.*\"$2\"[[:space:]]*:[[:space:]]*{//" \
+    | grep -o "\"$3\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" \
+    | head -1 | sed 's/.*:[[:space:]]*"//; s/"$//'
+}
+
+json_nonempty_object "$MANIFEST" || die "$MANIFEST is empty or is not a JSON object"
+
+SLUG="$(json_str "$MANIFEST" slug)"
 [ -n "$SLUG" ] || die "manifest has no .slug"
 
 # nav placement is what orders the app in the portal's side menu. Not fatal if
 # absent (the platform defaults it to the 'platform' section, last) but it almost
 # always means someone forgot, so say so loudly rather than silently sorting last.
-NAV_SECTION="$(jq -r '.nav.section // empty' "$MANIFEST")"
+NAV_SECTION="$(json_nested_str "$MANIFEST" nav section)"
 if [ -z "$NAV_SECTION" ]; then
   log "WARNING: manifest declares no .nav.section — this app will sort LAST in the side menu."
 fi
@@ -99,7 +137,7 @@ CODE="$(http GET "${API}/apps/${SLUG}" "$BODY")"
 
 case "$CODE" in
   200)
-    STATUS="$(jq -r '.status // empty' "$BODY")"
+    STATUS="$(json_str "$BODY" status)"
     log "already registered (status=${STATUS})"
     # Re-PUT the manifest so a redeploy picks up manifest changes (new remoteEntry
     # after a version bump, changed nav placement, …). Without this, the very first
@@ -115,7 +153,7 @@ case "$CODE" in
   404)
     log "not registered — registering"
     REQ="$(mktemp)"
-    jq '{manifest: .}' "$MANIFEST" > "$REQ"
+    printf '{"manifest":%s}' "$(cat "$MANIFEST")" > "$REQ"
     CODE="$(http POST "${API}/apps" "$BODY" "$REQ")"
     rm -f "$REQ"
     case "$CODE" in
@@ -152,7 +190,7 @@ fi
 # namespaces them (<product>_Listing, …) and merges into the base schema. This is
 # what replaces hand-editing backend/src/permit/products/*.policy.ts in FuzeFront.
 if [ -f "$POLICY" ]; then
-  jq empty "$POLICY" 2>/dev/null || die "$POLICY is not valid JSON"
+  json_nonempty_object "$POLICY" || die "$POLICY is empty or is not a JSON object"
   CODE="$(http PUT "${API}/apps/${SLUG}/policy" "$BODY" "$POLICY")"
   case "$CODE" in
     200|201|204) log "authz policy submitted" ;;
@@ -166,7 +204,7 @@ fi
 # Registers the product key so billing accepts checkout for it. Replaces editing the
 # BILLING_PRODUCT_KEYS env allowlist in the platform's Helm values by hand.
 if [ -f "$BILLING" ]; then
-  jq empty "$BILLING" 2>/dev/null || die "$BILLING is not valid JSON"
+  json_nonempty_object "$BILLING" || die "$BILLING is empty or is not a JSON object"
   CODE="$(http PUT "${API}/apps/${SLUG}/billing-profile" "$BODY" "$BILLING")"
   case "$CODE" in
     200|201|204) log "billing profile registered" ;;
