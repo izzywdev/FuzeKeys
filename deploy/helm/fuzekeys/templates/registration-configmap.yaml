@@ -1,0 +1,27 @@
+{{/*
+The registration payload the init container submits to FuzeFront.
+
+Helm cannot read files outside the chart directory, so the copies under
+files/registration/ are unavoidable — but they are a MECHANICAL copy of
+registration/ at the repo root, kept honest by `scripts/sync-chart-files.sh --check`,
+not a second document a human has to remember to edit twice. That distinction
+matters: FuzeService's chart previously inlined its own manifest, which drifted
+from the source and registered an app missing `modes`, `nav` and `routing.host`
+with nothing reporting it.
+
+This is also the shape check-registration.mjs understands — it follows
+`.Files.Get` references.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fuzekeys.fullname" . }}-registration
+  labels:
+    {{- include "fuzekeys.labels" . | nindent 4 }}
+data:
+  manifest.json: |-
+{{ .Files.Get "files/registration/manifest.json" | indent 4 }}
+  policy.json: |-
+{{ .Files.Get "files/registration/policy.json" | indent 4 }}
+  register.sh: |-
+{{ .Files.Get "files/registration/register.sh" | indent 4 }}
