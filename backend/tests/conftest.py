@@ -20,9 +20,24 @@ from app.database import Base, get_db
 from app.main import app
 from app.models.account import Account
 from app.models.identity import Identity
+from app.models.user import User
+from app.utils import encryption as encryption_module
+from app.utils.encryption import encrypt_field, set_global_encryption_manager
 
 # Test database URL
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "sqlite+aiosqlite:///./test.db")
+
+# The master key the suite encrypts/decrypts identity and account fields with.
+# Any non-empty string works -- the value only has to be stable within a run so
+# that encrypt_field() and decrypt_field() agree.
+TEST_MASTER_KEY = "test-master-key"
+
+# Base URL for every test client. TrustedHostMiddleware only allows
+# localhost/127.0.0.1; httpx's default ("http://test") and TestClient's default
+# ("http://testserver") are both rejected with 400 "Invalid host header" before
+# any route runs, so every request would come back 400 instead of hitting the
+# endpoint under test.
+TEST_BASE_URL = "http://localhost"
 
 # Create test engine
 test_engine = create_async_engine(TEST_DATABASE_URL, echo=False, future=True)
@@ -31,6 +46,30 @@ test_engine = create_async_engine(TEST_DATABASE_URL, echo=False, future=True)
 TestingSessionLocal = sessionmaker(
     test_engine, class_=AsyncSession, expire_on_commit=False
 )
+
+
+@pytest.fixture(autouse=True)
+def encryption_manager(setup_test_env):
+    """Initialise the process-global encryption manager for every test.
+
+    `encrypt_field` / `decrypt_field` raise ValueError("Encryption manager not
+    initialized") when the global manager is unset, and the routers wrap their
+    bodies in `except Exception` -> HTTP 500. In production the manager is set
+    by the login route (app/routers/auth.py); tests that bypass login by
+    overriding get_current_user have to stand it up themselves or every
+    identity/account request 500s for a reason that has nothing to do with the
+    behaviour under test.
+
+    Depends on `setup_test_env` because EncryptionManager reads MASTER_KEY_SALT
+    at construction time -- deriving the key before the salt is pinned would
+    make the derived Fernet key depend on whatever ran previously.
+
+    The previous value is restored afterwards so the fixture is hermetic.
+    """
+    previous = encryption_module._global_encryption_manager
+    set_global_encryption_manager(TEST_MASTER_KEY)
+    yield encryption_module.get_global_encryption_manager()
+    encryption_module._global_encryption_manager = previous
 
 
 @pytest_asyncio.fixture
@@ -47,37 +86,12 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 @pytest_asyncio.fixture
-async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
-    """Create a test client with database session override."""
+async def test_user(db_session: AsyncSession) -> User:
+    """The user that `authed_client` authenticates as.
 
-    async def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
-
-    # base_url must present a host that TrustedHostMiddleware accepts. The app
-    # allows localhost/127.0.0.1 by default; "http://test" was rejected before
-    # reaching any route, so every request in this suite came back 400
-    # "Invalid host header" instead of hitting the endpoint under test.
-    async with AsyncClient(app=app, base_url="http://localhost") as ac:
-        yield ac
-
-    app.dependency_overrides.clear()
-
-
-@pytest_asyncio.fixture
-async def authed_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
-    """A client whose requests are already authenticated.
-
-    Most routers depend on get_current_user, so an unauthenticated client gets
-    403 from the bearer-token security scheme before the route body ever runs.
-    Tests that are exercising route behaviour (rather than the auth gate itself)
-    override the dependency with a fixed user. The auth gate has its own
-    coverage in tests/test_security_regressions.py.
+    Exposed separately so a test can assert ownership scoping -- e.g. that an
+    identity belonging to a *different* user is invisible.
     """
-    from app.models.user import User
-    from app.routers.auth import get_current_user
-
     user = User(
         username="testuser",
         email="testuser@example.com",
@@ -88,28 +102,66 @@ async def authed_client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient,
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
+    return user
+
+
+@pytest_asyncio.fixture
+async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
+    """Create a test client with database session override."""
 
     async def override_get_db():
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
-    app.dependency_overrides[get_current_user] = lambda: user
 
-    async with AsyncClient(app=app, base_url="http://localhost") as ac:
+    async with AsyncClient(app=app, base_url=TEST_BASE_URL) as ac:
         yield ac
 
     app.dependency_overrides.clear()
 
 
 @pytest_asyncio.fixture
-async def sample_identity(db_session: AsyncSession) -> Identity:
-    """Create a sample identity for testing."""
+async def authed_client(
+    db_session: AsyncSession, test_user: User
+) -> AsyncGenerator[AsyncClient, None]:
+    """A client whose requests are already authenticated.
+
+    Most routers depend on get_current_user, so an unauthenticated client gets
+    403 from the bearer-token security scheme before the route body ever runs.
+    Tests that are exercising route behaviour (rather than the auth gate itself)
+    override the dependency with a fixed user. The auth gate has its own
+    coverage in tests/test_security_regressions.py.
+    """
+    from app.routers.auth import get_current_user
+
+    async def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = lambda: test_user
+
+    async with AsyncClient(app=app, base_url=TEST_BASE_URL) as ac:
+        yield ac
+
+    app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def sample_identity(db_session: AsyncSession, test_user: User) -> Identity:
+    """A persisted Identity owned by `test_user`.
+
+    PII lives in encrypted_* columns, so the fixture writes through
+    encrypt_field() rather than assigning plaintext -- otherwise the router's
+    decrypt on read fails and the endpoint 500s.
+    """
     identity = Identity(
-        id="test-identity-123",
+        user_id=test_user.id,
         name="Test Identity",
-        email="test@example.com",
-        encrypted_data=b"encrypted_test_data",
-        master_key_hash="test_hash",
+        description="Identity used by the API tests",
+        encrypted_first_name=encrypt_field("Test"),
+        encrypted_last_name=encrypt_field("Person"),
+        encrypted_email=encrypt_field("test@example.com"),
+        encrypted_phone=encrypt_field("+15555550100"),
     )
     db_session.add(identity)
     await db_session.commit()
@@ -121,17 +173,18 @@ async def sample_identity(db_session: AsyncSession) -> Identity:
 async def sample_account(
     db_session: AsyncSession, sample_identity: Identity
 ) -> Account:
-    """Create a sample account for testing."""
+    """A persisted Account hanging off `sample_identity`."""
     account = Account(
-        id="test-account-123",
         identity_id=sample_identity.id,
-        site_name="test-site.com",
-        username="testuser",
-        encrypted_credentials=b"encrypted_test_credentials",
-        status="active",
-        signup_date=None,
-        last_login=None,
-        notes="Test account",
+        website_name="Test Site",
+        website_url="https://test-site.com",
+        website_domain="test-site.com",
+        encrypted_username=encrypt_field("testuser"),
+        encrypted_email=encrypt_field("test@example.com"),
+        account_type="free",
+        signup_method="manual",
+        is_active=True,
+        signup_completed=False,
     )
     db_session.add(account)
     await db_session.commit()
