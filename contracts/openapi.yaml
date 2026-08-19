@@ -1012,7 +1012,6 @@ paths:
           application/json:
             schema:
               type: object
-              additionalProperties: true
               title: Error Data
       responses:
         '200':
@@ -1056,7 +1055,6 @@ paths:
           application/json:
             schema:
               type: object
-              additionalProperties: true
               title: Success Data
       responses:
         '200':
@@ -1309,7 +1307,6 @@ paths:
           application/json:
             schema:
               type: object
-              additionalProperties: true
               title: Context
       responses:
         '200':
@@ -1664,46 +1661,6 @@ paths:
           content:
             application/json:
               schema: {}
-  /api/google/signup/{identity_id}:
-    post:
-      tags:
-      - Google Integration
-      - Google Integration
-      summary: Signup With Identity
-      description: 'Create a Google account using the specified identity.
-
-
-        SECURITY: requires auth and that the identity is owned by the caller.'
-      operationId: post_google_signup_by_identity_id
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: identity_id
-        in: path
-        required: true
-        schema:
-          type: integer
-          title: Identity Id
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/GoogleSignupConfig'
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: true
-                title: Response Signup With Identity Api Google Signup  Identity Id  Post
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
   /api/google/signup/manual:
     post:
       tags:
@@ -1729,7 +1686,6 @@ paths:
           content:
             application/json:
               schema:
-                additionalProperties: true
                 type: object
                 title: Response Manual Signup Api Google Signup Manual Post
         '422':
@@ -1740,6 +1696,47 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - HTTPBearer: []
+  /api/google/signup/{identity_id}:
+    post:
+      tags:
+      - Google Integration
+      - Google Integration
+      summary: Signup With Identity
+      description: 'Create a Google account using the specified identity.
+
+
+        SECURITY: requires auth and that the identity is owned by the caller.'
+      operationId: post_google_signup_by_identity_id
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: identity_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Identity Id
+      requestBody:
+        content:
+          application/json:
+            schema:
+              allOf:
+              - $ref: '#/components/schemas/GoogleSignupConfig'
+              title: Config
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                title: Response Signup With Identity Api Google Signup  Identity Id  Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/google/config/default:
     get:
       tags:
@@ -1795,7 +1792,6 @@ paths:
             application/json:
               schema:
                 type: object
-                additionalProperties: true
                 title: Response Test Identity Conversion Api Google Test Identity Conversion  Identity
                   Id  Post
         '422':
@@ -1835,7 +1831,6 @@ paths:
             application/json:
               schema:
                 type: object
-                additionalProperties: true
                 title: Response Get Google Accounts Api Google Accounts  Identity Id  Get
         '422':
           description: Validation Error
@@ -1857,12 +1852,7 @@ paths:
           content:
             application/json:
               schema:
-                additionalProperties:
-                  items:
-                    type: string
-                  type: array
-                type: object
-                title: Response List Available Sites Api V1 Integrations Sites Get
+                $ref: '#/components/schemas/AvailableSitesResponse'
   /api/v1/integrations/sites/{site_name}/capabilities:
     get:
       tags:
@@ -2304,6 +2294,17 @@ paths:
           content:
             application/json:
               schema: {}
+  /api/info:
+    get:
+      summary: API Metadata
+      description: Name and version of this API, for clients and smoke checks
+      operationId: get_info
+      responses:
+        '200':
+          description: API name and version
+          content:
+            application/json:
+              schema: {}
   /api/v1/demo/identities:
     get:
       tags:
@@ -2341,7 +2342,6 @@ paths:
         content:
           application/json:
             schema:
-              additionalProperties: true
               type: object
               title: Message
         required: true
@@ -2468,7 +2468,7 @@ components:
       example:
         account_id: 1
         credentials:
-          api_key: ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+          api_key: <example-api-key-not-a-real-token>
           email: john.doe.1703123456@example.com
           password: JohnDoePass123!
         last_used: '2024-01-01T12:00:00Z'
@@ -2529,8 +2529,7 @@ components:
           title: Error Message
         stage_data:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - type: object
           - type: 'null'
           title: Stage Data
       type: object
@@ -2547,8 +2546,7 @@ components:
           title: Message
         details:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - type: object
           - type: 'null'
           title: Details
       type: object
@@ -2591,12 +2589,28 @@ components:
       - email
       - password
       title: ApiKeyRequest
+    AvailableSitesResponse:
+      properties:
+        sites:
+          items:
+            type: string
+          type: array
+          title: Sites
+        count:
+          type: integer
+          title: Count
+      type: object
+      required:
+      - sites
+      - count
+      title: AvailableSitesResponse
     Body_manual_signup_api_google_signup_manual_post:
       properties:
         signup_data:
           $ref: '#/components/schemas/GoogleSignupData'
         config:
-          $ref: '#/components/schemas/GoogleSignupConfig'
+          allOf:
+          - $ref: '#/components/schemas/GoogleSignupConfig'
       type: object
       required:
       - signup_data
@@ -2696,7 +2710,6 @@ components:
           title: Credentials
           description: Generated credentials
         metadata:
-          additionalProperties: true
           type: object
           title: Metadata
           description: Request metadata and tracking information
@@ -2743,8 +2756,7 @@ components:
           description: Credentials to store
         metadata:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - type: object
           - type: 'null'
           title: Metadata
           description: Additional metadata about the credentials
@@ -2758,7 +2770,7 @@ components:
       example:
         account_id: 1
         credentials:
-          api_key: ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+          api_key: <example-api-key-not-a-real-token>
           email: john.doe.1703123456@example.com
           password: JohnDoePass123!
           username: johndoe_a1b2
@@ -2825,12 +2837,10 @@ components:
           type: string
           title: Action Type
         patterns:
-          additionalProperties: true
           type: object
           title: Patterns
           default: {}
         test_data:
-          additionalProperties: true
           type: object
           title: Test Data
           default: {}
@@ -2963,7 +2973,6 @@ components:
           title: Redeemer Identity
           description: Bound transport identity that may redeem
         scope:
-          additionalProperties: true
           type: object
           title: Scope
         ttl_seconds:
@@ -3080,8 +3089,7 @@ components:
           title: Bio
         custom_fields:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - type: object
           - type: 'null'
           title: Custom Fields
         preferred_username_pattern:
@@ -3199,8 +3207,7 @@ components:
           title: Bio
         custom_fields:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - type: object
           - type: 'null'
           title: Custom Fields
         preferred_username_pattern:
@@ -3327,8 +3334,7 @@ components:
           title: Bio
         custom_fields:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - type: object
           - type: 'null'
           title: Custom Fields
         preferred_username_pattern:
@@ -3347,7 +3353,6 @@ components:
           type: string
           title: Action Type
         execution_result:
-          additionalProperties: true
           type: object
           title: Execution Result
       type: object
@@ -3366,8 +3371,7 @@ components:
           title: Message
         data:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - type: object
           - type: 'null'
           title: Data
         error:
@@ -3408,7 +3412,6 @@ components:
           type: string
           title: Command Type
         parameters:
-          additionalProperties: true
           type: object
           title: Parameters
         timeout_seconds:
@@ -3480,7 +3483,6 @@ components:
       properties:
         scrapers:
           items:
-            additionalProperties: true
             type: object
           type: array
           title: Scrapers
@@ -3510,8 +3512,7 @@ components:
           title: Code
         metadata:
           anyOf:
-          - additionalProperties: true
-            type: object
+          - type: object
           - type: 'null'
           title: Metadata
         error_message:
@@ -3870,11 +3871,6 @@ components:
         type:
           type: string
           title: Error Type
-        input:
-          title: Input
-        ctx:
-          type: object
-          title: Context
       type: object
       required:
       - loc

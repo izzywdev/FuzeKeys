@@ -41,6 +41,18 @@ describe('apiClient base URL', () => {
     expect(loadBase()).toBe('https://api.keys.prod.fuzefront.com/api/v1');
   });
 
+  it('exposes the un-versioned origin separately for legacy routers', () => {
+    // Eight backend routers are still mounted without the prefix (/api/google,
+    // /api/sms, ...). Their callers need the bearer token but cannot use the
+    // versioned base. This stays a distinct export so the un-versioned surface
+    // remains countable, and shrinks as routers migrate.
+    process.env.REACT_APP_API_URL = 'https://api.keys.prod.fuzefront.com';
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { LEGACY_API_BASE_URL, API_BASE_URL } = require('../apiClient');
+    expect(LEGACY_API_BASE_URL).toBe('https://api.keys.prod.fuzefront.com');
+    expect(API_BASE_URL).toBe(`${LEGACY_API_BASE_URL}/api/v1`);
+  });
+
   it('always ends in /api/v1 whatever the origin', () => {
     for (const origin of [
       'http://localhost:8002',

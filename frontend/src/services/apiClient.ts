@@ -21,33 +21,56 @@ const origin = (process.env.REACT_APP_API_URL || DEFAULT_ORIGIN).replace(/\/+$/,
 
 export const API_BASE_URL = `${origin}/api/v1`;
 
-const apiClient = axios.create({
-  baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
+/**
+ * The un-versioned origin, for the routers that have not moved under /api/v1 yet.
+ *
+ * Eight of the backend's thirteen routers are still mounted without the version
+ * prefix (/api/google, /api/sms, /api/credentials, /api/infrastructure,
+ * /api/llm-scraper). Callers into those namespaces cannot use `apiClient` — its
+ * base already ends in /api/v1 — but they still need the bearer token and the
+ * 401 handling, which is what they were missing.
+ *
+ * This is deliberately a SEPARATE export rather than a looser default, so the
+ * un-versioned surface stays countable: when a router migrates, its callers move
+ * from `legacyApiClient` to `apiClient` and this export shrinks toward deletion.
+ */
+export const LEGACY_API_BASE_URL = origin;
 
-// Attach the bearer token when one is stored. The endpoints below are gated by
-// get_current_user, so without this a corrected path returns 403 instead of 404.
-apiClient.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
+const build = (baseURL: string) => {
+  const client = axios.create({
+    baseURL,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
 
-// Handle token expiration
-apiClient.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      window.location.href = '/login';
+  // Attach the bearer token when one is stored. These endpoints are gated by
+  // get_current_user, so without this a corrected path returns 403 instead of 404.
+  client.interceptors.request.use((config) => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
     }
-    return Promise.reject(error);
-  }
-);
+    return config;
+  });
+
+  // Handle token expiration
+  client.interceptors.response.use(
+    (response) => response,
+    (error) => {
+      if (error.response?.status === 401) {
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+      }
+      return Promise.reject(error);
+    }
+  );
+
+  return client;
+};
+
+const apiClient = build(API_BASE_URL);
+
+export const legacyApiClient = build(LEGACY_API_BASE_URL);
 
 export default apiClient;
