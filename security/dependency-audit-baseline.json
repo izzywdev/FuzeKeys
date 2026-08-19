@@ -147,20 +147,6 @@
       "package": "langchain",
       "version": "0.0.335"
     },
-    "PYSEC-2024-232": {
-      "fix_versions": [
-        "3.4.0"
-      ],
-      "package": "python-jose",
-      "version": "3.3.0"
-    },
-    "PYSEC-2024-233": {
-      "fix_versions": [
-        "3.4.0"
-      ],
-      "package": "python-jose",
-      "version": "3.3.0"
-    },
     "PYSEC-2024-24": {
       "fix_versions": [
         "3.9.2"
@@ -202,11 +188,6 @@
       ],
       "package": "black",
       "version": "23.11.0"
-    },
-    "PYSEC-2025-185": {
-      "fix_versions": [],
-      "package": "python-jose",
-      "version": "3.3.0"
     },
     "PYSEC-2026-1097": {
       "fix_versions": [
