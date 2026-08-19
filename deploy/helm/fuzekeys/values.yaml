@@ -348,3 +348,14 @@ mcp:
 # deploy/helm/a2a-shared values. The exact entry, and the preconditions this repo
 # does not yet meet, are written down in docs/a2a-tenant-registration.md.
 # -----------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# FuzeFront self-registration (docs/mfe-self-registration.md).
+#
+# Cluster-internal service DNS on purpose, per @fuzefront/onboarding-kit: the
+# init container has no reason to leave the cluster, and the public ingress host
+# may not resolve before ingress is ready. Override per-environment if the
+# applications service moves.
+# ---------------------------------------------------------------------------
+fuzefront:
+  apiUrl: "http://fuzefront-applications.fuzefront.svc.cluster.local:3003"
