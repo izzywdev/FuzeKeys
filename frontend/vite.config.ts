@@ -15,8 +15,8 @@ export default defineConfig({
       // neither types it nor reads it at runtime (grep the dist bundle), so it
       // was dead config that only broke `tsc --noEmit`.
       shared: {
-        react: { requiredVersion: '^18.0.0' },
-        'react-dom': { requiredVersion: '^18.0.0' },
+        react: { requiredVersion: '^19.0.0' },
+        'react-dom': { requiredVersion: '^19.0.0' },
       },
     }),
   ],
