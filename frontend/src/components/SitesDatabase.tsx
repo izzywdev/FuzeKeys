@@ -87,7 +87,10 @@ const SitesDatabase: React.FC = () => {
   const [priorityFilter, setPriorityFilter] = useState('');
 
   // Infinite scroll
-  const observer = useRef<IntersectionObserver>();
+  // React 19's @types/react removed the zero-argument useRef overload: a ref must
+  // be given an explicit initial value. `useRef<IntersectionObserver>()` was legal
+  // under @types/react 18 and is TS2554 under 19.
+  const observer = useRef<IntersectionObserver | null>(null);
 
   const fetchSitesData = useCallback(async (reset = false) => {
     try {
