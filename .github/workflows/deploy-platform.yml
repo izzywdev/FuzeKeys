@@ -10,12 +10,16 @@ on:
   pull_request:
     paths:
       - 'deploy/**'
-      - '.github/workflows/deploy-platform.yml'
+      # actionlint lives in this workflow, so a workflow edit has to be able to
+      # reach it. Before this path existed, editing ci.yml triggered NO workflow
+      # lint at all, while editing an Argo manifest linted all 18 — the trigger
+      # was pointed at the wrong thing.
+      - '.github/workflows/**'
   push:
     branches: [master]
     paths:
       - 'deploy/**'
-      - '.github/workflows/deploy-platform.yml'
+      - '.github/workflows/**'
 
 permissions:
   contents: read
@@ -74,10 +78,76 @@ jobs:
               -kubernetes-version 1.29.0 -summary -schema-location default
 
   actionlint:
+    # Lints workflow YAML, RATCHETED to what the PR changes.
+    #
+    # SCOPE — deliberately PR-scoped for the hard failure, matching
+    # gate-line-endings.yml in this same repo, which explains the reasoning at
+    # length: a whole-tree hard fail on a pre-existing backlog "would red every
+    # PR in the org on day one and would get switched off within a week — a gate
+    # nobody can keep enabled protects nothing."
+    #
+    # This job was whole-tree, and the backlog is real: 6 shellcheck findings
+    # (3 SC2086 info, 2 SC2129 style, 1 SC2015 info) in harden-gate.yml,
+    # nightly-integration.yml and publish-expert.yml. All three are reconciled
+    # from the FuzeSDLC hub, so this repo cannot fix them — an edit here is
+    # replaced on the next governance sync, and the upstream fix only arrives
+    # when a new baseline is cut and the v1 alias moves. Until then the whole-tree
+    # form failed EVERY PR touching deploy/**, none of which can do anything
+    # about it. The first such PR since the job was added hit exactly that.
+    #
+    # Net effect is MORE coverage, not less:
+    #   • PR  -> hard fail, on the workflow files the PR adds/changes. Previously
+    #            a workflow edit triggered no lint at all, because this workflow's
+    #            only trigger paths were deploy/** and itself.
+    #   • push to master -> lint everything, report-only. The backlog stays
+    #            visible without blocking unrelated work.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: actionlint (lint workflow YAML)
-        uses: raven-actions/actionlint@v2
+        with: { fetch-depth: 0 }
+
+      - name: Collect changed workflow files
+        id: changed
+        shell: bash
+        # Context values go through env, never interpolated into the script body:
+        # actionlint's own expression-injection rule flags `${{ }}` inside run:,
+        # and this job must satisfy the gate it enforces.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            # ACMR: added/copied/modified/renamed — a DELETED workflow must not be
+            # linted, or removing a bad file would fail the PR that removes it.
+            files=$(git diff --name-only --diff-filter=ACMR "$BASE_SHA" "$HEAD_SHA" -- '.github/workflows/*.yml' | tr '\n' ' ')
+          else
+            files=$(git ls-files '.github/workflows/*.yml' | tr '\n' ' ')
+          fi
+          echo "files=$files" >> "$GITHUB_OUTPUT"
+          if [ -z "${files// /}" ]; then
+            echo "no workflow files in scope — nothing to lint"
+          else
+            echo "linting: $files"
+          fi
+
+      - name: actionlint (PR — enforcing, changed workflows only)
+        if: github.event_name == 'pull_request' && steps.changed.outputs.files != ''
+        # Pinned to a full commit SHA: a mutable tag can be silently repointed by
+        # the action owner (the trivy-action and kics-github-action compromises).
+        # Matches how trivy-action and gitleaks-action are already pinned here.
+        uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7  # v2.2.0
+        with:
+          files: ${{ steps.changed.outputs.files }}
+          fail-on-error: true
+
+      - name: actionlint (master — whole tree, report-only)
+        if: github.event_name == 'push'
+        # Pinned to a full commit SHA: a mutable tag can be silently repointed by
+        # the action owner (the trivy-action and kics-github-action compromises).
+        # Matches how trivy-action and gitleaks-action are already pinned here.
+        uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7  # v2.2.0
         with:
           files: ".github/workflows/*.yml"
+          fail-on-error: false
