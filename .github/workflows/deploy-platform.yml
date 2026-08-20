@@ -134,14 +134,20 @@ jobs:
 
       - name: actionlint (PR — enforcing, changed workflows only)
         if: github.event_name == 'pull_request' && steps.changed.outputs.files != ''
-        uses: raven-actions/actionlint@v2
+        # Pinned to a full commit SHA: a mutable tag can be silently repointed by
+        # the action owner (the trivy-action and kics-github-action compromises).
+        # Matches how trivy-action and gitleaks-action are already pinned here.
+        uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7  # v2.2.0
         with:
           files: ${{ steps.changed.outputs.files }}
           fail-on-error: true
 
       - name: actionlint (master — whole tree, report-only)
         if: github.event_name == 'push'
-        uses: raven-actions/actionlint@v2
+        # Pinned to a full commit SHA: a mutable tag can be silently repointed by
+        # the action owner (the trivy-action and kics-github-action compromises).
+        # Matches how trivy-action and gitleaks-action are already pinned here.
+        uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7  # v2.2.0
         with:
           files: ".github/workflows/*.yml"
           fail-on-error: false
