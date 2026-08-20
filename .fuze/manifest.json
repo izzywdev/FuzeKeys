@@ -32,7 +32,10 @@
   "hardening": {
     "ruleset": true,
     "requireSignatures": true,
-    "deployOnPush": false
+    "deployOnPush": true,
+    "requiredChecks": [
+      "release-version"
+    ]
   },
   "a2a": {
     "enabled": false,
