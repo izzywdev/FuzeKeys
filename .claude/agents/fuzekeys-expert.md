@@ -28,7 +28,7 @@ The LLM data-path protection. Raw PII/secrets (cards, SSNs, emails, phones, IBAN
 
 ## Governance (this overlay)
 - **Class `oss-public`** (public, **MIT** — already correct; do not change the license) · **tier `product`** · expert = this agent. The repo is **already hardened** (the active "Protect default branch" ruleset, Harden Gate, the automation stack — `claude.yml`, `claude-ci-autofix.yml`, `auto-merge.yml`, `governance-nightly.yml`, `harden-gate.yml`, `telegram-pr-merged.yml`, `claude-auto-pr.yml` — nightly reconciliation, and community files). **Do not re-apply hardening or change the license.**
-- **No deploy-on-push** on this repo (`hardening.deployOnPush:false`). Prod is GitOps; never hand-deploy to prod.
+- **Deploy-on-push** (`hardening.deployOnPush:true`): merging to `master` reaches production. Argo's app-of-apps auto-syncs `deploy/helm/fuzekeys` (`prune` + `selfHeal`) and the rendered image tag is `Chart.appVersion`, which `build-and-push.yml` tags the GHCR images with. Two consequences: **never bot-merge** — a human merges every PR in a deploy window; and a PR touching `backend/`, `frontend/` or `pii-tokenizer/` **must bump `appVersion`**, enforced by the repo-local `release-version` gate — without the bump Argo sees no chart change and nothing rolls out. Prod is still GitOps: Argo is the only deployer; never hand-deploy to prod.
 - Work is executed by the installed single-responsibility domain agents; route by task type and honor the done-contract. Infra changes are delegated to FuzeInfra via `@claude`, never made from here.
 
 ## How to work
