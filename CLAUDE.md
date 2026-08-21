@@ -16,5 +16,12 @@ FuzeKeys is a **keys / secrets / PII-tokenization product** — an intelligent i
 
 ## Hardening & delivery (repo-specifics)
 - This repo is **already hardened** — the active "Protect default branch" ruleset, Harden Gate, signed commits, the standard automation stack, and nightly reconciliation are in place. Don't re-apply them.
-- **`deployOnPush: false`** — no deploy-on-push on this repo. Prod is GitOps; never hand-deploy to prod.
+- **`deployOnPush: true`** — **merging to `master` deploys to production.** ArgoCD auto-syncs
+  `deploy/helm/fuzekeys` from `master` (app-of-apps: `prune` + `selfHeal`), and the rendered image
+  tag is `Chart.appVersion`, which `build-and-push.yml` also tags the GHCR images with. Consequences:
+  **never bot-merge** — auto-merge is withheld by the canonical `auto-merge.yml`, so a human merges
+  every PR, in a deploy window; and a PR touching `backend/`, `frontend/` or `pii-tokenizer/` MUST
+  bump `appVersion`, which the repo-local `release-version` gate enforces. Without the bump the images
+  are rebuilt under a tag the cluster already runs, Argo sees no chart change, and the deploy silently
+  does not happen. Prod is still GitOps — Argo remains the only deployer; never hand-deploy to prod.
 - Finish work as a **merged PR** with signed commits; follow the baseline's done-contract and verification protocol.
