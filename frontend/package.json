@@ -61,5 +61,9 @@
     "tailwindcss": "^3.3.5",
     "vite": "^5.4.19"
   },
-  "proxy": "http://localhost:8888"
+  "proxy": "http://localhost:8888",
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
+  }
 }
