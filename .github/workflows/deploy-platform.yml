@@ -132,22 +132,45 @@ jobs:
             echo "linting: $files"
           fi
 
+      # actionlint is invoked as a PINNED BINARY rather than through
+      # raven-actions/actionlint, because that action's `files:` input does not
+      # accept a list. Passing six space-separated paths made it silently fall
+      # back to its default glob and lint all 24 workflows -- reintroducing
+      # exactly the whole-tree failure this job was changed to avoid, while
+      # LOOKING scoped. Verified from its own log: "linted 24 files".
+      #
+      # The binary takes explicit paths, so the scope is the scope. Version and
+      # SHA-256 are pinned, matching how harden-gate installs gitleaks.
+      # shellcheck ships on ubuntu-latest and actionlint picks it up automatically.
+      - name: Install actionlint (pinned)
+        shell: bash
+        env:
+          AL_VERSION: 1.7.12
+          AL_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          set -euo pipefail
+          tarball="actionlint_${AL_VERSION}_linux_amd64.tar.gz"
+          curl -sSLo "/tmp/$tarball" \
+            "https://github.com/rhysd/actionlint/releases/download/v${AL_VERSION}/${tarball}"
+          echo "${AL_SHA256}  /tmp/${tarball}" | sha256sum -c -
+          tar -xzf "/tmp/$tarball" -C /tmp actionlint
+          /tmp/actionlint --version
+
       - name: actionlint (PR — enforcing, changed workflows only)
         if: github.event_name == 'pull_request' && steps.changed.outputs.files != ''
-        # Pinned to a full commit SHA: a mutable tag can be silently repointed by
-        # the action owner (the trivy-action and kics-github-action compromises).
-        # Matches how trivy-action and gitleaks-action are already pinned here.
-        uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7  # v2.2.0
-        with:
-          files: ${{ steps.changed.outputs.files }}
-          fail-on-error: true
+        shell: bash
+        env:
+          FILES: ${{ steps.changed.outputs.files }}
+        run: |
+          set -euo pipefail
+          # word-splitting is intended: FILES is a space-separated path list
+          # shellcheck disable=SC2086
+          /tmp/actionlint $FILES
 
       - name: actionlint (master — whole tree, report-only)
         if: github.event_name == 'push'
-        # Pinned to a full commit SHA: a mutable tag can be silently repointed by
-        # the action owner (the trivy-action and kics-github-action compromises).
-        # Matches how trivy-action and gitleaks-action are already pinned here.
-        uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7  # v2.2.0
-        with:
-          files: ".github/workflows/*.yml"
-          fail-on-error: false
+        shell: bash
+        run: |
+          set -uo pipefail
+          /tmp/actionlint .github/workflows/*.yml || \
+            echo "::warning title=actionlint::pre-existing findings above — report-only on master"
