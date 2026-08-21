@@ -101,10 +101,56 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
+
+      # Runs the gitleaks BINARY, not gitleaks-action.
+      #
+      # The action never scanned a byte here. It uploads a job-summary artifact, and
+      # this account is over its Actions artifact-storage quota, so it dies with
+      # "Failed to CreateArtifact: Artifact storage quota has been hit" BEFORE the
+      # scan — the job fails red for a reason that has nothing to do with the tree,
+      # and no scan result exists either way. Verified on FuzeSales run 32483276161.
+      #
+      # The v2 action has a second failure mode already seen across this fleet: its
+      # pull_request path calls GET /repos/:o/:r/pulls/:n/commits to work out what to
+      # scan, and when that call 403s ("Resource not accessible by integration") it
+      # throws rather than degrading.
+      #
+      # A secret gate must not have an availability failure mode, and it must not
+      # depend on an API call or an artifact upload. git already knows the commit
+      # range; nothing needs to be asked and nothing needs to be uploaded.
       - name: gitleaks (gates new secrets)
-        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7  # v2
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          VERSION=8.24.3
+          SHA256=9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c
+          TARBALL=gitleaks_${VERSION}_linux_x64.tar.gz
+
+          # Pinned + checksummed. A security gate that curls an unverified binary is
+          # worse than the problem it solves; the digest is the upstream one from
+          # gitleaks_${VERSION}_checksums.txt.
+          curl -sSfL -o "$TARBALL" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/${TARBALL}"
+          echo "${SHA256}  ${TARBALL}" | sha256sum -c -
+          tar -xzf "$TARBALL" gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+          rm -f "$TARBALL" gitleaks
+
+          # On a PR, scan exactly the commits the PR adds. Anywhere else, scan all
+          # history: a wider scan can only find MORE, so the fallback is the safe
+          # direction. There is deliberately no path that scans nothing — "no range,
+          # so skip" is how a gate ends up green while enforcing nothing.
+          if [ -n "${BASE_SHA:-}" ] && [ -n "${HEAD_SHA:-}" ]; then
+            echo "::notice title=gate-secret-scan::scanning ${BASE_SHA}..${HEAD_SHA}"
+            gitleaks git --log-opts="${BASE_SHA}..${HEAD_SHA}" --redact --no-banner .
+          else
+            echo "::notice title=gate-secret-scan::no PR range — scanning full history"
+            gitleaks git --redact --no-banner .
+          fi
 
   gate-dependency-scan:
     runs-on: ubuntu-latest
