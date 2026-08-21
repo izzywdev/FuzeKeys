@@ -86,6 +86,17 @@ ingress:
       port: 8002
       path: /
 
+# Same-origin portal mount — see values.yaml for the full rationale. Mounting
+# does NOT replace keys.prod.fuzefront.com above: both Ingresses stay live
+# until the FuzeFront portal is verified loading the remote through
+# app.fuzefront.com/apps/fuzekeys/, at which point the public host is retired
+# in a follow-up change (never both at once, never public-host-first).
+federatedMount:
+  enabled: true
+  className: traefik
+  host: app.fuzefront.com
+  path: /apps/fuzekeys
+
 # ---- PII-TOKENIZER STACK: OFF for MVP -------------------------------------
 # FOLLOW-UP: enable after Vault-in-k8s auto-unseal design + security review.
 # Ollama stays OFF regardless (GPU/heavy).
