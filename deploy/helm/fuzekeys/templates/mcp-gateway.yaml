@@ -99,6 +99,18 @@ spec:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             runAsNonRoot: true
+            # A NUMERIC uid is mandatory here, not optional hardening. This image's
+            # Dockerfile declares `USER mcp` — a NAME — and the kubelet cannot resolve a
+            # name to a uid without running the image, so with runAsNonRoot and no
+            # runAsUser it refuses to start the container at ADMISSION:
+            #   Error: container has runAsNonRoot and image has non-numeric user (mcp),
+            #   cannot verify user is non-root
+            # Measured in production 2026-08-21: 12,357 such failures in 47h, while the
+            # image pulled fine 14,836 times over 10 days. 1000 is the value FuzePicker
+            # has been running this same gateway image on in prod (it sets it pod-level).
+            # Nothing in helm lint or kubeconform catches this — it is an admission-time
+            # check, so the manifest is schema-valid the whole way through CI.
+            runAsUser: 1000
             capabilities:
               drop: ["ALL"]
           volumeMounts:
