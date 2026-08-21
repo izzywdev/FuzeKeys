@@ -1,0 +1,55 @@
+{{- if and .Values.frontend.enabled .Values.federatedMount.enabled }}
+{{/*
+Same-origin portal mount for the fuzeKeysApp Module-Federation remote.
+
+Routes {federatedMount.host}/apps/fuzekeys/* (e.g. /apps/fuzekeys/remoteEntry.js)
+to this service so the FuzeFront portal shell imports the remote SAME-ORIGIN —
+no CORS, no second TLS/Cloudflare-Access surface, no public bypass of the
+portal — and it mounts sharing the host's React 19 singleton.
+
+Lives in FuzeKeys' chart, not FuzeFront's: a k8s Ingress can only target a
+Service in its own namespace, and this service runs in `fuzekeys` (separate
+Argo Application). The cluster-wide Traefik controller merges rules per host
+across namespaces, so no FuzeInfra change is needed.
+
+PASS-THROUGH, not rewrite: frontend/nginx.conf already serves a SECOND,
+independently-built MFE bundle under the exact `/apps/fuzekeys/` prefix
+(frontend/Dockerfile's `build-mfe` stage sets vite `base: '/apps/fuzekeys/'`,
+copied to /usr/share/nginx/html/apps/fuzekeys and matched by the
+`location ^~ /apps/fuzekeys/` block) — alongside the UNCHANGED standalone
+build served at `/` for keys.prod.fuzefront.com. Traefik therefore forwards
+the path verbatim — deliberately NO strip-prefix middleware. Stripping the
+prefix here would send the request to the `/` location instead, which serves
+the STANDALONE bundle (wrong base, wrong chunk URLs) not the MFE one.
+
+Disabled + hostless by default. `host` is `required` when enabled so a
+hostless Ingress can never match every request that reaches the controller.
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "fuzekeys.fullname" . }}-federated-mount
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "fuzekeys.labels" . | nindent 4 }}
+    app.kubernetes.io/component: federated-remote
+  {{- with .Values.federatedMount.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.federatedMount.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  rules:
+    - host: {{ required "federatedMount.host is required when federatedMount.enabled is true" .Values.federatedMount.host | quote }}
+      http:
+        paths:
+          - path: {{ .Values.federatedMount.path | quote }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "fuzekeys.fullname" . }}-frontend
+                port:
+                  number: {{ .Values.frontend.servicePort }}
+{{- end }}

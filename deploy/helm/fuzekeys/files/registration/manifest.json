@@ -10,7 +10,7 @@
   "builtin": false,
   "integration": {
     "type": "module-federation",
-    "remoteEntry": "https://keys.prod.fuzefront.com/apps/fuzekeys/remoteEntry.js",
+    "remoteEntry": "https://app.fuzefront.com/apps/fuzekeys/remoteEntry.js",
     "scope": "fuzeKeysApp",
     "module": "./FuzeKeysApp"
   },
