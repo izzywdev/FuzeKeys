@@ -39,5 +39,14 @@ export default defineConfig({
     target: 'esnext',
     minify: false,
     cssCodeSplit: false,
+    // Without this, @originjs/vite-plugin-federation emits remoteEntry.js at
+    // `${assetsDir}/${filename}` (plugin default for assetsDir is "assets")
+    // -> serves at /apps/fuzekeys/assets/remoteEntry.js, while
+    // registration/manifest.json's
+    // integration.remoteEntry advertises /apps/fuzekeys/remoteEntry.js -- a
+    // clean 200 on the wrong URL and 404 on the one the host actually
+    // requests. `base + assetsDir + filename` must equal the declared entry;
+    // assetsDir: '' keeps remoteEntry.js at the root of `base`.
+    assetsDir: '',
   },
 });
