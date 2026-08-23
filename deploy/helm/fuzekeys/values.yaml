@@ -137,6 +137,37 @@ ingress:
       port: 8002
       path: /
 
+# -----------------------------------------------------------------------------
+# federatedMount: the SAME-ORIGIN portal mount for the Module-Federation remote.
+# This is a DIFFERENT surface from `ingress` above (the public keys.prod host
+# for standalone/direct access): it exposes the frontend's already-built MFE
+# assets under the FuzeFront HOST origin at /apps/fuzekeys/ so the portal shell
+# imports remoteEntry.js same-origin — no iframe, no CORS, no mixed-content,
+# sharing the host's React 19 singleton.
+#
+# MUST live in THIS chart, not FuzeFront's: a k8s Ingress can only reference a
+# Service in its own namespace, and the frontend Service runs in the `fuzekeys`
+# namespace (a separate Argo Application). The cluster-wide Traefik controller
+# routes it by host across namespaces, so no FuzeInfra change is needed.
+#
+# PASS-THROUGH, not rewrite: frontend/nginx.conf already serves the MFE build
+# under the /apps/fuzekeys/ prefix (frontend/vite.config.ts `base:
+# '/apps/fuzekeys/'`, baked into the image at that path by frontend/Dockerfile),
+# so Traefik forwards the path verbatim — deliberately NO strip-prefix
+# middleware/annotation, matching FuzeX's federatedMount shape
+# (deploy/helm/fuzex/templates/federated-mount-ingress.yaml).
+#
+# Disabled + hostless by default here: `host` is `required` in the template
+# when enabled, so a hostless Ingress can never match every request and hijack
+# the controller. Enabled with host: app.fuzefront.com in values-contabo.yaml
+# (FuzeFront's EXISTING prod host — no new DNS needed).
+federatedMount:
+  enabled: false
+  className: traefik
+  host: ""
+  annotations: {}
+  path: /apps/fuzekeys
+
 serviceAccount:
   create: true
   name: ""
