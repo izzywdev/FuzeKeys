@@ -101,10 +101,56 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
+
+      # Runs the gitleaks BINARY, not gitleaks-action.
+      #
+      # The action never scanned a byte here. It uploads a job-summary artifact, and
+      # this account is over its Actions artifact-storage quota, so it dies with
+      # "Failed to CreateArtifact: Artifact storage quota has been hit" BEFORE the
+      # scan — the job fails red for a reason that has nothing to do with the tree,
+      # and no scan result exists either way. Verified on FuzeSales run 32483276161.
+      #
+      # The v2 action has a second failure mode already seen across this fleet: its
+      # pull_request path calls GET /repos/:o/:r/pulls/:n/commits to work out what to
+      # scan, and when that call 403s ("Resource not accessible by integration") it
+      # throws rather than degrading.
+      #
+      # A secret gate must not have an availability failure mode, and it must not
+      # depend on an API call or an artifact upload. git already knows the commit
+      # range; nothing needs to be asked and nothing needs to be uploaded.
       - name: gitleaks (gates new secrets)
-        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7  # v2
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          VERSION=8.24.3
+          SHA256=9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c
+          TARBALL=gitleaks_${VERSION}_linux_x64.tar.gz
+
+          # Pinned + checksummed. A security gate that curls an unverified binary is
+          # worse than the problem it solves; the digest is the upstream one from
+          # gitleaks_${VERSION}_checksums.txt.
+          curl -sSfL -o "$TARBALL" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/${TARBALL}"
+          echo "${SHA256}  ${TARBALL}" | sha256sum -c -
+          tar -xzf "$TARBALL" gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+          rm -f "$TARBALL" gitleaks
+
+          # On a PR, scan exactly the commits the PR adds. Anywhere else, scan all
+          # history: a wider scan can only find MORE, so the fallback is the safe
+          # direction. There is deliberately no path that scans nothing — "no range,
+          # so skip" is how a gate ends up green while enforcing nothing.
+          if [ -n "${BASE_SHA:-}" ] && [ -n "${HEAD_SHA:-}" ]; then
+            echo "::notice title=gate-secret-scan::scanning ${BASE_SHA}..${HEAD_SHA}"
+            gitleaks git --log-opts="${BASE_SHA}..${HEAD_SHA}" --redact --no-banner .
+          else
+            echo "::notice title=gate-secret-scan::no PR range — scanning full history"
+            gitleaks git --redact --no-banner .
+          fi
 
   gate-dependency-scan:
     runs-on: ubuntu-latest
@@ -139,6 +185,9 @@ jobs:
           pip install -q semgrep
           CFG=""
           [ -f .semgrep/fuze-authz.yml ] && CFG="$CFG --config .semgrep/fuze-authz.yml"
+          # $CFG must word-split into `--config <path>`; quoting it would pass a
+          # single argument containing a space and semgrep would reject it.
+          # shellcheck disable=SC2086
           semgrep scan $CFG --config p/owasp-top-ten --config p/secrets --sarif --output authz.sarif || true
           test -f authz.sarif || echo '{"version":"2.1.0","runs":[]}' > authz.sarif
       - uses: github/codeql-action/upload-sarif@v3
@@ -163,8 +212,15 @@ jobs:
           if [ -z "$CT" ]; then
             echo "::warning title=local-up::No bounded local-up (FuzeInfra consumer-test) wired yet — tracked by local-env-verifier"; exit 0
           fi
-          dir=$(dirname "$CT"); env=""; [ -f "$dir/versions.env" ] && env="--env-file $dir/versions.env"
+          dir=$(dirname "$CT"); env=""
+          # `[ -f x ] && env=...` is SC2015: the && arm becomes the step's exit
+          # status, so when versions.env is absent the whole `run:` block would
+          # exit non-zero under `set -e`. It is also not if-then-else.
+          if [ -f "$dir/versions.env" ]; then env="--env-file $dir/versions.env"; fi
           echo "::group::consumer-test up"
+          # $env must word-split into `--env-file <path>`; quoting it would pass a
+          # single argument containing a space.
+          # shellcheck disable=SC2086
           docker compose $env -f "$CT" up -d --wait || { echo "consumer-test infra failed to come up"; docker compose -f "$CT" logs | tail -50; exit 1; }
           echo "::endgroup::"
           docker compose -f "$CT" down -v || true
@@ -175,7 +231,18 @@ jobs:
           chart=$(git ls-files '**/Chart.yaml' 'Chart.yaml' 2>/dev/null | head -1)
           if [ -z "$chart" ]; then echo "no Helm chart — skipping chart validation"; exit 0; fi
           cdir=$(dirname "$chart")
-          curl -sSL https://get.helm.sh/helm-v3.16.4-linux-amd64.tar.gz | tar xz -C /tmp >/dev/null 2>&1 && sudo mv /tmp/linux-amd64/helm /usr/local/bin/helm || true
+          # SC2015: `A && B || C` is not if-then-else — C also runs when A
+          # succeeds and B fails, so a successful download with a failed install
+          # was silently swallowed and helm lint then ran against no helm at all.
+          # Installing helm is best-effort by design (the lint below is
+          # report-only), but "best-effort" must still be able to say it failed.
+          if curl -sSL https://get.helm.sh/helm-v3.16.4-linux-amd64.tar.gz | tar xz -C /tmp >/dev/null 2>&1; then
+            sudo mv /tmp/linux-amd64/helm /usr/local/bin/helm \
+              || echo "::warning title=helm-install::downloaded helm but could not install it — skipping chart lint"
+          else
+            echo "::warning title=helm-install::could not download helm — skipping chart lint"
+          fi
+          command -v helm >/dev/null 2>&1 || exit 0
           helm lint "$cdir" || echo "::warning title=helm-lint::chart findings (report)"
 
   gate-version:
@@ -192,6 +259,10 @@ jobs:
           BASE: ${{ github.base_ref }}
         run: |
           set +e
+          # BASE is set in this step's `env:` block, which shellcheck cannot see, so
+          # SC2153 guesses it is a typo for the local `base` assigned on the next
+          # line. It is not — they are deliberately different.
+          # shellcheck disable=SC2153
           git fetch origin "$BASE" --depth=1 >/dev/null 2>&1
           base="origin/$BASE"
           SEMVER='^[0-9]+\.[0-9]+\.[0-9]+([-+.0-9A-Za-z]*)?$'
