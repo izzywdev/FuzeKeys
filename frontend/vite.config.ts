@@ -39,5 +39,12 @@ export default defineConfig({
     target: 'esnext',
     minify: false,
     cssCodeSplit: false,
+    // Emit remoteEntry.js and every chunk at the ROOT of `base`, not under
+    // `base/assets/`. Without this, Vite's default assetsDir ('assets') puts the
+    // entry at /apps/fuzekeys/assets/remoteEntry.js while the registration
+    // manifest advertises /apps/fuzekeys/remoteEntry.js — the host fetches the
+    // advertised path, nginx `try_files ... =404`s it, and the panel is blank
+    // behind a green healthcheck. Matches every other remote in the family.
+    assetsDir: '',
   },
 });
