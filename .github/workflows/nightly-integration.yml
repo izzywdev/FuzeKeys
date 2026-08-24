@@ -130,10 +130,10 @@ jobs:
         with:
           fetch-depth: 0
       - name: Auto-fix → DRAFT PR (never auto-merge)
-        uses: anthropics/claude-code-action@428971d2ecd6e3a7cb0ee0da2a3a8b33fdb3678d  # v1
+        uses: ./.github/actions/fuze-code-action
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt: |
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          task-prompt: |
             The **nightly integration suite** for ${{ github.repository }} FAILED
             (run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
             Diagnose from the failed run logs and the integration suite.
@@ -148,4 +148,7 @@ jobs:
             File or UPDATE one idempotent tracking issue (label `integration`) linking the failed run and
             the draft PR with a STATE block. If you cannot reproduce, or the fix needs a human decision,
             post the diagnosis on the issue and stop. Do NOT use plan mode / AskUserQuestion.
+          litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
         # No merge step — draft PR + tracking issue only, per the ADLC (never auto-merge).

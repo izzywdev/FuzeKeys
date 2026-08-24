@@ -30,10 +30,10 @@ jobs:
           fetch-depth: 0
 
       - name: Run platform-governance reconciliation
-        uses: anthropics/claude-code-action@428971d2ecd6e3a7cb0ee0da2a3a8b33fdb3678d  # v1
+        uses: ./.github/actions/fuze-code-action
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt: |
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          task-prompt: |
             You are the **platform-governance** agent running the nightly **governance-reconciliation**
             sweep for the repository ${{ github.repository }}. Follow the governance-reconciliation skill.
 
@@ -57,3 +57,6 @@ jobs:
             resolved issues, open draft/follow-up PRs, comment/label, update-branch). Never force-push,
             never auto-merge, never delete branches with unique unmerged commits, never close an issue you
             cannot prove resolved.
+          litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
