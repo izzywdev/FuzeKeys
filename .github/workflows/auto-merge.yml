@@ -24,8 +24,32 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # deploy-on-push repos are NEVER bot-merged (.fuze manifest schema,
+      # governance/repo-manifest.schema.json in izzywdev/FuzeSDLC: "If true,
+      # never bot-merge; merge in a deploy window"). Read the flag from
+      # .fuze/manifest.json and gate the enable step on it here, so the
+      # declaration is ENFORCED on the merge path rather than only honored by
+      # convention — a manifest value nothing on the merge path reads is a
+      # declaration, not a control. build-and-push.yml's push:branches:[master]
+      # trigger builds+pushes images on every merge, which is why this repo is
+      # hardening.deployOnPush=true.
+      - name: Read deploy-on-push flag
+        id: hardening
+        run: |
+          if grep -qE '"deployOnPush"[[:space:]]*:[[:space:]]*true' .fuze/manifest.json 2>/dev/null; then
+            echo "deploy_on_push=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::hardening.deployOnPush=true"
+          else
+            echo "deploy_on_push=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::hardening.deployOnPush=false"
+          fi
+
+      - name: Deploy-on-push repo — auto-merge withheld
+        if: steps.hardening.outputs.deploy_on_push == 'true'
+        run: echo "::notice title=Auto-merge withheld::hardening.deployOnPush=true — merging this PR deploys to production, so it must be merged by a human in a deploy window. This job is green because withholding the merge IS the correct outcome here, not a failure."
+
       - name: Enable auto-merge
-        if: github.event.pull_request.user.login == github.repository_owner || contains(github.event.pull_request.labels.*.name, 'auto-merge')
+        if: steps.hardening.outputs.deploy_on_push != 'true' && (github.event.pull_request.user.login == github.repository_owner || contains(github.event.pull_request.labels.*.name, 'auto-merge'))
         run: |
           gh pr merge ${{ github.event.pull_request.number }} --auto --squash --delete-branch
         env:
