@@ -44,15 +44,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Runs on a HOSTED runner and always reports. Split out from the maintainer for the
-  # same reason as a2a-maintain.yml's preflight: a job on a self-hosted pool that is
-  # not serving QUEUES FOREVER with no red X, no log and no timeout — measured
-  # 2026-08-23, 175 jobs queued on `fuzesdlc` with zero running for 36 hours
-  # (FuzeInfra#623). A misconfiguration that produces no signal at all is worse than
-  # one that produces a red, so the check that must never be silent runs where it
-  # cannot be silenced. Since the llm-endpoint fallback landed, the maintainer job
-  # below no longer NEEDS in-cluster reachability either, so this split is now purely
-  # about signal placement, not runner placement.
+  # Runs on a HOSTED runner and always reports. Split out from the maintainer on
+  # purpose: a job on a self-hosted pool that is not serving QUEUES FOREVER with no
+  # red X, no log and no timeout — measured 2026-08-23, 175 jobs queued on `fuzesdlc`
+  # with zero running for 36 hours. A misconfiguration that produces no signal at all
+  # is worse than one that produces a red, so the check that must never be silent runs
+  # where it cannot be silenced. Since the llm-endpoint fallback landed, the maintainer
+  # job below no longer NEEDS in-cluster reachability either, so this split is now
+  # purely about signal placement, not runner placement.
   preflight:
     name: mcp-maintain preflight
     runs-on: ubuntu-latest
@@ -114,6 +113,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout PR head (writable, same-repo only)
+        # Pinned to a full commit SHA, not a mutable tag: a tag can be silently
+        # repointed by the action owner (cf. the trivy-action / kics-github-action
+        # compromises). This workflow holds `contents: write` on the PR branch, so a
+        # repointed checkout would run attacker code with push access. Semgrep's
+        # github-actions-mutable-action-tag rule flags the unpinned form.
         # Pinned to a full commit SHA, not a mutable tag: a tag can be silently
         # repointed by the action owner (cf. the trivy-action / kics-github-action
         # compromises). This workflow has `contents: write` on the PR branch, so a
