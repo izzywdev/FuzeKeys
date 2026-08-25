@@ -16,11 +16,24 @@ Real, and taken from `frontend/vite.config.ts` + `frontend/Dockerfile`:
 |---|---|---|
 | `scope` | `fuzeKeysApp` | federation `name` |
 | `module` | `./FuzeKeysApp` | `exposes` key |
-| `remoteEntry` | `https://keys.prod.fuzefront.com/apps/fuzekeys/remoteEntry.js` | `base: '/apps/fuzekeys/'` + the `keys.prod.fuzefront.com` ingress host |
+| `remoteEntry` | `/apps/fuzekeys/remoteEntry.js` | `base: '/apps/fuzekeys/'`, resolved by the FuzeFront host shell against **its own** origin |
 
-The Dockerfile is explicit about this — `COPY --from=build-mfe /app/dist-mfe
+Same-origin, not `https://keys.prod.fuzefront.com/...`: the host shell resolves a
+relative `remoteEntry` against `app.fuzefront.com` itself
+(`frontend/src/utils/loadFederatedApp.ts:71`, `new URL(remoteEntry, origin)`), and
+`deploy/helm/fuzekeys`'s `federatedMount` (enabled in `values-contabo.yaml`, host
+`app.fuzefront.com`) proxies `/apps/fuzekeys/*` straight to this frontend Service —
+no iframe, no CORS, no mixed-content. An absolute `keys.prod.fuzefront.com` URL is
+wrong for the same reason FuzeAgent's was (FuzeFront migration 009): that hostname
+sits behind the Cloudflare Access admin wall, which answers an asset request with an
+HTML login page instead of JavaScript, so the federation runtime fails with "Failed
+to fetch dynamically imported module".
+
+The Dockerfile is explicit about the build layout — `COPY --from=build-mfe /app/dist-mfe
 /usr/share/nginx/html/apps/fuzekeys` is commented *"FuzeFront fetches remoteEntry.js
-from here"* — and `frontend/nginx.conf` serves that path.
+from here"* — and `frontend/nginx.conf` serves that path under BOTH the standalone
+`keys.prod.fuzefront.com` host and, via `federatedMount`, `app.fuzefront.com`; only the
+latter is reachable by the portal shell.
 
 ## Menu placement
 
