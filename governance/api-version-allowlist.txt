@@ -1,0 +1,116 @@
+# gate-api-version allowlist — FuzeKeys
+#
+# Every HTTP route the Fuze family exposes lives under /api/v{N}/
+# (CLAUDE.baseline.md §4.3, FuzeSDLC governance/api-versioning.md). This file
+# records the routes that predate that standard so the gate fails only what is
+# NEW. It is DEBT TO BURN DOWN, NOT APPROVAL. Nothing may be added to it to make
+# a new route pass.
+#
+# WHY THIS FILE EXISTS AT ALL, rather than the routes simply being moved:
+# moving them is a breaking API change for every existing caller — the mobile
+# app, the Playwright automation, and the FuzeFront shell all address these
+# paths today. The standard's own guidance is to record and migrate, not to
+# break callers in the commit that adopts the gate. The migration is tracked
+# separately; this file is what keeps master green until it lands.
+#
+# HOW TO REMOVE AN ENTRY: move the route under /api/v1, update its callers in the
+# same PR, then delete the line here. The gate will tell you if you missed a
+# caller. Deleting a line without moving the route turns master red, which is the
+# intended behaviour.
+#
+# ---------------------------------------------------------------------------
+# SECTION 1 — NOT FUZEKEYS' SURFACE. Do not "burn these down".
+# ---------------------------------------------------------------------------
+# These are third-party paths, fixed by someone else's convention, reached
+# through someone else's base URL. They are listed only because the gate cannot
+# distinguish `f"{their_base_url}/api/x"` from `f"{our_base_url}/api/x"` — both
+# are an /api/ literal following an interpolation. Changing either of these would
+# BREAK the integration, not improve it.
+
+# Ollama's completion endpoint. backend/app/llm_scraper_service/llm_integration/
+# llm_client.py:227 — `requests.post(f"{self.base_url}/api/generate", ...)`,
+# where base_url is the Ollama server. Ollama defines this path; we do not.
+/api/generate
+
+# A documentation URL constructed for a THIRD-PARTY SITE record, not a route this
+# service serves. backend/init_test_db.py:307 — `f"{base_url}/api/docs"`, the
+# fallback when a site has no known docs URL. base_url is the scraped site's.
+/api/docs
+
+# ---------------------------------------------------------------------------
+# SECTION 2 — REAL DEBT: un-versioned routers this service actually serves.
+# ---------------------------------------------------------------------------
+# Root cause is five APIRouter prefixes. Fixing the prefix fixes every route
+# beneath it in one move, which is why they are grouped here by owner:
+#
+#   backend/app/routers/sms.py:34             prefix="/api/sms"
+#   backend/app/routers/google_integration.py:42  prefix="/api/google"
+#   backend/app/routers/credentials.py:27     prefix="/api/credentials"
+#   backend/app/routers/infrastructure.py:31  prefix="/api/infrastructure"
+#   backend/app/routers/llm_scraper.py:27     prefix="/api/llm-scraper"
+#
+# The five prefix literals themselves:
+/api/sms
+/api/google
+/api/credentials
+/api/infrastructure
+/api/llm-scraper
+
+# One route declared directly on the app rather than a router:
+/api/info
+
+# --- routes under /api/credentials ---
+/api/credentials/account/{account_id}/credentials
+/api/credentials/health
+/api/credentials/identity/{identity_id}/accounts
+/api/credentials/request-account-credentials
+/api/credentials/request-identity-credentials
+/api/credentials/store-account-credentials
+/api/credentials/validate-credentials
+
+# --- routes under /api/google ---
+/api/google/accounts/{identity_id}
+/api/google/config/default
+/api/google/signup/manual
+/api/google/signup/{identity_id}
+/api/google/test/identity-conversion/{identity_id}
+
+# --- routes under /api/infrastructure ---
+/api/infrastructure/email/get-verification/{monitor_id}
+/api/infrastructure/email/setup-monitoring
+/api/infrastructure/mobile/get-command-result/{command_id}
+/api/infrastructure/mobile/send-command
+/api/infrastructure/scraper/report-error
+/api/infrastructure/scraper/report-success
+/api/infrastructure/sms/complete-verification/{request_id}
+/api/infrastructure/sms/get-verification/{request_id}
+/api/infrastructure/sms/request-verification
+
+# --- routes under /api/llm-scraper ---
+/api/llm-scraper/debug
+/api/llm-scraper/generate
+/api/llm-scraper/improve
+/api/llm-scraper/scrapers
+/api/llm-scraper/scrapers/{site_name}/{action_type}
+/api/llm-scraper/scrapers/{site_name}/{action_type}/history
+/api/llm-scraper/stats
+
+# --- routes under /api/sms ---
+/api/sms/devices
+/api/sms/health
+/api/sms/otp
+/api/sms/register-device
+/api/sms/request-otp
+/api/sms/request-status/{request_id}
+/api/sms/requests/{device_id}
+
+# ---------------------------------------------------------------------------
+# SECTION 3 — FRONTEND CALLERS of the Section 2 routes.
+# ---------------------------------------------------------------------------
+# Same debt seen from the client side, in TypeScript template form. The gate
+# reports the interpolated spelling, so both forms need recording until the
+# backend prefix moves and these move with it.
+# frontend/src/integrations/google/frontend/services/googleApi.ts
+/api/google/accounts/${identityId}
+/api/google/signup/${identityId}
+/api/google/test/identity-conversion/${identityId}

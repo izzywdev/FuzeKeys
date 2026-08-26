@@ -1,11 +1,10 @@
 {{- if and .Values.migrate.enabled .Values.backend.enabled }}
 {{/*
-  Alembic migration Job. Runs `alembic upgrade head` against FuzeInfra Postgres
-  using the backend image (alembic.ini lives at /app/alembic.ini). Modelled as a
-  Helm pre-install/pre-upgrade hook so it runs BEFORE the backend rollout — Argo
-  honours Helm hooks (translated to a PreSync phase), so migrations apply before
-  the new backend pods start. Idempotent: `alembic upgrade head` is a no-op when
-  the DB is already at head.
+  Alembic migration Job. Runs `alembic upgrade head` before backend pods start.
+  Ordered via Argo sync-waves: ConfigMap at wave -2, this Job at wave -1,
+  backend/frontend at wave 0 (default). Argo waits for each wave to reach
+  Healthy before advancing, so migrations always complete before new pods roll out.
+  Idempotent: `alembic upgrade head` is a no-op when the DB is already at head.
 */}}
 apiVersion: batch/v1
 kind: Job
@@ -15,9 +14,7 @@ metadata:
     {{- include "fuzekeys.labels" . | nindent 4 }}
     app.kubernetes.io/component: migrate
   annotations:
-    "helm.sh/hook": pre-install,pre-upgrade
-    "helm.sh/hook-weight": "-5"
-    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    argocd.argoproj.io/sync-wave: "-1"
 spec:
   backoffLimit: {{ .Values.migrate.backoffLimit }}
   template:

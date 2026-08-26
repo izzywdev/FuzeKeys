@@ -10,12 +10,16 @@ on:
   pull_request:
     paths:
       - 'deploy/**'
-      - '.github/workflows/deploy-platform.yml'
+      # actionlint lives in this workflow, so a workflow edit has to be able to
+      # reach it. Before this path existed, editing ci.yml triggered NO workflow
+      # lint at all, while editing an Argo manifest linted all 18 — the trigger
+      # was pointed at the wrong thing.
+      - '.github/workflows/**'
   push:
     branches: [master]
     paths:
       - 'deploy/**'
-      - '.github/workflows/deploy-platform.yml'
+      - '.github/workflows/**'
 
 permissions:
   contents: read
@@ -24,7 +28,7 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Set up Helm
         uses: azure/setup-helm@v4
@@ -74,10 +78,99 @@ jobs:
               -kubernetes-version 1.29.0 -summary -schema-location default
 
   actionlint:
+    # Lints workflow YAML, RATCHETED to what the PR changes.
+    #
+    # SCOPE — deliberately PR-scoped for the hard failure, matching
+    # gate-line-endings.yml in this same repo, which explains the reasoning at
+    # length: a whole-tree hard fail on a pre-existing backlog "would red every
+    # PR in the org on day one and would get switched off within a week — a gate
+    # nobody can keep enabled protects nothing."
+    #
+    # This job was whole-tree, and the backlog is real: 6 shellcheck findings
+    # (3 SC2086 info, 2 SC2129 style, 1 SC2015 info) in harden-gate.yml,
+    # nightly-integration.yml and publish-expert.yml. All three are reconciled
+    # from the FuzeSDLC hub, so this repo cannot fix them — an edit here is
+    # replaced on the next governance sync, and the upstream fix only arrives
+    # when a new baseline is cut and the v1 alias moves. Until then the whole-tree
+    # form failed EVERY PR touching deploy/**, none of which can do anything
+    # about it. The first such PR since the job was added hit exactly that.
+    #
+    # Net effect is MORE coverage, not less:
+    #   • PR  -> hard fail, on the workflow files the PR adds/changes. Previously
+    #            a workflow edit triggered no lint at all, because this workflow's
+    #            only trigger paths were deploy/** and itself.
+    #   • push to master -> lint everything, report-only. The backlog stays
+    #            visible without blocking unrelated work.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: actionlint (lint workflow YAML)
-        uses: raven-actions/actionlint@v2
-        with:
-          files: ".github/workflows/*.yml"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with: { fetch-depth: 0 }
+
+      - name: Collect changed workflow files
+        id: changed
+        shell: bash
+        # Context values go through env, never interpolated into the script body:
+        # actionlint's own expression-injection rule flags `${{ }}` inside run:,
+        # and this job must satisfy the gate it enforces.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            # ACMR: added/copied/modified/renamed — a DELETED workflow must not be
+            # linted, or removing a bad file would fail the PR that removes it.
+            files=$(git diff --name-only --diff-filter=ACMR "$BASE_SHA" "$HEAD_SHA" -- '.github/workflows/*.yml' | tr '\n' ' ')
+          else
+            files=$(git ls-files '.github/workflows/*.yml' | tr '\n' ' ')
+          fi
+          echo "files=$files" >> "$GITHUB_OUTPUT"
+          if [ -z "${files// /}" ]; then
+            echo "no workflow files in scope — nothing to lint"
+          else
+            echo "linting: $files"
+          fi
+
+      # actionlint is invoked as a PINNED BINARY rather than through
+      # raven-actions/actionlint, because that action's `files:` input does not
+      # accept a list. Passing six space-separated paths made it silently fall
+      # back to its default glob and lint all 24 workflows -- reintroducing
+      # exactly the whole-tree failure this job was changed to avoid, while
+      # LOOKING scoped. Verified from its own log: "linted 24 files".
+      #
+      # The binary takes explicit paths, so the scope is the scope. Version and
+      # SHA-256 are pinned, matching how harden-gate installs gitleaks.
+      # shellcheck ships on ubuntu-latest and actionlint picks it up automatically.
+      - name: Install actionlint (pinned)
+        shell: bash
+        env:
+          AL_VERSION: 1.7.12
+          AL_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          set -euo pipefail
+          tarball="actionlint_${AL_VERSION}_linux_amd64.tar.gz"
+          curl -sSLo "/tmp/$tarball" \
+            "https://github.com/rhysd/actionlint/releases/download/v${AL_VERSION}/${tarball}"
+          echo "${AL_SHA256}  /tmp/${tarball}" | sha256sum -c -
+          tar -xzf "/tmp/$tarball" -C /tmp actionlint
+          /tmp/actionlint --version
+
+      - name: actionlint (PR — enforcing, changed workflows only)
+        if: github.event_name == 'pull_request' && steps.changed.outputs.files != ''
+        shell: bash
+        env:
+          FILES: ${{ steps.changed.outputs.files }}
+        run: |
+          set -euo pipefail
+          # word-splitting is intended: FILES is a space-separated path list
+          # shellcheck disable=SC2086
+          /tmp/actionlint $FILES
+
+      - name: actionlint (master — whole tree, report-only)
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -uo pipefail
+          /tmp/actionlint .github/workflows/*.yml || \
+            echo "::warning title=actionlint::pre-existing findings above — report-only on master"

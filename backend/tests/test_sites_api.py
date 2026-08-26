@@ -1,447 +1,286 @@
 """
-Tests for Sites API endpoints.
+Tests for the Sites API (`/api/v1/sites`).
 
-This module tests all the sites-related API endpoints including:
-- List sites with pagination and filtering
-- Get site by ID and name
-- Create, update, and delete sites
-- Import sites from CSV
-- Get statistics and categories
+The previous suite targeted `app.routers.sites` and patched
+`app.routers.sites.get_db` -- a name that module does not define. It could
+never have passed: `app/main.py` does not mount that router at all ("Temporarily
+use mock sites router"), it defines and mounts an inline `sites_router` backed by
+an in-process MOCK_SITES list. The file was quarantined behind a module-level
+skip.
+
+Rather than keep testing a module nothing serves, this suite tests the router
+that IS mounted, so `/api/v1/sites` -- which the frontend calls -- has real
+coverage today. Mounting the database-backed CRUD router in
+`app/routers/sites.py` is a separate product decision; when it lands, the
+request/response assertions here are the contract it has to keep, and only the
+fixture data changes.
 """
 
 import pytest
-import json
-from fastapi.testclient import TestClient
-from sqlalchemy.orm import Session
-from unittest.mock import patch, MagicMock
+from httpx import AsyncClient
 
-from app.main import app
-from app.database import get_db
-from app.models.site import Site, DifficultyLevel, ImplementationStatus
+BASE = "/api/v1/sites"
 
-client = TestClient(app)
+# Names present in the mounted router's fixture data. Asserted as a subset
+# wherever possible so adding a site does not break the suite.
+KNOWN_SITE_NAMES = {"google", "github", "aws", "openai", "linkedin"}
 
-# Test data
-SAMPLE_SITE_DATA = {
-    "name": "test_site",
-    "display_name": "Test Site",
-    "url": "https://test.com",
-    "category": "test",
-    "description": "A test site for automation",
-    "signup_difficulty": "medium",
-    "signin_difficulty": "easy",
-    "apikey_difficulty": "hard",
-    "priority": 75,
-    "estimated_hours": 10,
-    "has_official_api": True,
-    "requires_email_verification": True,
-    "requires_phone_verification": False,
-    "has_captcha": True,
-    "captcha_type": "recaptcha",
-    "anti_bot_techniques": ["fingerprinting", "behavioral_analysis"],
-    "notes": "Test site for API testing"
-}
 
-SAMPLE_SITE_UPDATE = {
-    "display_name": "Updated Test Site",
-    "description": "Updated description",
-    "signup_status": "completed",
-    "priority": 85
-}
+class TestListSites:
+    @pytest.mark.asyncio
+    async def test_list_sites(self, client: AsyncClient):
+        response = await client.get(f"{BASE}/")
+        assert response.status_code == 200
 
-class TestSitesAPI:
-    """Test sites REST API endpoints."""
+        data = response.json()
+        assert isinstance(data, list)
+        assert data, "the sites listing should not be empty"
+        assert KNOWN_SITE_NAMES <= {site["name"] for site in data}
 
-    def setup_method(self):
-        """Set up test data before each test."""
-        # Mock database session
-        self.mock_db = MagicMock(spec=Session)
-        
-        # Mock site object
-        self.mock_site = MagicMock(spec=Site)
-        self.mock_site.id = 1
-        self.mock_site.name = "test_site"
-        self.mock_site.display_name = "Test Site"
-        self.mock_site.url = "https://test.com"
-        self.mock_site.category = "test"
-        self.mock_site.description = "A test site"
-        self.mock_site.signup_difficulty = DifficultyLevel.MEDIUM
-        self.mock_site.signin_difficulty = DifficultyLevel.EASY
-        self.mock_site.apikey_difficulty = DifficultyLevel.HARD
-        self.mock_site.priority = 75
-        self.mock_site.estimated_hours = 10
-        self.mock_site.has_official_api = True
-        self.mock_site.signup_status = ImplementationStatus.NOT_STARTED
-        self.mock_site.signin_status = ImplementationStatus.NOT_STARTED
-        self.mock_site.apikey_status = ImplementationStatus.NOT_STARTED
-        self.mock_site.implementation_progress = 0.0
-        self.mock_site.created_at = "2024-01-01T00:00:00"
-        self.mock_site.updated_at = "2024-01-01T00:00:00"
-        
-        # Mock to_dict method
-        self.mock_site.to_dict.return_value = {
-            "id": 1,
-            "name": "test_site",
-            "display_name": "Test Site",
-            "url": "https://test.com",
-            "logo_url": None,
-            "category": "test",
-            "description": "A test site",
-            "signup_difficulty": "medium",
-            "signin_difficulty": "easy",
-            "apikey_difficulty": "hard",
-            "overall_difficulty": "medium",
-            "requires_email_verification": True,
-            "requires_phone_verification": False,
-            "requires_sms_verification": False,
-            "requires_authenticator": False,
-            "has_captcha": True,
-            "captcha_type": "recaptcha",
-            "anti_bot_techniques": ["fingerprinting"],
-            "signup_status": "not_started",
-            "signin_status": "not_started",
-            "apikey_status": "not_started",
-            "implementation_progress": 0.0,
-            "priority": 75,
-            "estimated_hours": 10,
-            "has_official_api": True,
-            "api_documentation_url": None,
-            "api_rate_limits": None,
-            "notes": None,
-            "created_at": "2024-01-01T00:00:00",
-            "updated_at": "2024-01-01T00:00:00"
+    @pytest.mark.asyncio
+    async def test_site_response_shape(self, client: AsyncClient):
+        """Fields the frontend renders must all be present on every row."""
+        response = await client.get(f"{BASE}/")
+        assert response.status_code == 200
+
+        required = {
+            "id",
+            "name",
+            "display_name",
+            "url",
+            "category",
+            "signup_difficulty",
+            "signin_difficulty",
+            "apikey_difficulty",
+            "overall_difficulty",
+            "signup_status",
+            "signin_status",
+            "apikey_status",
+            "implementation_progress",
+            "priority",
+            "anti_bot_techniques",
+            "has_captcha",
         }
+        for site in response.json():
+            assert required <= set(site), f"missing keys on {site.get('name')}"
 
-    @patch('app.routers.sites.get_db')
-    def test_list_sites_success(self, mock_get_db):
-        """Test successful listing of sites with pagination."""
-        mock_get_db.return_value = self.mock_db
-        
-        # Mock query chain
-        mock_query = MagicMock()
-        mock_query.offset.return_value.limit.return_value.all.return_value = [self.mock_site]
-        self.mock_db.query.return_value = mock_query
-        
-        response = client.get("/api/v1/sites/?skip=0&limit=20")
-        
+    @pytest.mark.asyncio
+    async def test_pagination_skip_and_limit(self, client: AsyncClient):
+        full = (await client.get(f"{BASE}/")).json()
+        assert len(full) >= 3
+
+        page = await client.get(f"{BASE}/?skip=0&limit=2")
+        assert page.status_code == 200
+        assert len(page.json()) == 2
+
+        second = await client.get(f"{BASE}/?skip=2&limit=2")
+        assert second.status_code == 200
+        assert second.json() == full[2:4]
+
+    @pytest.mark.asyncio
+    async def test_pagination_does_not_overlap(self, client: AsyncClient):
+        """Consecutive pages must not repeat a row -- the classic off-by-one."""
+        first = (await client.get(f"{BASE}/?skip=0&limit=2")).json()
+        second = (await client.get(f"{BASE}/?skip=2&limit=2")).json()
+
+        first_ids = {site["id"] for site in first}
+        second_ids = {site["id"] for site in second}
+        assert first_ids.isdisjoint(second_ids)
+
+    @pytest.mark.asyncio
+    async def test_skip_beyond_end_returns_empty(self, client: AsyncClient):
+        response = await client.get(f"{BASE}/?skip=10000&limit=10")
         assert response.status_code == 200
-        data = response.json()
-        assert isinstance(data, list)
-        assert len(data) == 1
-        assert data[0]["name"] == "test_site"
-        assert data[0]["display_name"] == "Test Site"
+        assert response.json() == []
 
-    @patch('app.routers.sites.get_db')
-    def test_list_sites_with_filters(self, mock_get_db):
-        """Test listing sites with various filters."""
-        mock_get_db.return_value = self.mock_db
-        
-        # Mock query chain
-        mock_query = MagicMock()
-        mock_query.filter.return_value = mock_query
-        mock_query.order_by.return_value = mock_query
-        mock_query.offset.return_value.limit.return_value.all.return_value = [self.mock_site]
-        self.mock_db.query.return_value = mock_query
-        
-        response = client.get(
-            "/api/v1/sites/?category=test&difficulty=medium&search=test&priority_min=70&sort_by=priority&sort_order=desc"
-        )
-        
-        assert response.status_code == 200
-        data = response.json()
-        assert isinstance(data, list)
-        assert len(data) == 1
-
-    @patch('app.routers.sites.get_db')
-    def test_list_sites_pagination(self, mock_get_db):
-        """Test pagination parameters."""
-        mock_get_db.return_value = self.mock_db
-        
-        # Mock query chain
-        mock_query = MagicMock()
-        mock_query.offset.return_value.limit.return_value.all.return_value = []
-        self.mock_db.query.return_value = mock_query
-        
-        response = client.get("/api/v1/sites/?skip=20&limit=10")
-        
-        assert response.status_code == 200
-        # Verify offset and limit were called with correct values
-        mock_query.offset.assert_called_with(20)
-        mock_query.offset.return_value.limit.assert_called_with(10)
-
-    @patch('app.routers.sites.get_db')
-    def test_get_site_by_id_success(self, mock_get_db):
-        """Test successful retrieval of site by ID."""
-        mock_get_db.return_value = self.mock_db
-        self.mock_db.query.return_value.filter.return_value.first.return_value = self.mock_site
-        
-        response = client.get("/api/v1/sites/1")
-        
-        assert response.status_code == 200
-        data = response.json()
-        assert data["id"] == 1
-        assert data["name"] == "test_site"
-
-    @patch('app.routers.sites.get_db')
-    def test_get_site_by_id_not_found(self, mock_get_db):
-        """Test retrieval of non-existent site by ID."""
-        mock_get_db.return_value = self.mock_db
-        self.mock_db.query.return_value.filter.return_value.first.return_value = None
-        
-        response = client.get("/api/v1/sites/999")
-        
-        assert response.status_code == 404
-        assert "Site not found" in response.json()["detail"]
-
-    @patch('app.routers.sites.get_db')
-    def test_get_site_by_name_success(self, mock_get_db):
-        """Test successful retrieval of site by name."""
-        mock_get_db.return_value = self.mock_db
-        self.mock_db.query.return_value.filter.return_value.first.return_value = self.mock_site
-        
-        response = client.get("/api/v1/sites/name/test_site")
-        
-        assert response.status_code == 200
-        data = response.json()
-        assert data["name"] == "test_site"
-
-    @patch('app.routers.sites.get_db')
-    def test_get_site_by_name_not_found(self, mock_get_db):
-        """Test retrieval of non-existent site by name."""
-        mock_get_db.return_value = self.mock_db
-        self.mock_db.query.return_value.filter.return_value.first.return_value = None
-        
-        response = client.get("/api/v1/sites/name/nonexistent")
-        
-        assert response.status_code == 404
-        assert "Site not found" in response.json()["detail"]
-
-    @patch('app.routers.sites.get_db')
-    def test_create_site_success(self, mock_get_db):
-        """Test successful site creation."""
-        mock_get_db.return_value = self.mock_db
-        
-        # Mock that site doesn't exist
-        self.mock_db.query.return_value.filter.return_value.first.return_value = None
-        
-        # Mock successful creation
-        self.mock_db.add = MagicMock()
-        self.mock_db.commit = MagicMock()
-        self.mock_db.refresh = MagicMock()
-        
-        response = client.post("/api/v1/sites/", json=SAMPLE_SITE_DATA)
-        
-        assert response.status_code == 200
-        self.mock_db.add.assert_called_once()
-        self.mock_db.commit.assert_called_once()
-
-    @patch('app.routers.sites.get_db')
-    def test_create_site_duplicate_name(self, mock_get_db):
-        """Test creation of site with duplicate name."""
-        mock_get_db.return_value = self.mock_db
-        
-        # Mock that site already exists
-        self.mock_db.query.return_value.filter.return_value.first.return_value = self.mock_site
-        
-        response = client.post("/api/v1/sites/", json=SAMPLE_SITE_DATA)
-        
-        assert response.status_code == 400
-        assert "already exists" in response.json()["detail"]
-
-    @patch('app.routers.sites.get_db')
-    def test_update_site_success(self, mock_get_db):
-        """Test successful site update."""
-        mock_get_db.return_value = self.mock_db
-        
-        # Mock site exists
-        self.mock_db.query.return_value.filter.return_value.first.return_value = self.mock_site
-        self.mock_db.commit = MagicMock()
-        self.mock_db.refresh = MagicMock()
-        
-        response = client.put("/api/v1/sites/1", json=SAMPLE_SITE_UPDATE)
-        
-        assert response.status_code == 200
-        self.mock_db.commit.assert_called_once()
-
-    @patch('app.routers.sites.get_db')
-    def test_update_site_not_found(self, mock_get_db):
-        """Test update of non-existent site."""
-        mock_get_db.return_value = self.mock_db
-        self.mock_db.query.return_value.filter.return_value.first.return_value = None
-        
-        response = client.put("/api/v1/sites/999", json=SAMPLE_SITE_UPDATE)
-        
-        assert response.status_code == 404
-        assert "Site not found" in response.json()["detail"]
-
-    @patch('app.routers.sites.get_db')
-    def test_delete_site_success(self, mock_get_db):
-        """Test successful site deletion."""
-        mock_get_db.return_value = self.mock_db
-        
-        # Mock site exists
-        self.mock_db.query.return_value.filter.return_value.first.return_value = self.mock_site
-        self.mock_db.delete = MagicMock()
-        self.mock_db.commit = MagicMock()
-        
-        response = client.delete("/api/v1/sites/1")
-        
-        assert response.status_code == 200
-        assert "deleted successfully" in response.json()["message"]
-        self.mock_db.delete.assert_called_once()
-
-    @patch('app.routers.sites.get_db')
-    def test_delete_site_not_found(self, mock_get_db):
-        """Test deletion of non-existent site."""
-        mock_get_db.return_value = self.mock_db
-        self.mock_db.query.return_value.filter.return_value.first.return_value = None
-        
-        response = client.delete("/api/v1/sites/999")
-        
-        assert response.status_code == 404
-        assert "Site not found" in response.json()["detail"]
-
-    @patch('app.routers.sites.get_db')
-    def test_get_sites_overview_success(self, mock_get_db):
-        """Test successful retrieval of sites overview statistics."""
-        mock_get_db.return_value = self.mock_db
-        
-        # Mock count queries
-        self.mock_db.query.return_value.count.return_value = 10
-        self.mock_db.query.return_value.group_by.return_value.all.return_value = [
-            ("test", 5), ("production", 5)
-        ]
-        self.mock_db.query.return_value.filter.return_value.count.return_value = 3
-        self.mock_db.query.return_value.filter.return_value.all.return_value = [self.mock_site]
-        
-        # Mock scalar for sum
-        self.mock_db.query.return_value.scalar.return_value = 100
-        
-        response = client.get("/api/v1/sites/stats/overview")
-        
-        assert response.status_code == 200
-        data = response.json()
-        assert "total_sites" in data
-        assert "categories" in data
-        assert "implementation_progress" in data
-        assert "difficulty_distribution" in data
-        assert "estimated_total_hours" in data
-
-    @patch('app.routers.sites.get_db')
-    def test_list_categories_success(self, mock_get_db):
-        """Test successful listing of categories."""
-        mock_get_db.return_value = self.mock_db
-        
-        # Mock category query
-        self.mock_db.query.return_value.group_by.return_value.all.return_value = [
-            ("test", 5), ("production", 3)
-        ]
-        
-        response = client.get("/api/v1/sites/categories")
-        
-        assert response.status_code == 200
-        data = response.json()
-        assert isinstance(data, list)
-        assert len(data) == 2
-        assert data[0]["name"] == "test"
-        assert data[0]["count"] == 5
-
-    def test_create_site_invalid_data(self):
-        """Test site creation with invalid data."""
-        invalid_data = {
-            "name": "",  # Empty name
-            "display_name": "Test",
-            "url": "invalid-url",  # Invalid URL format
-            "category": "test"
-        }
-        
-        response = client.post("/api/v1/sites/", json=invalid_data)
-        
-        # Should return validation error
+    @pytest.mark.asyncio
+    async def test_negative_skip_is_rejected(self, client: AsyncClient):
+        """skip is `ge=0`, so a negative offset is a 422, not a silent clamp."""
+        response = await client.get(f"{BASE}/?skip=-1")
         assert response.status_code == 422
 
-    def test_list_sites_invalid_parameters(self):
-        """Test listing sites with invalid parameters."""
-        response = client.get("/api/v1/sites/?skip=-1&limit=0")
-        
-        # Should return validation error for negative skip and zero limit
+    @pytest.mark.asyncio
+    async def test_zero_limit_is_rejected(self, client: AsyncClient):
+        """limit is `ge=1`; a zero limit would otherwise return an empty page."""
+        response = await client.get(f"{BASE}/?limit=0")
         assert response.status_code == 422
 
-    def test_list_sites_large_limit(self):
-        """Test listing sites with limit exceeding maximum."""
-        response = client.get("/api/v1/sites/?limit=2000")
-        
-        # Should return validation error for limit > 1000
+    @pytest.mark.asyncio
+    async def test_limit_above_maximum_is_rejected(self, client: AsyncClient):
+        """`le=1000` is the guard against an unbounded page."""
+        response = await client.get(f"{BASE}/?limit=1001")
         assert response.status_code == 422
 
-    @patch('app.routers.sites.get_db')
-    def test_database_error_handling(self, mock_get_db):
-        """Test handling of database errors."""
-        mock_get_db.return_value = self.mock_db
-        
-        # Mock database error
-        self.mock_db.query.side_effect = Exception("Database connection failed")
-        
-        response = client.get("/api/v1/sites/")
-        
-        assert response.status_code == 500
-        assert "Failed to list sites" in response.json()["detail"]
 
-    def test_health_check_endpoint(self):
-        """Test that the health endpoint is accessible."""
-        response = client.get("/health")
-        
+class TestFilterSites:
+    @pytest.mark.asyncio
+    async def test_filter_by_category(self, client: AsyncClient):
+        response = await client.get(f"{BASE}/?category=developer-tools")
         assert response.status_code == 200
+
         data = response.json()
-        assert "status" in data
+        assert data
+        assert all(site["category"] == "developer-tools" for site in data)
 
-class TestSitesAPIIntegration:
-    """Integration tests for sites API with real database operations."""
-    
-    @pytest.mark.integration
-    def test_sites_endpoint_returns_200(self):
-        """Test that sites endpoint returns 200 OK."""
-        response = client.get("/api/v1/sites/")
-        
-        # Should return 200 even if no sites exist
+    @pytest.mark.asyncio
+    async def test_filter_by_unknown_category_is_empty(self, client: AsyncClient):
+        response = await client.get(f"{BASE}/?category=no-such-category")
         assert response.status_code == 200
-        assert isinstance(response.json(), list)
+        assert response.json() == []
 
-    @pytest.mark.integration
-    def test_sites_stats_endpoint_returns_200(self):
-        """Test that sites stats endpoint returns 200 OK."""
-        response = client.get("/api/v1/sites/stats/overview")
-        
+    @pytest.mark.asyncio
+    async def test_filter_by_priority_min(self, client: AsyncClient):
+        response = await client.get(f"{BASE}/?priority_min=90")
         assert response.status_code == 200
+
         data = response.json()
-        assert "total_sites" in data
-        assert "categories" in data
-        assert "implementation_progress" in data
+        assert data
+        assert all(site["priority"] >= 90 for site in data)
 
-    @pytest.mark.integration
-    def test_sites_categories_endpoint_returns_200(self):
-        """Test that sites categories endpoint returns 200 OK."""
-        response = client.get("/api/v1/sites/categories")
-        
+    @pytest.mark.asyncio
+    async def test_priority_min_out_of_range_is_rejected(self, client: AsyncClient):
+        """priority_min is `ge=1, le=100`."""
+        assert (await client.get(f"{BASE}/?priority_min=0")).status_code == 422
+        assert (await client.get(f"{BASE}/?priority_min=101")).status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_filter_by_difficulty_matches_any_axis(self, client: AsyncClient):
+        """`difficulty` matches signup OR signin OR apikey, not just one."""
+        response = await client.get(f"{BASE}/?difficulty=easy")
         assert response.status_code == 200
-        assert isinstance(response.json(), list)
 
-    @pytest.mark.integration
-    def test_sites_pagination_works(self):
-        """Test that pagination parameters work correctly."""
-        # Test first page
-        response1 = client.get("/api/v1/sites/?skip=0&limit=5")
-        assert response1.status_code == 200
-        
-        # Test second page
-        response2 = client.get("/api/v1/sites/?skip=5&limit=5")
-        assert response2.status_code == 200
-        
-        # Both should return valid data
-        data1 = response1.json()
-        data2 = response2.json()
-        assert isinstance(data1, list)
-        assert isinstance(data2, list)
+        data = response.json()
+        assert data
+        for site in data:
+            assert "easy" in {
+                site["signup_difficulty"],
+                site["signin_difficulty"],
+                site["apikey_difficulty"],
+            }
 
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"]) 
+    @pytest.mark.asyncio
+    async def test_search_matches_name(self, client: AsyncClient):
+        response = await client.get(f"{BASE}/?search=github")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert [site["name"] for site in data] == ["github"]
+
+    @pytest.mark.asyncio
+    async def test_search_is_case_insensitive(self, client: AsyncClient):
+        lower = (await client.get(f"{BASE}/?search=github")).json()
+        upper = (await client.get(f"{BASE}/?search=GITHUB")).json()
+        assert lower == upper
+
+    @pytest.mark.asyncio
+    async def test_search_matches_description(self, client: AsyncClient):
+        """Search covers name, display_name and description."""
+        response = await client.get(f"{BASE}/?search=cloud")
+        assert response.status_code == 200
+        assert {site["name"] for site in response.json()}
+
+    @pytest.mark.asyncio
+    async def test_search_with_no_match_is_empty(self, client: AsyncClient):
+        response = await client.get(f"{BASE}/?search=zzz-no-such-site-zzz")
+        assert response.status_code == 200
+        assert response.json() == []
+
+
+class TestSortSites:
+    @pytest.mark.asyncio
+    async def test_default_sort_is_priority_descending(self, client: AsyncClient):
+        response = await client.get(f"{BASE}/")
+        assert response.status_code == 200
+
+        priorities = [site["priority"] for site in response.json()]
+        assert priorities == sorted(priorities, reverse=True)
+
+    @pytest.mark.asyncio
+    async def test_sort_by_name_ascending(self, client: AsyncClient):
+        response = await client.get(f"{BASE}/?sort_by=name&sort_order=asc")
+        assert response.status_code == 200
+
+        names = [site["name"] for site in response.json()]
+        assert names == sorted(names)
+
+    @pytest.mark.asyncio
+    async def test_sort_by_priority_ascending(self, client: AsyncClient):
+        response = await client.get(f"{BASE}/?sort_by=priority&sort_order=asc")
+        assert response.status_code == 200
+
+        priorities = [site["priority"] for site in response.json()]
+        assert priorities == sorted(priorities)
+
+    @pytest.mark.asyncio
+    async def test_unknown_sort_field_is_rejected(self, client: AsyncClient):
+        """sort_by is pattern-constrained, so an arbitrary column is a 422."""
+        response = await client.get(f"{BASE}/?sort_by=notacolumn")
+        assert response.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_unknown_sort_order_is_rejected(self, client: AsyncClient):
+        response = await client.get(f"{BASE}/?sort_order=sideways")
+        assert response.status_code == 422
+
+
+class TestGetSite:
+    @pytest.mark.asyncio
+    async def test_get_site_by_id(self, client: AsyncClient):
+        listed = (await client.get(f"{BASE}/")).json()
+        expected = listed[0]
+
+        response = await client.get(f"{BASE}/{expected['id']}")
+        assert response.status_code == 200
+        assert response.json()["id"] == expected["id"]
+        assert response.json()["name"] == expected["name"]
+
+    @pytest.mark.asyncio
+    async def test_get_unknown_site_is_404(self, client: AsyncClient):
+        response = await client.get(f"{BASE}/999999")
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Site not found"
+
+    @pytest.mark.asyncio
+    async def test_non_integer_site_id_is_422(self, client: AsyncClient):
+        """`/{site_id}` is typed `int`, so a slug is a validation error.
+
+        This also pins the route ORDER: `/categories` and `/stats/overview` are
+        declared before `/{site_id}`, so they resolve as literals. If someone
+        moves the parameterised route above them, those two would be captured
+        here and start returning 422 instead of their payloads -- which is what
+        the next two tests catch.
+        """
+        response = await client.get(f"{BASE}/not-an-id")
+        assert response.status_code == 422
+
+
+class TestSitesMetadata:
+    @pytest.mark.asyncio
+    async def test_categories(self, client: AsyncClient):
+        response = await client.get(f"{BASE}/categories")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert isinstance(data, list)
+        assert data
+        for category in data:
+            assert set(category) == {"name", "count"}
+            assert isinstance(category["count"], int)
+
+    @pytest.mark.asyncio
+    async def test_stats_overview(self, client: AsyncClient):
+        response = await client.get(f"{BASE}/stats/overview")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert {"total_sites", "categories", "implementation_progress"} <= set(data)
+        assert isinstance(data["total_sites"], int)
+        assert isinstance(data["categories"], list)
+
+
+class TestSitesRouting:
+    @pytest.mark.asyncio
+    async def test_unversioned_path_is_not_served(self, client: AsyncClient):
+        """`/api/sites` must not exist -- the mount is versioned."""
+        response = await client.get("/api/sites")
+        assert response.status_code == 404

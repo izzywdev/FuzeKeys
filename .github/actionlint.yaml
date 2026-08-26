@@ -1,0 +1,15 @@
+# actionlint cannot know the names of self-hosted runners, so `runs-on: <scale-set>`
+# reads to it as an unknown label and the actionlint gate fails the PR. That is what
+# happened here: every job in harden-gate.yml targeting this repo's scale set was
+# reported as `label "fuzekeys" is unknown`.
+#
+# These are gha-runner-scale-set NAMES matched as bare strings, not labels in the
+# legacy `[self-hosted, x]` sense — those runners register with no labels at all,
+# so `self-hosted` matches nothing. See governance/ci-runners.md.
+#
+# SEEDED from FuzeSDLC community-templates/actionlint.yaml. Add this repo's own
+# runner names here if it gains any beyond these.
+self-hosted-runner:
+  labels:
+    - fuze-runner
+    - fuzekeys

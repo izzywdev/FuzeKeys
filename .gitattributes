@@ -1,0 +1,20 @@
+# Normalise to LF in the repository. gate-line-endings blocks CRLF from entering
+# the tree, and Black/isort preserve whatever line endings a file already has --
+# so three routers that were checked in with CRLF stayed CRLF through a
+# reformat and tripped the gate. Declaring it here fixes it at the source.
+* text=auto eol=lf
+
+# Windows shells genuinely require CRLF in these.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Never touch these.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary

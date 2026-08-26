@@ -49,6 +49,9 @@ spec:
             httpGet:
               path: {{ $comp.probes.path }}
               port: http
+              httpHeaders:
+                - name: Host
+                  value: {{ (index .Values.ingress.hosts 1).host | default "localhost" }}
             initialDelaySeconds: 45
             periodSeconds: 30
             timeoutSeconds: 10
@@ -57,6 +60,9 @@ spec:
             httpGet:
               path: {{ $comp.probes.path }}
               port: http
+              httpHeaders:
+                - name: Host
+                  value: {{ (index .Values.ingress.hosts 1).host | default "localhost" }}
             initialDelaySeconds: 15
             periodSeconds: 10
           resources:

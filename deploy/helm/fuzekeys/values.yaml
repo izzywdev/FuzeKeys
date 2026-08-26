@@ -137,6 +137,37 @@ ingress:
       port: 8002
       path: /
 
+# -----------------------------------------------------------------------------
+# federatedMount: the SAME-ORIGIN portal mount for the Module-Federation remote.
+# This is a DIFFERENT surface from `ingress` above (the public keys.prod host
+# for standalone/direct access): it exposes the frontend's already-built MFE
+# assets under the FuzeFront HOST origin at /apps/fuzekeys/ so the portal shell
+# imports remoteEntry.js same-origin — no iframe, no CORS, no mixed-content,
+# sharing the host's React 19 singleton.
+#
+# MUST live in THIS chart, not FuzeFront's: a k8s Ingress can only reference a
+# Service in its own namespace, and the frontend Service runs in the `fuzekeys`
+# namespace (a separate Argo Application). The cluster-wide Traefik controller
+# routes it by host across namespaces, so no FuzeInfra change is needed.
+#
+# PASS-THROUGH, not rewrite: frontend/nginx.conf already serves the MFE build
+# under the /apps/fuzekeys/ prefix (frontend/vite.config.ts `base:
+# '/apps/fuzekeys/'`, baked into the image at that path by frontend/Dockerfile),
+# so Traefik forwards the path verbatim — deliberately NO strip-prefix
+# middleware/annotation, matching FuzeX's federatedMount shape
+# (deploy/helm/fuzex/templates/federated-mount-ingress.yaml).
+#
+# Disabled + hostless by default here: `host` is `required` in the template
+# when enabled, so a hostless Ingress can never match every request and hijack
+# the controller. Enabled with host: app.fuzefront.com in values-contabo.yaml
+# (FuzeFront's EXISTING prod host — no new DNS needed).
+federatedMount:
+  enabled: false
+  className: traefik
+  host: ""
+  annotations: {}
+  path: /apps/fuzekeys
+
 serviceAccount:
   create: true
   name: ""
@@ -296,3 +327,66 @@ tokenizerRedis:
   resources:
     requests: { cpu: 50m, memory: 64Mi }
     limits: { cpu: 250m, memory: 256Mi }
+
+# -----------------------------------------------------------------------------
+# MCP SSE gateway — FuzeKeys' THIRD pod.
+#
+# Runs the shared @fuzefront/mcp-gateway image (one image, one pod per product),
+# configured with THIS product's OpenAPI document and API base URL. It holds no
+# credential of its own and forwards the caller's Authorization header upstream,
+# so every per-user check the backend makes still applies.
+#
+# Disabled by default: the gateway image must exist in the registry and the
+# backend must be reachable at mcp.upstreamBaseUrl before this is worth
+# scheduling. Enable it in the environment overlay (values-contabo.yaml).
+# -----------------------------------------------------------------------------
+mcp:
+  enabled: false
+  replicas: 1
+  port: 8081
+  # MCP server name reported to clients. Uses the DE-PREFIXED product slug, to
+  # match registration/manifest.json.
+  product: keys
+  image:
+    repository: ghcr.io/izzywdev/fuze-mcp-gateway
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+  # Base URL of the FuzeKeys REST API. Empty = derive it from the in-cluster
+  # backend Service (<fullname>-backend:<backend.port>), which is correct for
+  # every normal deployment. The paths in contracts/openapi.yaml are absolute
+  # (/api/v1/...), so this URL carries NO path prefix.
+  upstreamBaseUrl: ""
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 500m, memory: 256Mi }
+
+# -----------------------------------------------------------------------------
+# A2A — NOT a pod in this chart, by design.
+#
+# There is no a2a Deployment here and there must not be one. The published image
+# (ghcr.io/izzywdev/fuzeagent-a2a) is built as ONE multi-tenant server, and its
+# card generator proves it: agent-templates/a2a/card_generator.py line 29 defines
+#
+#     IN_CLUSTER_URL = "http://a2a-shared.fuzeagent.svc.cluster.local:8080/rpc"
+#
+# and `_interface()` returns that CONSTANT as the callable endpoint of every
+# non-external Agent Card. It is not values-driven and there is no env var that
+# overrides it. A per-product pod would therefore boot, pass its health check, and
+# advertise the SHARED server's address — a pod that looks healthy and is
+# functionally dead, which is worse than no pod at all.
+#
+# Onboarding this product to A2A is a `tenants[]` entry in FuzeAgent's
+# deploy/helm/a2a-shared values. The exact entry, and the preconditions this repo
+# does not yet meet, are written down in docs/a2a-tenant-registration.md.
+# -----------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# FuzeFront self-registration (docs/mfe-self-registration.md).
+#
+# Cluster-internal service DNS on purpose, per @fuzefront/onboarding-kit: the
+# init container has no reason to leave the cluster, and the public ingress host
+# may not resolve before ingress is ready. Override per-environment if the
+# applications service moves.
+# ---------------------------------------------------------------------------
+fuzefront:
+  apiUrl: "http://fuzefront-applications.fuzefront.svc.cluster.local:3003"

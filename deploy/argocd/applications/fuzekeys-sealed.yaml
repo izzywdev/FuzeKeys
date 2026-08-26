@@ -3,6 +3,16 @@ kind: Application
 metadata:
   name: fuzekeys-sealed
   namespace: argocd
+  annotations:
+    # Sync BEFORE the platform app (wave 0). The platform's PreSync migrate Job
+    # hard-depends on the Secrets this app provides — `ghcr-pull-secret` (to pull
+    # the private GHCR image) and `fuzekeys-secrets` (envFrom). Without ordering,
+    # app-of-apps reconciles both concurrently; on a cold cluster the platform's
+    # PreSync hook races ahead of these SealedSecrets materializing, the Job wedges
+    # in ImagePullBackOff/CreateContainerConfigError, PreSync never completes, and
+    # the whole platform app stays Missing/OutOfSync. This wave makes Argo wait for
+    # the sealed app to go Healthy first.
+    argocd.argoproj.io/sync-wave: "-1"
 spec:
   # GitOps-applies the SealedSecrets in deploy/argocd/sealed/ so prod secrets are
   # reconciled by Argo (not a one-off kubectl apply) and survive a from-scratch
@@ -24,3 +34,22 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+      # ServerSideApply avoids the client-side last-applied-configuration
+      # annotation on the large encryptedData blobs — that annotation both blows
+      # past the 262 KiB metadata limit and leaves kubeseal's `creationTimestamp:
+      # null` diffing forever, which pins the app OutOfSync even once the
+      # SealedSecrets exist. SSA also matches fuzekeys-platform.
+      - ServerSideApply=true
+    # Parity with fuzekeys-platform: retry a FAILED apply on a backoff. On a
+    # from-scratch cluster Argo can attempt the first sync before FuzeInfra's
+    # sealed-secrets controller has registered the bitnami.com/SealedSecret CRD;
+    # that apply fails ("no matches for kind SealedSecret"), the error lands in
+    # .status.operationState (NOT .status.conditions — hence the empty
+    # conditions in the alert), and without retry the app latches OutOfSync /
+    # Missing until a manual sync. The backoff lets it self-recover.
+    retry:
+      limit: 5
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 5m

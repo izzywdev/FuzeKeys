@@ -195,8 +195,12 @@ describe('SitesDatabase Component', () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByText(/error/i)).toBeInTheDocument();
+        // The error panel renders both an "Error loading sites" heading and the
+        // message itself, so /error/i matches more than one node -- getByText
+        // throws on multiple matches.
+        expect(screen.getAllByText(/error/i).length).toBeGreaterThan(0);
       }, { timeout: 5000 });
+      expect(screen.getByText('Network error')).toBeInTheDocument();
     });
   });
 
@@ -290,11 +294,15 @@ describe('SitesDatabase Component', () => {
 
   describe('Search and Filtering', () => {
     it('renders search input', async () => {
-      mockFetch
-        .mockResolvedValue({
+      // Dispatch on URL: the component fires both the sites query and the
+      // stats query, and they have different response shapes.
+      mockFetch.mockImplementation((url: string) =>
+        Promise.resolve({
           ok: true,
-          json: async () => mockSitesData
-        });
+          json: async () =>
+            url.includes('/stats/overview') ? mockStatsData : mockSitesData,
+        })
+      );
 
       render(
         <TestWrapper>
@@ -308,11 +316,15 @@ describe('SitesDatabase Component', () => {
     });
 
     it('triggers search when input changes', async () => {
-      mockFetch
-        .mockResolvedValue({
+      // Dispatch on URL: the component fires both the sites query and the
+      // stats query, and they have different response shapes.
+      mockFetch.mockImplementation((url: string) =>
+        Promise.resolve({
           ok: true,
-          json: async () => mockSitesData
-        });
+          json: async () =>
+            url.includes('/stats/overview') ? mockStatsData : mockSitesData,
+        })
+      );
 
       render(
         <TestWrapper>

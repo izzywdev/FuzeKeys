@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { PlusIcon, FunnelIcon } from '@heroicons/react/24/outline';
 import SiteSelector from '../components/SiteSelector';
+import apiClient from '../services/apiClient';
 
 interface StageStatus {
   stage_type: string;
@@ -51,11 +52,11 @@ const Accounts: React.FC = () => {
   const fetchAccounts = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/accounts');
-      if (!response.ok) {
-        throw new Error('Failed to fetch accounts');
-      }
-      const data = await response.json();
+      // Was fetch('/api/accounts') -- an un-versioned path the backend does not
+      // serve (404), and relative, so under Module Federation it hit the shell's
+      // origin rather than the API host. The route is /api/v1/accounts and is
+      // auth-gated; apiClient supplies both the prefix and the bearer token.
+      const { data } = await apiClient.get('/accounts/');
       setAccounts(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');

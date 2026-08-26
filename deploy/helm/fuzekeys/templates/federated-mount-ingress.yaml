@@ -1,0 +1,52 @@
+{{- if and .Values.frontend.enabled .Values.federatedMount.enabled }}
+{{/*
+Same-origin portal mount for the FuzeKeys Module-Federation remote.
+
+Routes {host}/apps/fuzekeys/* (e.g. /apps/fuzekeys/remoteEntry.js) to the
+frontend Service so the FuzeFront portal shell imports the remote SAME-ORIGIN
+— no iframe, no CORS, no mixed-content — and it mounts sharing the host's
+React 19 singleton.
+
+Lives in FuzeKeys's chart, not FuzeFront's: an Ingress can only target a
+Service in its own namespace, and this Service runs in `fuzekeys` (a separate
+Argo Application). The cluster-wide Traefik controller routes it by host
+across namespaces; no FuzeInfra change is needed.
+
+PASS-THROUGH, not rewrite: frontend/nginx.conf already serves the built MFE
+under the /apps/fuzekeys/ prefix (frontend/vite.config.ts `base:
+'/apps/fuzekeys/'`), so Traefik forwards the path verbatim — deliberately NO
+strip-prefix middleware, mirroring FuzeX's federatedMount
+(deploy/helm/fuzex/templates/federated-mount-ingress.yaml).
+
+Disabled + hostless by default. `host` is `required` when enabled so a
+hostless Ingress can never match every request that reaches the controller.
+No TLS block, deliberately: Cloudflare terminates edge TLS and the tunnel
+delivers plain HTTP to Traefik (ClusterIP-only, no cert-manager).
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "fuzekeys.fullname" . }}-federated-mount
+  labels:
+    {{- include "fuzekeys.labels" . | nindent 4 }}
+    app.kubernetes.io/component: federated-mount
+  {{- with .Values.federatedMount.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.federatedMount.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  rules:
+    - host: {{ required "federatedMount.host is required when federatedMount.enabled is true" .Values.federatedMount.host | quote }}
+      http:
+        paths:
+          - path: {{ .Values.federatedMount.path | quote }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "fuzekeys.fullname" . }}-frontend
+                port:
+                  number: {{ .Values.frontend.servicePort }}
+{{- end }}

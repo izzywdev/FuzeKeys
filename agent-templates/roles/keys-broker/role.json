@@ -1,0 +1,68 @@
+{
+  "$schema": "../../schema/role-manifest.schema.json",
+  "role": "keys-broker",
+  "extends": "_base",
+  "tools": [],
+  "mcp_servers": [],
+  "name": "FuzeKeys keys-broker",
+  "description": "Serves FuzeKeys' policy-mediated secret-broker surface — issuing opaque, TTL-bound, single-use grant handles; redeeming them for short-lived derived credentials; RFC 8693 token exchange for a scoped downstream token; and instant, non-disclosing revocation. A caller asks it to accomplish an access outcome and receives a credential or a decision, never stored secret material. The broker CORE is deterministic security infrastructure, not an LLM: this role is a thin mediating surface over backend/app/broker, and all authorization and lifecycle stay in that core. High-sensitivity releases are human-gated (reach_human) before any credential is released.",
+  "model": "claude-opus-4-8",
+  "skills": [
+    "keys.grant",
+    "keys.redeem",
+    "keys.mint_token",
+    "keys.revoke"
+  ],
+  "services": {
+    "github": "none",
+    "k8s": "none",
+    "cloud": "none"
+  },
+  "a2a": {
+    "extendedOnly": true,
+    "examples": [
+      "Issue a single-use, TTL-bound grant for this secret reference, bound to the redeemer's transport identity, and return the grant handle.",
+      "Redeem this grant handle and release the short-lived derived credential.",
+      "Exchange my identity token for a scoped, short-TTL token for this downstream audience.",
+      "Revoke grant {grant_id} and confirm it can no longer be redeemed."
+    ],
+    "tags": [
+      "secrets",
+      "credential-broker",
+      "token-exchange",
+      "grants",
+      "revocation",
+      "identity"
+    ]
+  },
+  "metadata": {
+    "managed_by": "agent-templates",
+    "starter": true,
+    "owner": "izzywdev/FuzeKeys",
+    "version": "0.1.0",
+    "note": "RESHAPED TO THE ROLE CONTRACT, CONTENT PRESERVED. The previous file was not careless — it carried real policy — but it did not validate: the schema is `additionalProperties: false` and the file declared `displayName`, `version`, `summary`, `owner`, `_note` and `policy` at the top level, had no `role` or `description` key at all, set `model` to \"deterministic\" (the schema wants a Claude model id), and put `securitySchemes`/`recipientKey` inside `a2a`, which is also closed and permits only publish/extendedOnly/tags/examples/inputModes/outputModes/scopes. Card projection failed with `role 'keys-broker' has no description`. Everything that was in those fields is preserved below or folded into `description`; nothing was dropped. The four skills became `a2a.examples` (the schema's `skills` is ids/names only) and their descriptions are the examples' substance. `extendedOnly: true` is NEW and deliberate: a credential broker must not appear on the anonymous /.well-known/agent-card.json, only on the authenticated extended card.",
+    "release_tiers": {
+      "low": "auto",
+      "medium": "auto (audited)",
+      "high": "human approval required (reach_human / digital-persona) before release"
+    },
+    "identity": "authorization is ALWAYS on the authenticated transport identity (OIDC repo claim / mTLS-SPIFFE), never a caller-asserted identity. A permission flag is rollout convenience only and never replaces the real check.",
+    "audit": "every grant/redeem/mint/revoke is audited (requester, redeemer, scope, time) — never the secret value.",
+    "securitySchemes": {
+      "oidc": {
+        "type": "openIdConnect",
+        "description": "GitHub Actions / FuzeOne OIDC; the verified `repo` claim is the transport identity."
+      },
+      "mtls": {
+        "type": "mutualTLS",
+        "description": "SPIFFE-style workload cert; the peer subject is the transport identity."
+      }
+    },
+    "recipientKey": {
+      "description": "Published JWK for envelope encryption (KMS wrap-unwrap) so a secret can transit an untrusted relay encrypted to this broker's recipients only.",
+      "ref": "fuzekeys:jwks"
+    },
+    "core": "deterministic — backend/app/broker. This role mediates the human-gated path only; it does not implement authz or lifecycle.",
+    "gate": "Card projection must be validated by a2a-maintainer against the frozen contracts/a2a/v1 before enabled:true. a2a.enabled stays false here."
+  }
+}

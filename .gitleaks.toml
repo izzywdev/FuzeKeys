@@ -1,3 +1,17 @@
+# `[extend] useDefault = true` is load-bearing. Without it, a .gitleaks.toml that
+# declares no [[rules]] of its own loads ZERO rules, and gitleaks reports
+# "no leaks found" on a tree containing live credentials — the gate is green
+# because it is looking for nothing, not because the tree is clean.
+#
+# This file was in exactly that state. Verified with gitleaks 8.24.3 against a
+# repo holding a planted AWS access key: with this config and no [extend],
+# "no leaks found"; with the same config plus these two lines, the key is found.
+#
+# Never delete these two lines to silence a finding. Narrow the allowlist below
+# instead, and prove the narrowed config still fails on a real secret.
+[extend]
+useDefault = true
+
 [allowlist]
 description = "Project-wide gitleaks allowlist"
 
@@ -7,3 +21,16 @@ description = "Project-wide gitleaks allowlist"
 paths = [
   '''deploy/argocd/sealed/.*\.yaml''',
 ]
+
+# DELIBERATELY NOT ALLOWLISTED — 8 matches remain once the default rules are back on:
+#   backend/tests/test_broker_service.py:70,71,297
+#   backend/tests/test_identities.py:146,165
+#   backend/tests/test_accounts.py:182
+#   backend/tests/test_broker_adversarial.py:56
+#   CREDENTIALS_API_GUIDE.md:27              (a `curl -H "X-API-Key: ..."` doc example)
+#
+# They read as test fixtures and a documentation placeholder, and blanket-
+# allowlisting `backend/tests/` would suppress a real key pasted there later.
+# Adding paths here to make the push-to-master run green would recreate the exact
+# bug this file is fixing. Each needs a human to confirm, then an allowlist entry
+# scoped to the file with a stated reason — or a rotation.

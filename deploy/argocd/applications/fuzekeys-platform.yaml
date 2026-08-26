@@ -3,6 +3,12 @@ kind: Application
 metadata:
   name: fuzekeys-platform
   namespace: argocd
+  annotations:
+    # Sync AFTER fuzekeys-sealed (wave -1) so the SealedSecret-provided
+    # `fuzekeys-secrets` + `ghcr-pull-secret` exist before this app's PreSync
+    # migrate Job runs. Explicit default wave for clarity; the load-bearing
+    # ordering is the -1 on fuzekeys-sealed.
+    argocd.argoproj.io/sync-wave: "0"
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:

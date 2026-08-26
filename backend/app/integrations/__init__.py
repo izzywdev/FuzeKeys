@@ -8,4 +8,4 @@ Each integration provides standardized functionality for:
 - apikey: API key creation and management
 """
 
-__version__ = "1.0.0" 
+__version__ = "1.0.0"
