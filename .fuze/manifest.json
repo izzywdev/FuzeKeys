@@ -38,13 +38,13 @@
     ]
   },
   "a2a": {
-    "enabled": false,
+    "enabled": true,
     "servingRoles": [
       "keys-broker"
     ],
     "entryRole": "keys-broker",
     "external": false,
-    "_note": "Secret-broker serving role scaffold. enabled:false until a2a-maintainer validates card projection against the frozen contracts/a2a/v1 and the tenant is registered in the shared A2A server. The broker CORE (backend/app/broker) is deterministic and usable now via MCP tools + REST; this A2A block is the policy-mediated/human-gated surface."
+    "_note": "Secret-broker serving role. FLIPPED enabled:false->true 2026-08-26 on owner instruction. The repo-local card-projection inputs the old note gated on are now COMPLETE: agent-templates/roles/keys-broker/role.json carries a valid `description` (reshaped to the role contract 2026-08-21 — the 'no description' blocker in docs/a2a-tenant-registration.md is stale and is corrected in the same change), providesTo is populated (18 entries; an empty list DENIES every caller per authz.md), and the keys-broker serving role plus the deterministic broker core (backend/app/broker) both exist. WHAT enabled:true DOES: a2a-maintain.yml's preflight now RESOLVES a credential instead of skipping (a declared surface must have a usable LLM credential — proven present, since mcp.enabled:true's fail-closed preflight passed on the same runner in #40), and the a2a-maintainer agent runs on every PR to validate card projection against the frozen contracts/a2a/v1 (in FuzeAgent) and reconcile drift. WHAT IT DOES NOT DO: it does not by itself route traffic. A2A is ONE shared multi-tenant server (ghcr.io/izzywdev/fuzeagent-a2a); there is NO a2a pod in this chart by design (deploy/helm/fuzekeys/values.yaml, docs/a2a-tenant-registration.md). Serving needs BOTH gates true: this flag AND the FuzeKeys tenant entry under a2a.tenants[] in FuzeAgent deploy/helm/a2a-shared/values-prod.yaml — a CROSS-REPO change in izzywdev/FuzeAgent, not made from here. Until that tenant entry lands, this flag is set but the shared server has no FuzeKeys tenant to route to. SECURITY UNCHANGED: this is a credential vault; the broker never returns raw secret material (only a short-lived derived credential or a decision), high-sensitivity releases are human-gated, and authz is always on the authenticated transport identity."
   },
   "providesTo": [
     "FuzeAgent",

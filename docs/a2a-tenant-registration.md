@@ -56,20 +56,25 @@ deployed at all) and this tenant's own `enabled`.
 These are the callee's own contract and every one of them **fails closed**. None
 was worked around here.
 
-1. **`agent-templates/roles/keys-broker/role.json` has no `description`.** It has
-   `summary`. The projection requires `description` on every serving role and
-   **fails** rather than shipping a placeholder (card-projection.md §3). This is
-   the one blocker that is genuinely this repo's to fix, and it belongs to
-   `a2a-maintainer` — authoring agent-card content is not a chart change, so it
-   is reported here rather than guessed at.
+1. ~~**`agent-templates/roles/keys-broker/role.json` has no `description`.**~~
+   **RESOLVED (2026-08-21).** `role.json` was reshaped to the role contract and now
+   carries a valid top-level `description` (the four skills folded into
+   `a2a.examples`, `extendedOnly: true` added so a credential broker never appears
+   on the anonymous agent card). Card projection is no longer blocked on this repo's
+   side. `a2a-maintainer` still validates the projection against the frozen
+   `contracts/a2a/v1` on every PR.
 
 2. **`.fuze/manifest.json` already has a populated `providesTo`** (18 entries) —
    good. An absent or empty list means DENY EVERY CALLER (authz.md §3), so this
    product is ahead of its siblings here.
 
-3. **`.fuze/manifest.json` has `a2a.enabled: false`** with a note saying it stays
-   false until `a2a-maintainer` validates the card projection against the frozen
-   contract. That note is still accurate; nothing in this PR changes it.
+3. ~~**`.fuze/manifest.json` has `a2a.enabled: false`**~~ **FLIPPED to `true`
+   (2026-08-26, owner instruction).** With precondition 1 resolved, the repo-local
+   card-projection inputs are complete, so the flag was enabled. This is only the
+   FIRST of the two serving gates: the SECOND — the FuzeKeys tenant entry in
+   FuzeAgent's `a2a-shared` `values-prod.yaml` (the block shown above) — is a
+   cross-repo change in `izzywdev/FuzeAgent` and is still OUTSTANDING. Until it
+   lands, the shared A2A server has no FuzeKeys tenant to route to.
 
 ## Where the values come from
 
