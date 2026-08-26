@@ -453,13 +453,6 @@
         "repoName": "izzywdev/FuzeKeys"
       }
     },
-    ".github/workflows/mcp-maintain.yml": {
-      "capability": "workflows",
-      "mode": "stamped",
-      "sourcePath": "workflow-templates/mcp-maintain.yml",
-      "sourceSha256": "5fb529630898bc1bdc0163d251ec4f2c650b544342bac2c9fe43920775d1759d",
-      "renderedSha256": "5fb529630898bc1bdc0163d251ec4f2c650b544342bac2c9fe43920775d1759d"
-    },
     ".github/workflows/pages-frames.yml": {
       "capability": "workflows",
       "mode": "stamped",
