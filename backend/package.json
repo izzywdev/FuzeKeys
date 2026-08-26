@@ -13,5 +13,9 @@
   "dependencies": {
     "@izzywdev/fuzefront-identity": "^1.0.0",
     "puppeteer": "^24.10.0"
+  },
+  "engines": {
+    "node": ">=24.0.0",
+    "npm": ">=10.0.0"
   }
 }

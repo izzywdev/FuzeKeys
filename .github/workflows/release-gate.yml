@@ -1,0 +1,76 @@
+name: Release Gate
+
+# FuzeKeys deploys on merge: ArgoCD auto-syncs deploy/helm/fuzekeys from master
+# (app-of-apps runs automated prune+selfHeal), and the rendered image tag comes from
+# Chart.appVersion — every service leaves image.tag empty. build-and-push.yml then tags
+# the GHCR images with that same appVersion.
+#
+# So a merge only actually ROLLS OUT if appVersion moved. Ship backend/frontend/tokenizer
+# code without bumping it and the images are rebuilt under a tag the cluster already runs:
+# Argo sees no chart change, nothing restarts, and the deploy silently does not happen.
+# That is the failure this gate exists to make impossible.
+#
+# Why the bump is authored by the PR rather than committed by a bot: a push made with
+# GITHUB_TOKEN does not trigger workflow runs, so a bot-pushed bump would advance the PR
+# head to a commit carrying zero checks, and the required contexts would never report on
+# it — a permanently unmergeable PR. The one-line edit stays with the author; CI only
+# insists it happened.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  release-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with: { fetch-depth: 0 }
+
+      - name: Require an appVersion bump when shipped code changes
+        shell: bash
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          CHART=deploy/helm/fuzekeys/Chart.yaml
+
+          git fetch origin "$BASE" --depth=1 >/dev/null 2>&1 || git fetch origin "$BASE" >/dev/null 2>&1
+          base="origin/$BASE"
+
+          appversion_of() {  # reads a Chart.yaml on stdin
+            sed -nE 's/^appVersion:[[:space:]]*"?([^"#]+)"?[[:space:]]*$/\1/p' | head -1 | tr -d '[:space:]'
+          }
+
+          # Only code baked into an image can require a rollout. A docs- or deploy-only PR
+          # legitimately ships without a new tag.
+          if ! git diff --name-only "$base"...HEAD -- backend frontend pii-tokenizer | grep -q .; then
+            echo "::notice title=Release Gate::no backend/frontend/pii-tokenizer changes — no rollout needed, appVersion bump not required"
+            exit 0
+          fi
+
+          new=$(appversion_of < "$CHART")
+          old=$(git show "$base:$CHART" | appversion_of)
+
+          echo "appVersion on $BASE : ${old:-<unset>}"
+          echo "appVersion on this PR: ${new:-<unset>}"
+
+          if [ -z "$new" ]; then
+            echo "::error title=Release Gate::could not read appVersion from $CHART"
+            exit 1
+          fi
+
+          if ! echo "$new" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+.0-9A-Za-z]*)?$'; then
+            echo "::error title=Release Gate::appVersion '$new' is not valid SemVer"
+            exit 1
+          fi
+
+          if [ "$new" = "$old" ]; then
+            echo "::error title=Release Gate::this PR changes shipped code but leaves appVersion at $old. Merging would rebuild the images under a tag the cluster already runs, so Argo would see no chart change and NOTHING would roll out. Bump appVersion (and chart version) in $CHART."
+            exit 1
+          fi
+
+          echo "::notice title=Release Gate::appVersion $old -> $new; merging will roll out ghcr.io/izzywdev/fuzekeys/*:$new"
