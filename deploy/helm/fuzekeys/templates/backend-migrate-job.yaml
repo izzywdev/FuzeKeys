@@ -6,7 +6,20 @@
   Healthy before advancing, so migrations always complete before new pods roll out.
   Idempotent: `alembic upgrade head` is a no-op when the DB is already at head.
 
-  Replace=true is LOAD-BEARING, not a style choice. A Job's `spec.template` is
+  Replace=true,Force=true is LOAD-BEARING, and BOTH halves are required.
+  Replace=true alone was tried first (chart 0.1.12) and made things worse, which is
+  worth recording so nobody retries it: Argo's Replace=true means `kubectl replace`,
+  an IN-PLACE swap -- not delete-and-recreate. Replacing a Job still hits
+  spec.template immutability, AND additionally fails on the selector, because
+  Kubernetes auto-generates `spec.selector` with a controller-uid the chart does not
+  declare:
+
+      Job.batch "fuzekeys-migrate" is invalid: spec.selector: Required value,
+      `selector` does not match template `labels`,
+      spec.selector: Invalid value: null: field is immutable
+
+  Force=true is what makes it `kubectl replace --force`, i.e. DELETE then recreate --
+  which is the only operation that legally changes an immutable field. A Job's `spec.template` is
   immutable in Kubernetes, and `fuzekeys.labels` stamps `helm.sh/chart` and
   `app.kubernetes.io/version` onto the POD TEMPLATE -- so every chart version bump
   changes an immutable field. A server-side apply then fails with
@@ -32,7 +45,7 @@ metadata:
     app.kubernetes.io/component: migrate
   annotations:
     argocd.argoproj.io/sync-wave: "-1"
-    argocd.argoproj.io/sync-options: Replace=true
+    argocd.argoproj.io/sync-options: Replace=true,Force=true
 spec:
   backoffLimit: {{ .Values.migrate.backoffLimit }}
   template:
