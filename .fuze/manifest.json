@@ -11,6 +11,14 @@
   "class": "oss-public",
   "tier": "product",
   "expert": "fuzekeys-expert",
+  "expertMonitors": [
+    "backend/",
+    "frontend/",
+    "pii-tokenizer/",
+    "backend/alembic/versions/",
+    "deploy/helm/fuzekeys/",
+    "contracts/openapi.yaml"
+  ],
   "baselineRef": "v1",
   "agents": [
     "fuzekeys-expert",
