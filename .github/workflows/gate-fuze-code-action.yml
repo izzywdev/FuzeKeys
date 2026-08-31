@@ -1,3 +1,4 @@
+# fuze:managed template=gate-fuze-code-action.yml baseline=main digest=sha256:5c7290b54dd47e166536b084fb4ef92af37526e02b08a7a78472485da81e17c6
 name: gate-fuze-code-action
 
 # Runs the self-tests that ship beside .github/actions/fuze-code-action.

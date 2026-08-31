@@ -1,3 +1,4 @@
+# fuze:managed template=design-review-notify.yml baseline=main digest=sha256:31efd5b3f9c6239dadf2a719eb7bebf413a02bb49580fae6cec60e1345ff1e71
 name: Design Review — Notify via Telegram
 
 # Fires when any issue is labeled `design-review`.

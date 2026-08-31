@@ -1,3 +1,4 @@
+# fuze:managed template=auto-merge.yml baseline=main digest=sha256:45fc616f7bf7e89d6c2e0cb38ae5383f80b974ed5130892dbbbe5f7bc7f97707
 name: Auto Merge PR
 
 on:
@@ -22,10 +23,55 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      # `hardening.deployOnPush` has been in repo-manifest.schema.json all along, described
+      # as "If true, never bot-merge; merge in a deploy window." Nothing read it. The rule
+      # lived in prose and in reviewers' heads, and the one workflow whose entire job is to
+      # bot-merge was the one place it was never checked.
+      #
+      # This is not hypothetical. FuzeFront is deployOnPush: true — merging to master pushes
+      # directly to master from release.yml/sdk-publish.yml/packages-publish.yml, deploying
+      # to production and publishing packages. Its rollout PR (#724) armed auto-merge on its
+      # own, with no `auto-merge` label anywhere on it, via the owner-login clause below:
+      # every PR the account owner opens satisfies it. An unattended production deploy was
+      # one green check matrix away, and the only thing that stopped it was someone noticing.
+      #
+      # Read the flag here rather than asking each repo to remember it. A guard that has to
+      # be applied by hand in 20 repos is the same class of defect it is meant to fix.
+      - name: Read the repo's bot-merge policy
+        id: policy
+        run: |
+          value=false
+          if [ -f .fuze/manifest.json ]; then
+            value=$(python3 - <<'PY'
+          import json
+          try:
+              with open(".fuze/manifest.json", encoding="utf-8") as f:
+                  m = json.load(f)
+              h = m.get("hardening") or {}
+              print("true" if h.get("deployOnPush") is True else "false")
+          except Exception:
+              # A manifest this workflow cannot parse is not a licence to merge. Anything
+              # unreadable fails CLOSED — the same posture the authz client takes on
+              # DECISION_UNAVAILABLE, and for the same reason.
+              print("true")
+          PY
+          )
+          fi
+          echo "deployOnPush=$value" >> "$GITHUB_OUTPUT"
+          echo "deployOnPush=$value"
+
+      - name: Deploy-on-push repo — auto-merge withheld
+        if: steps.policy.outputs.deployOnPush == 'true'
+        run: |
+          echo "::notice title=Auto-merge withheld::.fuze/manifest.json sets hardening.deployOnPush=true. Merging this PR deploys to production, so it must be merged by a human in a deploy window. This job is green because withholding the merge IS the correct outcome here, not a failure."
 
       - name: Enable auto-merge
-        if: github.event.pull_request.user.login == github.repository_owner || contains(github.event.pull_request.labels.*.name, 'auto-merge')
+        if: |
+          steps.policy.outputs.deployOnPush != 'true' &&
+          (github.event.pull_request.user.login == github.repository_owner ||
+           contains(github.event.pull_request.labels.*.name, 'auto-merge'))
         run: |
           gh pr merge ${{ github.event.pull_request.number }} --auto --squash --delete-branch
         env:

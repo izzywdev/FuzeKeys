@@ -1,3 +1,4 @@
+# fuze:managed template=label-sync.yml baseline=main digest=sha256:e8eba800befdef5c76239559e27ff1f8f30682426f4cd5ceffe05d3840f9cb2a
 name: Label Sync
 
 # Upsert the FuzeSDLC governance label set from the in-repo manifest (.github/labels.json).
@@ -44,7 +45,7 @@ jobs:
   label-sync:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Upsert labels from .github/labels.json
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,3 +1,4 @@
+# fuze:managed template=publish-expert.yml baseline=main digest=sha256:e6d9dc241f710c9b5a4cb940c60f4873ea5e9de530c38cf87a90df0e206646b2
 name: Publish Expert Agent
 
 # Owner-published experts: this repo AUTHORS its own `<repo>-expert` agent (co-located with
@@ -22,6 +23,8 @@ on:
     paths:
       - ".claude/agents/*-expert.md"
       - ".fuze/manifest.json"
+  pull_request:
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 permissions:
@@ -30,8 +33,9 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Guard — token + manifest present
         id: guard
@@ -54,9 +58,11 @@ jobs:
           fi
           # slug = the expert name minus the trailing "-expert" (fuzeplan-expert -> fuzeplan)
           SLUG="${EXPERT%-expert}"
-          echo "ok=true"        >> "$GITHUB_OUTPUT"
-          echo "expert=$EXPERT" >> "$GITHUB_OUTPUT"
-          echo "slug=$SLUG"     >> "$GITHUB_OUTPUT"
+          {
+            echo "ok=true"
+            echo "expert=$EXPERT"
+            echo "slug=$SLUG"
+          } >> "$GITHUB_OUTPUT"
           echo "Publishing '${EXPERT}' as agent-sync/${SLUG}"
 
       - name: Open/update the agent-sync PR on FuzeSDLC
@@ -98,3 +104,68 @@ jobs:
               --body-file /tmp/pr-body.md
           fi
           echo "::notice::agent-sync PR open for ${EXPERT}."
+
+  hint-expert-drift:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Flag expert-drift-risk when PR touches monitored paths
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ ! -f .fuze/manifest.json ]; then
+            echo "::notice::no .fuze/manifest.json — skipping drift hint."; exit 0
+          fi
+          EXPERT=$(python3 -c "import json; print(json.load(open('.fuze/manifest.json')).get('expert',''))")
+          if [ -z "$EXPERT" ]; then
+            echo "::notice::no expert declared — skipping drift hint."; exit 0
+          fi
+          python3 -c "
+          import json, sys
+          d = json.load(open('.fuze/manifest.json'))
+          monitors = d.get('expertMonitors', [])
+          if not monitors:
+              sys.exit(0)
+          open('/tmp/monitors.txt', 'w').write('\n'.join(monitors))
+          " || true
+          if [ ! -f /tmp/monitors.txt ]; then
+            echo "::notice::no expertMonitors declared — skipping drift hint."; exit 0
+          fi
+          # Get changed files in this PR (up to 300 files via pagination)
+          gh api "repos/${REPO}/pulls/${PR_NUMBER}/files" --paginate \
+            --jq '.[].filename' > /tmp/changed.txt 2>/dev/null || true
+          if [ ! -s /tmp/changed.txt ]; then
+            echo "::notice::could not fetch PR files — skipping."; exit 0
+          fi
+          MATCHED=$(python3 -c "
+          monitors = [m.strip().rstrip('/') for m in open('/tmp/monitors.txt').read().strip().split('\n') if m.strip()]
+          changed  = [f.strip() for f in open('/tmp/changed.txt').read().strip().split('\n') if f.strip()]
+          hits = []
+          for f in changed:
+              for m in monitors:
+                  if f == m or f.startswith(m + '/') or f.startswith(m):
+                      hits.append(f)
+                      break
+          print('\n'.join(hits))
+          ")
+          if [ -z "$MATCHED" ]; then
+            echo "::notice::no overlap with expertMonitors — no drift risk."; exit 0
+          fi
+          echo "::notice::PR touches monitored paths — flagging expert-drift-risk."
+          # Add label (silently ignore if label doesn't exist yet in the repo)
+          gh api "repos/${REPO}/issues/${PR_NUMBER}/labels" \
+            -X POST -f "labels[]=expert-drift-risk" 2>/dev/null || true
+          # Post advisory comment
+          # shellcheck disable=SC2001  # per-LINE prefix; ${v//} cannot do this
+          MATCHED_LIST=$(echo "$MATCHED" | sed 's/^/- /')
+          # shellcheck disable=SC2016  # printf FORMAT string: the %s are printf's
+          # placeholders, filled from the arguments after it.
+          gh pr comment "${PR_NUMBER}" --repo "${REPO}" --body "$(printf '⚠️ **Expert drift risk:** this PR touches files monitored by \`%s\`.\n\nMatched paths:\n%s\n\nConsider updating \`.claude/agents/%s.md\` to reflect any architectural changes. See [governance/agent-ownership.md](governance/agent-ownership.md) for the expert update workflow.' "$EXPERT" "$MATCHED_LIST" "$EXPERT")" 2>/dev/null || true

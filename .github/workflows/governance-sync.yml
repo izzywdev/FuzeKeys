@@ -1,3 +1,4 @@
+# fuze:managed template=governance-sync.yml baseline=main digest=sha256:cc456147d9f0089b8068b73b74d5e5fe76767ed4942c4681a8d8873edb3ef935
 name: Governance Sync
 
 # Per-repo, CI-time governance reconciliation (stamped by sdlc-bootstrap).
@@ -11,9 +12,16 @@ name: Governance Sync
 # fetched below) — only this thin shim is per-repo.
 #
 # Behaviour: fetch the FuzeSDLC canonical at this repo's baselineRef, reconcile the managed
-# files (the manifest's agent subset + the agent-templates FRAMEWORK), commit agent/framework
-# drift back to the PR branch, and fail-with-diff on drift the token cannot push
-# (.github/workflows/** or a fork PR). Concrete role/env/vault defs are never touched.
+# files (the manifest's agent subset + the agent-templates FRAMEWORK), commit that drift back
+# to the PR branch, and fail-with-diff on drift a fork PR's token cannot push at all. Concrete
+# role/env/vault defs are never touched.
+#
+# `.github/workflows/**` is a THIRD class, governed separately (governance/file-ownership.md):
+# a workflow file carrying the `fuze:managed` marker is reconciled — but ONLY when a
+# workflows-scoped fuze-agent App token was actually minted this run (it is not yet; the App
+# has not been granted that permission — this whole class is inert until a human grants it).
+# Until then, and for any unmarked workflow (a repo's own, or a marker deliberately removed to
+# fork one), this stays exactly the old detect-only, report-for-a-human behaviour.
 #
 # No FUZESDLC_DEPLOY_KEY secret -> SKIPS with a notice (never red). Safe to land before the
 # key is distributed.
@@ -29,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout (PR head)
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           repository: ${{ github.event.pull_request.head.repo.full_name }}
@@ -59,23 +67,73 @@ jobs:
 
       - name: Fetch FuzeSDLC canonical (read-only key)
         if: steps.guard.outputs.ok == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           repository: izzywdev/FuzeSDLC
           ref: ${{ steps.ref.outputs.ref }}
           ssh-key: ${{ secrets.FUZESDLC_DEPLOY_KEY }}
           path: .fuzesdlc-canonical
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         if: steps.guard.outputs.ok == 'true'
         with:
           python-version: "3.12"
 
+      # Agent-PR identity (governance/hardening-convention.md §8): the commit-back below lands
+      # on a LIVE agent PR head, so it must push under a collaborator-backed identity or the
+      # reconciled head gets no CI. Mint a fuze-agent App token; the push step prefers it, then
+      # the bot PAT, then GITHUB_TOKEN. continue-on-error so a repo without the App secrets
+      # degrades to the PAT rather than failing here. Minted BEFORE "Reconcile managed files"
+      # (it used to run after) so the second, workflows-scoped mint below can gate what flag
+      # that step is invoked with.
+      - name: Mint fuze-agent App token
+        id: app_token
+        if: steps.guard.outputs.ok == 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.FUZE_AGENT_APP_ID }}
+          private-key: ${{ secrets.FUZE_AGENT_APP_PRIVATE_KEY }}
+
+      # A SEPARATE mint, not a reuse of the token above — this is the graceful-degrade
+      # switch itself. Requesting `permission-workflows: write` makes this step FAIL
+      # (swallowed by continue-on-error) unless the fuze-agent App's INSTALLATION was
+      # actually granted the "Workflows" permission in GitHub's App settings — so
+      # availability is something this job DETECTS by trying to mint the scoped token,
+      # never something it infers from the (contents-only) token above existing.
+      #
+      # OUT OF SCOPE for the change that introduced this step: granting the App that
+      # permission is a human action in GitHub's UI (governance/reusable-workflows.md).
+      # Until that happens this mint fails on every run, steps.app_token_workflows.outputs.token
+      # is empty, `--write-workflows` below is never passed, and governance_sync.py runs its
+      # pre-existing detect-only path for `.github/workflows/**` exactly as it always has —
+      # this whole mechanism is inert on merge.
+      - name: Mint fuze-agent App token (workflows-scoped)
+        id: app_token_workflows
+        if: steps.guard.outputs.ok == 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.FUZE_AGENT_APP_ID }}
+          private-key: ${{ secrets.FUZE_AGENT_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-workflows: write
+
       - name: Reconcile managed files
         if: steps.guard.outputs.ok == 'true'
+        env:
+          # Presence, not truthiness of some other token, is the gate — see the mint step's
+          # comment above. An empty value here means the flag below is omitted, which is
+          # byte-for-byte today's behaviour.
+          WORKFLOWS_TOKEN: ${{ steps.app_token_workflows.outputs.token }}
         run: |
+          extra_flag=""
+          if [ -n "${WORKFLOWS_TOKEN:-}" ]; then
+            extra_flag="--write-workflows"
+          fi
           python3 .fuzesdlc-canonical/scripts/governance_sync.py \
-            --canonical .fuzesdlc-canonical --repo . --write --report .governance-sync-report.json
+            --canonical .fuzesdlc-canonical --repo . --write $extra_flag \
+            --report .governance-sync-report.json
 
       - name: Commit-back or fail-with-diff
         if: steps.guard.outputs.ok == 'true'
@@ -83,39 +141,94 @@ jobs:
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           BASE_REPO: ${{ github.repository }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          # Push identity decides whether the reconciled head gets CI at all — see the
+          # commit-back block. App token first (triggers CI), then the bot PAT, then the
+          # default GITHUB_TOKEN (whose push is silent — the head then goes UNTESTED).
+          APP_TOKEN: ${{ steps.app_token.outputs.token }}
+          # ONLY a token minted with `permission-workflows: write` may push a commit that
+          # touches `.github/workflows/**` — GitHub rejects that push outright otherwise,
+          # and the rejection is ATOMIC: it fails the whole commit, not just the workflow
+          # files in it, dragging every ordinary committable file down with it. So when
+          # `reconciled != 0` this token is the ONLY one used below, never a fallback.
+          WORKFLOWS_APP_TOKEN: ${{ steps.app_token_workflows.outputs.token }}
+          CI_PUSH_TOKEN: ${{ secrets.GH_RELEASE_PAT }}
         run: |
           report=.governance-sync-report.json
           get() { python3 -c "import json;print(len(json.load(open('$report'))['$1']))"; }
           committable=$(get committable); workflows=$(get workflows); missing=$(get missing)
+          reconciled=$(get reconciled); detached=$(get detached)
           rm -f "$report"
           rm -rf .fuzesdlc-canonical
-          if [ "$committable" != "0" ]; then
+          if [ "$committable" != "0" ] || [ "$reconciled" != "0" ]; then
             if [ "$HEAD_REPO" != "$BASE_REPO" ]; then
-              echo "::error::$committable managed file(s) drifted but this is a fork PR — cannot commit back. Run scripts/sdlc-bootstrap.sh and push."
+              echo "::error::$committable managed file(s) and $reconciled governed workflow file(s) drifted but this is a fork PR — cannot commit back. Run scripts/sdlc-bootstrap.sh and push."
               git --no-pager diff; exit 1
             fi
             git config user.name  "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add -A
-            git commit -m "chore(governance): reconcile managed files to FuzeSDLC ${{ steps.ref.outputs.ref }} [skip ci]"
-            # Rebase-and-retry, not a bare push. This job commits onto a LIVE PR
-            # branch, so any push the author makes between this job's checkout and
-            # its push wins the race and the push is rejected "(fetch first)" —
-            # observed three times in one afternoon on a fleet-wide migration. The
-            # old bare push turned that ordinary race into a red check that said
-            # nothing about governance. Deliberately NOT `|| true`: if it still
-            # cannot push after the retries, that is a real failure and it fails.
+            # NO `[skip ci]`. This commit CHANGES THE TREE THAT WILL MERGE, so every check
+            # that already ran describes a commit which is no longer the head. The marker
+            # suppressed the one thing that had to happen next.
+            git commit -m "chore(governance): reconcile managed files to FuzeSDLC ${{ steps.ref.outputs.ref }}"
+
+            # A commit pushed with the default GITHUB_TOKEN triggers NO workflow — a
+            # deliberate GitHub loop-guard, not a quirk to opt out of. So `[skip ci]` was
+            # the SECOND suppressor on a push that was already silent, and dropping it
+            # alone changes nothing. The push IDENTITY is the actual mechanism.
+            #
+            # Observed live on FuzeSocial#81: this job reconciled at 21:44:57, pushed, and
+            # the head then carried ZERO check runs while the previous commit's green
+            # checks stayed visible on the PR. A PR that looks tested and is not is
+            # strictly worse than one that is visibly untested.
+            PUSH_TOKEN=""; PUSH_IDENTITY="GITHUB_TOKEN"
+            if [ "$reconciled" != "0" ]; then
+              # This commit touches .github/workflows/** — the workflows-scoped token is
+              # not merely preferred here, it is REQUIRED. governance_sync.py only ever
+              # populates `reconciled` when --write-workflows was passed, and that flag is
+              # only ever passed when this exact mint succeeded, so it should never be
+              # empty here — but fail loudly rather than fall through to a token that would
+              # just get the whole push rejected by GitHub.
+              if [ -z "${WORKFLOWS_APP_TOKEN:-}" ]; then
+                echo "::error::governance_sync.py reconciled $reconciled workflow file(s), but the workflows-scoped fuze-agent App token is not available in this step. This should be impossible (that token gates --write-workflows) — treating it as a bug rather than silently falling back to a token that cannot push .github/workflows/** and would fail the whole commit."
+                exit 1
+              fi
+              PUSH_TOKEN="$WORKFLOWS_APP_TOKEN"; PUSH_IDENTITY="FUZE_AGENT_APP_WORKFLOWS"
+            elif [ -n "${APP_TOKEN:-}" ]; then
+              # App installation token: a push authenticated by the fuze-agent App is a
+              # distinct, collaborator-backed identity, so it triggers CI on the new head
+              # (the whole point of §8).
+              PUSH_TOKEN="$APP_TOKEN"; PUSH_IDENTITY="FUZE_AGENT_APP"
+            elif [ -n "${CI_PUSH_TOKEN:-}" ]; then
+              # The bot PAT works the same way via extraheader. Only the default
+              # GITHUB_TOKEN push is silent — that rung fails the job below.
+              PUSH_TOKEN="$CI_PUSH_TOKEN"; PUSH_IDENTITY="GH_RELEASE_PAT"
+            fi
+            if [ -n "$PUSH_TOKEN" ]; then
+              # extraheader, not a token-in-URL remote: git echoes a remote URL on several
+              # error paths and never echoes a header, and some of these repos are public.
+              AUTH_B64=$(printf 'x-access-token:%s' "$PUSH_TOKEN" | base64 -w0)
+              git config --local "http.https://github.com/.extraheader" "AUTHORIZATION: basic ${AUTH_B64}"
+              unset AUTH_B64
+            fi
+
+            # Rebase-and-retry, not a bare push. This job commits onto a LIVE PR branch, so
+            # any push the author makes between this job's checkout and its push wins the
+            # race and the push is rejected "(fetch first)" — observed three times in one
+            # afternoon on a fleet-wide migration. The old bare push turned that ordinary
+            # race into a red check that said nothing about governance. Deliberately NOT
+            # `|| true`: if it still cannot push after the retries, that is a real failure.
             pushed=false
             for attempt in 1 2 3; do
               if git push origin "HEAD:${HEAD_REF}" 2>&1 | tee /tmp/gs-push.log; then
                 pushed=true
                 break
               fi
-              # A 403 is NOT a race, and must not be retried or described as one.
-              # The first version of this loop retried a permission failure three
-              # times while printing "the branch moved under us" — with `Current
-              # branch is up to date` on the very next line contradicting it. A
-              # diagnostic that names the wrong cause is worse than none.
+              # A 403 is NOT a race, and must not be retried or described as one. The first
+              # version of this loop retried a permission failure three times while printing
+              # "the branch moved under us" — with `Current branch is up to date` on the very
+              # next line contradicting it. A diagnostic that names the wrong cause is worse
+              # than none.
               if grep -qE "Write access to repository not granted|Permission to .* denied|error: 403" /tmp/gs-push.log; then
                 echo "::error::Cannot push the governance reconciliation to ${HEAD_REF}: the token has NO WRITE ACCESS (HTTP 403). This is a permission problem, not a race — retrying cannot help. Check this workflow's \`permissions:\` block declares \`contents: write\`; a repo that declares \`contents: read\` here can never commit back, and any reconciliation it computes is silently discarded."
                 exit 1
@@ -126,18 +239,32 @@ jobs:
                 exit 1
               fi
             done
+            git config --local --unset-all "http.https://github.com/.extraheader" || true
             if [ "$pushed" != "true" ]; then
               echo "::error::Failed to push the governance reconciliation to ${HEAD_REF} after 3 attempts."
               exit 1
             fi
-            echo "::notice::Reconciled and pushed $committable managed file(s) to ${HEAD_REF}."
+            echo "::notice::Reconciled and pushed $committable managed file(s) and $reconciled governed workflow file(s) to ${HEAD_REF} using ${PUSH_IDENTITY}."
+            if [ "$PUSH_IDENTITY" = "GITHUB_TOKEN" ]; then
+              echo "::error::The reconciliation was pushed with the default GITHUB_TOKEN, which by design triggers NO workflows. ${HEAD_REF} now points at a commit NO check has run against, while the previous commit's green checks remain visible on the PR — merging it would merge an untested tree. Set the fuze-agent App secrets (FUZE_AGENT_APP_ID / FUZE_AGENT_APP_PRIVATE_KEY, the §8 default) or the repo secret GH_RELEASE_PAT (classic PAT, repo scope) so this job's push re-runs CI automatically. Until then, re-run CI on the new head by pushing any commit UNDER A REAL USER IDENTITY (an empty commit is enough). Closing and reopening the PR only works if a human does it in the UI — a reopen performed with a GitHub App installation token is suppressed exactly like a GITHUB_TOKEN push and produces no runs at all; verified on FuzeSocial#81."
+              exit 1
+            fi
           fi
-          # Workflow drift is ADVISORY, not blocking. The default GITHUB_TOKEN cannot push
-          # .github/workflows/**, and repos legitimately customise them (cron stagger, extra
-          # jobs) — so failing here would be permanently red AND unactionable by this workflow.
-          # The nightly governance sweep opens a fix PR for genuine staleness.
+          # Workflow drift is ADVISORY, not blocking. Until the workflows-scoped App token
+          # mint above succeeds (it does not yet — the App has not been granted that
+          # permission), this job cannot push .github/workflows/** at all, and even once it
+          # can, repos legitimately customise some workflows in ways no render variable
+          # captures — so failing here would be permanently red AND unactionable by this
+          # workflow. The nightly governance sweep opens a fix PR for genuine staleness.
           if [ "$workflows" != "0" ]; then
-            echo "::warning::$workflows workflow file(s) differ from the FuzeSDLC canonical (advisory — this job cannot push workflow changes). Run scripts/sdlc-bootstrap.sh if they are genuinely stale."
+            echo "::warning::$workflows managed workflow file(s) differ from the FuzeSDLC canonical (advisory — this run could not push workflow changes). Run scripts/sdlc-bootstrap.sh if they are genuinely stale, or wait for the nightly sweep."
+          fi
+          # `detached` is purely informational: a workflow whose `fuze:managed` marker was
+          # removed is, by design, never touched and never blocks — it is the SUPPORTED way
+          # to fork a governed workflow. Surfaced here only so the fork is visible in the PR
+          # log instead of being indistinguishable from a file that was never managed.
+          if [ "$detached" != "0" ]; then
+            echo "::notice::$detached workflow file(s) look like a canonical template by name but carry no \`fuze:managed\` marker — either a repo-authored workflow that happens to share the name, or a managed workflow that was deliberately detached. Never touched either way; see governance/file-ownership.md."
           fi
           # A manifest-DECLARED agent missing from the repo IS blocking: real breakage, and
           # scripts/sdlc-bootstrap.sh fixes it deterministically.

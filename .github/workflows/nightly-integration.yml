@@ -1,3 +1,4 @@
+# fuze:managed template=nightly-integration.yml baseline=main digest=sha256:d99afa674c1c88a5d9455b26f14ab3ca70f9b036f25c64c8e9f4d49b5a1b06f0
 name: Nightly Integration
 
 # ADLC govern-loop, integration arm (sibling of governance-nightly.yml).
@@ -7,12 +8,14 @@ name: Nightly Integration
 # (NEVER auto-merges). Where no suite / bounded local-up exists yet, the job no-ops GREEN
 # and files ONE idempotent @claude issue to build it (self-propagating adoption).
 #
-# Requires repo secret ANTHROPIC_API_KEY. Reuses the gate-localup mechanism
+# LLM credential (autofix job): routed through .github/actions/llm-endpoint (LiteLLM
+# in-cluster with automatic fallback to a direct vendor). Requires repo secret
+# LITELLM_FUZE_KEY and/or ANTHROPIC_API_KEY (at least one). Reuses the gate-localup mechanism
 # (governance/local-environment.md). Install with a per-repo staggered cron minute.
 
 on:
   schedule:
-    - cron: '17 4 * * *'   # off-peak, off the :00 herd; per-repo offset set at install time
+    - cron: '28 7 * * *'   # fuze:spread-cron — off-peak; minute/hour are derived per repo at install time so the fleet does not fire together
   workflow_dispatch:        # manual run
 
 permissions:
@@ -32,7 +35,7 @@ jobs:
     outputs:
       ran: ${{ steps.detect.outputs.ran }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           submodules: recursive
           fetch-depth: 0
@@ -47,21 +50,38 @@ jobs:
           if [ -f package.json ] && grep -qE '"(test:integration|test:e2e)"[[:space:]]*:' package.json; then SUITE="npm"; fi
           if [ -z "$SUITE" ] && { git ls-files 'tests/integration/**' '**/tests/integration/**' | grep -q . || grep -rqs "pytest.mark.integration" --include='*.py' .; }; then SUITE="pytest"; fi
           if [ -z "$SUITE" ] && [ -f .fuze/manifest.json ] && grep -q '"integrationTest"' .fuze/manifest.json; then SUITE="manifest"; fi
-          if [ -z "$CT" ] || [ -z "$SUITE" ]; then
+          # The gate is the SUITE. A consumer-test compose is how a repo WITH a runtime
+          # service supplies its bounded local-up — but not every repo has a service to
+          # stand up. The L0 governance hub (FuzeSDLC, tier: governance) ships policy,
+          # reusable workflows and the Python bootstrap/governance engine; it exposes no
+          # HTTP service and depends on no external service, so there is nothing to
+          # `docker compose up` and nothing in the mock matrix to mock. Its bounded
+          # integration IS its suite: the engine run end-to-end against a scratch fixture
+          # repo, fully offline (the suite asserts its own no-egress boundary). Requiring a
+          # consumer-test compose there would force a hollow, serviceless stack — the
+          # cargo-cult the ADLC is meant to avoid. So: a suite with no compose is a valid
+          # bounded local-up (offline, no stack); a suite WITH a compose stands the stack up
+          # first, as before. Only the ABSENCE OF A SUITE is a no-op that re-files the issue.
+          if [ -z "$SUITE" ]; then
             echo "ran=false" >> "$GITHUB_OUTPUT"; echo "SUITE_PRESENT=false" >> "$GITHUB_ENV"
-            echo "::notice title=nightly-integration::No bounded local-up (consumer-test) and/or integration suite detected — no-op green; filing/keeping the @claude build issue."
+            echo "::notice title=nightly-integration::No integration suite detected — no-op green; filing/keeping the @claude build issue."
           else
             echo "ran=true" >> "$GITHUB_OUTPUT"
             {
               echo "SUITE_PRESENT=true"
-              echo "CT=$CT"
               echo "SUITE=$SUITE"
             } >> "$GITHUB_ENV"
-            echo "::notice title=nightly-integration::Detected suite=$SUITE, local-up=$CT"
+            if [ -n "$CT" ]; then
+              { echo "HAS_LOCALUP=true"; echo "CT=$CT"; } >> "$GITHUB_ENV"
+              echo "::notice title=nightly-integration::Detected suite=$SUITE, local-up=$CT"
+            else
+              echo "HAS_LOCALUP=false" >> "$GITHUB_ENV"
+              echo "::notice title=nightly-integration::Detected suite=$SUITE with no consumer-test compose — no service to stand up; the suite runs in its own bounded offline environment (governance/service-less repo)."
+            fi
           fi
 
       - name: Stand up bounded local-up (consumer-test + mocks)
-        if: env.SUITE_PRESENT == 'true'
+        if: env.HAS_LOCALUP == 'true'
         shell: bash
         run: |
           dir=$(dirname "$CT"); envf=()
@@ -91,7 +111,7 @@ jobs:
           esac
 
       - name: Tear down
-        if: always() && env.SUITE_PRESENT == 'true'
+        if: always() && env.HAS_LOCALUP == 'true'
         shell: bash
         run: docker compose -f "$CT" down -v || true
 
@@ -130,13 +150,23 @@ jobs:
           !startsWith(github.ref_name, 'nightly-autofix-') }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
+      - name: Resolve LLM endpoint (LiteLLM in-cluster, vendor fallback)
+        id: llm
+        uses: ./.github/actions/llm-endpoint
+        with:
+          litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
+          fallback-chain: ${{ vars.FUZE_LLM_FALLBACK_CHAIN || 'anthropic,openai,gemini' }}
+          fallback-anthropic-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          fallback-openai-key: ${{ secrets.OPENAI_API_KEY }}
+          fallback-gemini-key: ${{ secrets.GEMINI_API_KEY }}
+
       - name: Auto-fix → DRAFT PR (never auto-merge)
         uses: ./.github/actions/fuze-code-action
         with:
-          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          anthropic-api-key: ${{ steps.llm.outputs.auth-token }}
           task-prompt: |
             The **nightly integration suite** for ${{ github.repository }} FAILED
             (run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).
