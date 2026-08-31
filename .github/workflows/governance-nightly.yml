@@ -1,13 +1,35 @@
+# fuze:managed template=governance-nightly.yml baseline=main digest=sha256:c689fcb5cf2bdc556240641e998b32f495a3bd9ed7d59d7451df3ee0d89aeac1
 name: Governance Nightly
 
 # platform-governance's nightly reconciliation sweep (governance-reconciliation skill):
 # stale/drifting branches, open-PR triage, open-issue completion, and drift vs FuzeSDLC.
 # Takes only safe/reversible actions; files one "Governance reconciliation — <date>" issue.
-# Requires repo secret ANTHROPIC_API_KEY.
+# LLM credential + provider fallover: routed through .github/actions/fuze-code-action, which
+# tries LiteLLM-in-cluster-or-direct-Anthropic (claude-code-action) first, falls through to
+# openai/codex-action ONLY on a classified availability failure (credit/quota, auth, rate
+# limit, network/5xx — never a real task failure), then a documented-unimplemented Gemini
+# stub that fails closed rather than silently no-op'ing. Requires repo secret
+# LITELLM_FUZE_KEY and/or ANTHROPIC_API_KEY (at least one); OPENAI_API_KEY is optional and
+# only consulted if the Anthropic leg is unavailable. This is the sweep that would diagnose
+# a down LiteLLM in the first place, so it must never depend on LiteLLM being up to run at
+# all — see fuze-code-action's own description for why LiteLLM is only ever probed over
+# HTTP, never run on the runner itself.
+#
+# VACUITY FIX: this call site never passed `additional-permissions` / `claude-args` through
+# to fuze-code-action, even though that composite explicitly supports both as passthrough
+# to claude-code-action. Without `--permission-mode bypassPermissions`, every mutating tool
+# call (git push, gh pr/issue create, file edits) sits behind an interactive approval gate
+# that nothing can clear in headless CI and is silently denied — verified against consuming
+# repos (izzywdev/FuzeInfra) where the rung-1 claude-code-action step reported
+# `is_error:false` with dozens of turns and real spend, `permission_denials_count` in the
+# teens, and ZERO tracking issues ever created despite running nightly for weeks. This is
+# the same class of bug already fixed in claude.yml/fuze.yml across the fleet. A post-run
+# "Verify reconciliation deliverable" step now makes a run that produces no fresh tracking
+# issue fail loudly instead of reporting green.
 
 on:
   schedule:
-    - cron: '23 7 * * *'   # 07:23 UTC nightly (off-peak, off the :00 herd)
+    - cron: '31 8 * * *'   # fuze:spread-cron — off-peak; minute/hour are derived per repo at install time so the fleet does not fire together
   workflow_dispatch:        # manual run
 
 permissions:
@@ -25,14 +47,42 @@ jobs:
   reconcile:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
 
+      # Recorded BEFORE the agent runs so the deliverable check below can prove the
+      # tracking issue was touched THIS run, not left over from a prior night.
+      - name: Record run-start timestamp
+        id: clock
+        run: echo "start_epoch=$(date -u +%s)" >> "$GITHUB_OUTPUT"
+
       - name: Run platform-governance reconciliation
+        id: reconcile
         uses: ./.github/actions/fuze-code-action
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          # THE FIX: without these, every mutating tool call (git push, gh pr/issue
+          # create, file edits) sits behind an interactive approval gate that nothing
+          # can clear in headless CI and is silently denied on the claude-code-action
+          # rung — the sweep could read the repo but never act on it. Safe here
+          # because this job only ever acts on THIS repo with a scoped token and
+          # takes only the safe/reversible actions enumerated in the prompt's
+          # guardrails.
+          additional-permissions: |
+            Bash
+            Write
+            Edit
+            MultiEdit
+            Task
+            TodoWrite
+          claude-args: >-
+            --permission-mode bypassPermissions
+            --max-turns 60
           task-prompt: |
             You are the **platform-governance** agent running the nightly **governance-reconciliation**
             sweep for the repository ${{ github.repository }}. Follow the governance-reconciliation skill.
@@ -49,6 +99,25 @@ jobs:
             4. DRIFT — compare .claude/agents + CLAUDE.md + the workflow stack against the expectation in
                .fuze/manifest.json and the FuzeSDLC canonical; open a fix PR for mechanical drift, flag
                judgment calls.
+            5. STUB EXPERTS — scan .claude/agents/ for any expert file whose frontmatter contains
+               `stub: true` AND whose name matches manifest.expert (the repo's OWN expert, not advisors).
+               For each: open a tracked issue titled "Expert agent <name>: hub-authored stub — replace with
+               repo-authored content" with: a link to governance/agent-ownership.md, the instruction to run
+               platform-governance locally with prompt "author the <repo>-expert for this repo", and a
+               reminder that publish-expert.yml will propagate it. Check for an existing open issue with
+               the same title first (idempotent). Do NOT file this issue for advisor copies.
+            6. EXPERT SELF-REFRESH — for THIS repo's own expert (manifest.expert):
+               a. Read the current expert file (.claude/agents/<expert>.md).
+               b. Read every file/directory listed under manifest.expertMonitors (if the key is present).
+               c. Compare: does the expert's content still accurately describe what those files show?
+                  Focus on: architecture changes, new deploy targets, new CI workflows, renamed files,
+                  new gotchas, removed components.
+               d. If significant drift is found: open a PR titled "chore(expert): auto-refresh
+                  <expert> — <date>" on branch expert-refresh/<expert>-<date> with a targeted edit
+                  to the expert file. Include in the PR body which monitored files changed vs the
+                  expert's claims, and what specifically was updated.
+               e. If no drift: skip silently (no PR, no comment).
+               This is non-blocking — never fail a gate on expert freshness.
 
             Then open or UPDATE a single issue titled "Governance reconciliation — <today's date>"
             (label: governance) with: branch actions, per-PR blocker+next-action, per-issue disposition,
@@ -57,6 +126,58 @@ jobs:
             resolved issues, open draft/follow-up PRs, comment/label, update-branch). Never force-push,
             never auto-merge, never delete branches with unique unmerged commits, never close an issue you
             cannot prove resolved.
-          litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
+
+            MANDATORY LAST STEP: whatever you find or do, you MUST end this run by creating or updating the
+            "Governance reconciliation — <today's date>" issue (label: governance) — even if every check
+            came back clean, the issue must say so explicitly ("no drift, no stale branches, no actionable
+            PRs/issues found"). A run that finds nothing still has to record that it looked. This run is
+            graded on whether that issue exists with a fresh timestamp, not on how many turns you took.
+
+      # MAKE VACUITY FAIL: fuze-code-action reporting conclusion=success only means the
+      # chosen rung's API call didn't error — it is not proof the sweep acted. Assert the
+      # actual deliverable: the "Governance reconciliation — <date>" issue must have been
+      # created or updated AFTER this run started. No such evidence => the job goes red,
+      # regardless of what the composite action reported.
+      - name: Verify reconciliation deliverable
+        id: verify
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          START_EPOCH: ${{ steps.clock.outputs.start_epoch }}
+        run: |
+          set -uo pipefail
+          candidates=$(gh api "repos/${REPO}/issues" --paginate -f state=all -f labels=governance \
+            --jq '.[] | select(.title | startswith("Governance reconciliation")) | [.number, .updated_at] | @tsv' \
+            2>/dev/null || true)
+          if [ -z "$candidates" ]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "::error::No 'Governance reconciliation — <date>' issue (label: governance) exists at all — the sweep has never produced its deliverable."
+            exit 0
+          fi
+          fresh=""
+          while IFS=$'\t' read -r number updated_at; do
+            [ -z "${updated_at:-}" ] && continue
+            updated_epoch=$(date -u -d "$updated_at" +%s 2>/dev/null || echo 0)
+            if [ "$updated_epoch" -ge "$((START_EPOCH - 60))" ]; then
+              fresh="$number"
+              break
+            fi
+          done <<< "$candidates"
+          if [ -n "$fresh" ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "Governance reconciliation issue #$fresh was created/updated this run — deliverable confirmed."
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "::error::A 'Governance reconciliation' issue exists but none was created or updated since this run started (start_epoch=${START_EPOCH}) — the sweep ran but produced no fresh decision this time."
+          fi
+
+      - name: Fail job if reconciliation did not complete or produce a decision
+        if: always() && (steps.reconcile.outputs.conclusion == 'failure' || steps.verify.outputs.found == 'false')
+        run: |
+          if [ "${{ steps.reconcile.outputs.conclusion }}" = "failure" ]; then
+            echo "::error::Marking job failed — fuze-code-action reported conclusion=failure (mode=${{ steps.reconcile.outputs.mode }}, vendor=${{ steps.reconcile.outputs.vendor }})."
+          else
+            echo "::error::Marking job failed — reconciliation ran but produced no verifiable decision (no fresh Governance reconciliation issue). A green run must mean a decision was recorded, not that a step exited 0."
+          fi
+          exit 1

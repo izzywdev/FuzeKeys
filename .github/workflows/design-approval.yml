@@ -1,3 +1,4 @@
+# fuze:managed template=design-approval.yml baseline=main digest=sha256:941a0601f96d593057cff1f9666eae878074a159ada756443bb59a0dacd68404
 name: design-approval
 
 # Turns an in-frame "Approve" click into a verified, signed manifest flip.
@@ -50,7 +51,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Actions pinned to immutable commit SHAs (repo hardening standard).
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           # frames + the manifest we flip live on the default branch
           ref: ${{ github.event.repository.default_branch }}

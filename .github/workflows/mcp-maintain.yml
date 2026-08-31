@@ -1,3 +1,4 @@
+# fuze:managed template=mcp-maintain.yml baseline=main digest=sha256:2ae3e7179694000b85f3b11eba4b1125e0e963a506f57af39f28e9a1239cad5d
 name: MCP Maintain
 
 # Keeps this repo's Model Context Protocol (MCP) surface current, as part of CI. The
@@ -44,15 +45,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Runs on a HOSTED runner and always reports. Split out from the maintainer for the
-  # same reason as a2a-maintain.yml's preflight: a job on a self-hosted pool that is
-  # not serving QUEUES FOREVER with no red X, no log and no timeout — measured
-  # 2026-08-23, 175 jobs queued on `fuzesdlc` with zero running for 36 hours
-  # (FuzeInfra#623). A misconfiguration that produces no signal at all is worse than
-  # one that produces a red, so the check that must never be silent runs where it
-  # cannot be silenced. Since the llm-endpoint fallback landed, the maintainer job
-  # below no longer NEEDS in-cluster reachability either, so this split is now purely
-  # about signal placement, not runner placement.
+  # ALWAYS REPORTS, AND IS BOUNDED. That is the contract this job holds, and what holds it
+  # is `timeout-minutes` below — not a runner class. `runs-on:` here is the canonical's
+  # placeholder exactly like every other job in this file: the installer rewrites it to the
+  # repo's declared `ci.runner` (scripts/bootstrap/lib/render.py), and this job is
+  # deliberately NOT in `render.RUNNER_EXEMPT`. Do not pin it to a runner class; a pin here
+  # is the defect, not the fix (governance/ci-runners.md, issue #213).
+  #
+  # WHY THE SPLIT EXISTS — still valid, and unchanged. A job on a self-hosted pool that is
+  # not serving QUEUES FOREVER with no red X, no log and no timeout: measured 2026-08-23,
+  # 175 jobs queued on `fuzesdlc` with zero running for 36 hours. A misconfiguration that
+  # produces no signal at all is worse than one that produces a red, so the manifest and
+  # credential check lives in its own small, time-boxed job instead of being buried inside
+  # the maintainer, where a stall would be indistinguishable from a long agent run.
+  #
+  # WHY HOSTED IS NOT AUTOMATICALLY THE SAFER PLACE, which this comment used to assert. On
+  # a PRIVATE repo whose Actions budget is exhausted a hosted job is never assigned a runner
+  # at all. Measured 2026-08-25 on izzywdev/FuzePlan: `runs-on: ubuntu-latest` produced no
+  # runner_id, no runner_name, `steps: []` and a ~4s red with no log — nothing inside the
+  # job executed, so no check written in it could possibly be what failed, and `needs:
+  # preflight` took the whole workflow down with it. That is BOTH outcomes the split exists
+  # to prevent: no signal AND a red. The same job on that repo's own scale set ran its steps
+  # and produced a real, readable verdict. So hosted is the silenceable option there, and
+  # `timeout-minutes` is the guarantee that survives on either kind of runner.
+  #
+  # Since the llm-endpoint fallback landed, the maintainer job below no longer NEEDS
+  # in-cluster reachability either, so this split is now purely about signal placement, not
+  # runner placement.
   preflight:
     name: mcp-maintain preflight
     runs-on: ubuntu-latest
@@ -113,7 +132,44 @@ jobs:
       !startsWith(github.event.pull_request.head.ref, 'mcp-maintain/')
     runs-on: ubuntu-latest
     steps:
+      # Agent-PR identity (governance/hardening-convention.md §8): mint the fuze-agent App
+      # token BEFORE checking out the (untrusted) PR head, so the maintainer's commit-back
+      # pushes under a collaborator-backed identity and the reconciled head gets CI. Fall back
+      # App -> bot PAT -> GITHUB_TOKEN, the last warning. This job already runs same-repo only
+      # (fork PRs get no secrets and never start), so this changes the push IDENTITY, not who
+      # may trigger it.
+      - name: Mint fuze-agent App token
+        id: app_token
+        continue-on-error: true
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.FUZE_AGENT_APP_ID }}
+          private-key: ${{ secrets.FUZE_AGENT_APP_PRIVATE_KEY }}
+      - name: Resolve agent-PR identity
+        id: identity
+        env:
+          APP_TOKEN: ${{ steps.app_token.outputs.token }}
+          BOT_PAT: ${{ secrets.GH_RELEASE_PAT }}
+          GH_DEFAULT: ${{ github.token }}
+        run: |
+          if [ -n "${APP_TOKEN:-}" ]; then
+            tok="$APP_TOKEN"; who="fuze-agent (App installation token)"
+          elif [ -n "${BOT_PAT:-}" ]; then
+            tok="$BOT_PAT"; who="GH_RELEASE_PAT (bot PAT)"
+          else
+            tok="$GH_DEFAULT"; who="GITHUB_TOKEN"
+            echo "::warning title=agent-identity::No FUZE_AGENT_APP_* App secrets and no GH_RELEASE_PAT on this repo — the maintainer's commit-back will push as GITHUB_TOKEN, whose head gets NO CI (hardening-convention.md §8). Set the fuze-agent App secrets to fix."
+          fi
+          echo "::add-mask::$tok"
+          echo "token=$tok" >> "$GITHUB_OUTPUT"
+          echo "Agent-PR identity: $who"
+
       - name: Checkout PR head (writable, same-repo only)
+        # Pinned to a full commit SHA, not a mutable tag: a tag can be silently
+        # repointed by the action owner (cf. the trivy-action / kics-github-action
+        # compromises). This workflow holds `contents: write` on the PR branch, so a
+        # repointed checkout would run attacker code with push access. Semgrep's
+        # github-actions-mutable-action-tag rule flags the unpinned form.
         # Pinned to a full commit SHA, not a mutable tag: a tag can be silently
         # repointed by the action owner (cf. the trivy-action / kics-github-action
         # compromises). This workflow has `contents: write` on the PR branch, so a
@@ -123,6 +179,9 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           fetch-depth: 0
+          # §8: persist the resolved collaborator-backed identity so the maintainer's
+          # `git push` to this PR branch (below) triggers CI on the reconciled head.
+          token: ${{ steps.identity.outputs.token }}
 
       # Replaces the old in-line gateway liveliness check, which treated an
       # unreachable LiteLLM as fatal and demanded a self-hosted in-cluster runner.

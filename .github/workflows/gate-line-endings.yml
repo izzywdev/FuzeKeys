@@ -1,3 +1,4 @@
+# fuze:managed template=gate-line-endings.yml baseline=main digest=sha256:ddb49f48374d35ecbd0392c34e9aed45360748651165b553e186ea32eee9cbfa
 name: gate-line-endings
 
 # Blocks NEW CRLF from entering a repo. Part of the standard workflow stack.
@@ -34,8 +35,16 @@ name: gate-line-endings
 # Binary blobs (i/-text) are skipped by construction (they report neither crlf nor mixed).
 
 on:
+  # Manual trigger. Deliberate, not decoration: when GitHub stops delivering
+  # pull_request events — measured today across FuzeCall, FuzeMarket, FuzeExecutive
+  # and FuzeInfra, the last of which saw no pull_request event for ANY branch
+  # repo-wide for ~25 minutes — a PR sits with zero checks and no way to force them
+  # onto its head. Actions itself stays healthy throughout, so a workflow_dispatch
+  # run completes in under a minute and unblocks the PR. Without it the only
+  # remedies are pushing commits that may also not be delivered, or waiting.
+  workflow_dispatch:
   push:
-    branches: [main, master]
+    branches: [master]
   pull_request:
   workflow_call:
 
@@ -50,7 +59,7 @@ jobs:
   gate-line-endings:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
 

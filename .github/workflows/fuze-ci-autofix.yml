@@ -1,0 +1,75 @@
+# fuze:managed template=fuze-ci-autofix.yml baseline=main digest=sha256:f446199cd2806f000175392a7cc0cb01bae56ade6c44040248bae2ff0956d030
+name: Fuze Auto-Fix CI
+
+# RENAMED from claude-ci-autofix.yml (the claude-* -> fuze-* fleet rename; see
+# claude.yml/fuze.yml, claude-auto-pr.yml/fuze-auto-pr.yml). This one is a straight
+# rename, not a permanent dual-track split like those pairs: this workflow is
+# triggered by `workflow_run` outcome, never by an "@claude" vs "@fuze" mention, so
+# there is no reason to keep a second copy around after the swap.
+#
+# TWO THINGS DELIBERATELY DID NOT MOVE WITH THE RENAME:
+#   - The `uses:` target below still points at reusable-claude-ci-autofix.yml. That
+#     reusable workflow is referenced by exact path (`izzywdev/FuzeSDLC/.github/
+#     workflows/reusable-claude-ci-autofix.yml@main`) from every onboarded repo's own
+#     caller stub, including three still on the old AITools-hosted copy (that org's
+#     other repo, being retired) rather than this template
+#     (FuzeFront, MendysRobotics, MendysRoboticsWP — tracked separately, see
+#     governance/required-checks.json). Renaming it would break every one of those
+#     callers on the next `@main` resolve. It already calls
+#     `./.github/actions/fuze-code-action` internally (PR #196), so this caller
+#     inherits the LiteLLM-gateway-first-with-runner-local-fallback behaviour without
+#     needing to invoke the action directly itself.
+#   - The `claude-auto-fix-ci-` branch-name guard below matches the literal prefix
+#     the reusable workflow's "Create fix branch" step still generates
+#     (`claude-auto-fix-ci-${SAFE_BRANCH}-${RUN_ID}`). Renaming the guard without
+#     renaming the branch prefix it matches would silently break the self-trigger
+#     loop guard, not cosmetically rename it.
+#
+# Two real bugs, both measured and both fixed under izzywdev/FuzeSDLC#29 (mirroring
+# the same fix already landed in izzywdev/FuzeFront#159) — this template never carried
+# either fix, even though the hub's OWN installed copy did (PR #146):
+#
+#   1. `pull_requests[0]` as a truthiness GATE silently dropped every dispatch-triggered
+#      run: `workflow_run.pull_requests` is an empty array outside a pull_request-headed
+#      run, so the whole condition was false and auto-fix never fired. Removed here —
+#      `pr_number` below already tolerates an absent PR via `|| ''`, so there is nothing
+#      left that needs the array non-empty.
+#   2. No guard against firing on a direct push to the default branch. Restored as the
+#      literal `'master'` (not a template variable) because this condition runs BEFORE
+#      any render-time substitution touches it, and the guard exists to protect exactly
+#      the branch that deploys/publishes on push (CLAUDE.baseline.md hardening) --
+#      naming it explicitly is the point, not a limitation. A repo whose default branch
+#      is `main` gets no false sense of protection from this line and is unaffected by
+#      it either way, since pushes to `main` were never what this guarded against.
+
+on:
+  workflow_run:
+    workflows: ["Infrastructure Tests", "Helm Chart Validation", "Harden Gate"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+  issues: write
+  id-token: write
+
+jobs:
+  call-autofix:
+    if: >-
+      ${{ github.event.workflow_run.conclusion == 'failure' &&
+          !startsWith(github.event.workflow_run.head_branch, 'claude-auto-fix-ci-') &&
+          github.event.workflow_run.head_branch != 'master' }}
+    uses: izzywdev/FuzeSDLC/.github/workflows/reusable-claude-ci-autofix.yml@main
+    with:
+      run_id: ${{ github.event.workflow_run.id }}
+      head_branch: ${{ github.event.workflow_run.head_branch }}
+      pr_number: ${{ github.event.workflow_run.pull_requests[0].number || '' }}
+      run_url: ${{ github.event.workflow_run.html_url }}
+      repository: ${{ github.repository }}
+      # Rewritten by the installer to this repo's ci.runner (render.py). The called
+      # job runs in THIS repo's context and bills to it, so leaving it on
+      # ubuntu-latest puts one job back on a GitHub-hosted machine -- and on a
+      # private repo, never runs it at all.
+      runner: ubuntu-latest
+    secrets: inherit

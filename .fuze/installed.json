@@ -386,6 +386,69 @@
       "sourceSha256": "8ea290cda224a19d48222964ea4ccc1cd0cb2bae77e6a9411617c9cf7a94d382",
       "renderedSha256": "8ea290cda224a19d48222964ea4ccc1cd0cb2bae77e6a9411617c9cf7a94d382"
     },
+    ".github/actions/fuze-code-action/__tests__/test_classify.sh": {
+      "capability": "workflows",
+      "mode": "managed",
+      "sourcePath": ".github/actions/fuze-code-action/__tests__/test_classify.sh",
+      "sourceSha256": "b9dda1ea613488303a0ab92c21a4a04f03436bc71bc158ff6c648c74e5432d0f",
+      "renderedSha256": "b9dda1ea613488303a0ab92c21a4a04f03436bc71bc158ff6c648c74e5432d0f"
+    },
+    ".github/actions/fuze-code-action/__tests__/test_extra_env.py": {
+      "capability": "workflows",
+      "mode": "managed",
+      "sourcePath": ".github/actions/fuze-code-action/__tests__/test_extra_env.py",
+      "sourceSha256": "221e33fd19bff90a77b2a5311d92c526332fd78ba1690502e79c0e9c02a94179",
+      "renderedSha256": "221e33fd19bff90a77b2a5311d92c526332fd78ba1690502e79c0e9c02a94179"
+    },
+    ".github/actions/fuze-code-action/__tests__/test_passthrough_defaults.py": {
+      "capability": "workflows",
+      "mode": "managed",
+      "sourcePath": ".github/actions/fuze-code-action/__tests__/test_passthrough_defaults.py",
+      "sourceSha256": "580b152d228f7b7120d843129397400b83408ec1afe9069bccf4bc2488b696c0",
+      "renderedSha256": "580b152d228f7b7120d843129397400b83408ec1afe9069bccf4bc2488b696c0"
+    },
+    ".github/actions/fuze-code-action/__tests__/test_run_blocks_parse.py": {
+      "capability": "workflows",
+      "mode": "managed",
+      "sourcePath": ".github/actions/fuze-code-action/__tests__/test_run_blocks_parse.py",
+      "sourceSha256": "68c504dc7077f393b86ca12f70e9e303a97eee1b6cb113234e2db8cb3f640e67",
+      "renderedSha256": "68c504dc7077f393b86ca12f70e9e303a97eee1b6cb113234e2db8cb3f640e67"
+    },
+    ".github/actions/fuze-code-action/__tests__/test_rung_gating.py": {
+      "capability": "workflows",
+      "mode": "managed",
+      "sourcePath": ".github/actions/fuze-code-action/__tests__/test_rung_gating.py",
+      "sourceSha256": "9e26b65902c0309b7231715c96543dd62393ddca42d6ce784206f3a7b296879a",
+      "renderedSha256": "9e26b65902c0309b7231715c96543dd62393ddca42d6ce784206f3a7b296879a"
+    },
+    ".github/actions/fuze-code-action/action.yml": {
+      "capability": "workflows",
+      "mode": "managed",
+      "sourcePath": ".github/actions/fuze-code-action/action.yml",
+      "sourceSha256": "a260b5ab31ad6645183612fc90953b3d0b6f21d083b23260b7765404d325a75e",
+      "renderedSha256": "a260b5ab31ad6645183612fc90953b3d0b6f21d083b23260b7765404d325a75e"
+    },
+    ".github/actions/fuze-code-action/classify.sh": {
+      "capability": "workflows",
+      "mode": "managed",
+      "sourcePath": ".github/actions/fuze-code-action/classify.sh",
+      "sourceSha256": "071c727ea2f347ed43f9fb44ae224630ec99b55a117777c2a3bc8e3c97bccbd1",
+      "renderedSha256": "071c727ea2f347ed43f9fb44ae224630ec99b55a117777c2a3bc8e3c97bccbd1"
+    },
+    ".github/actions/fuze-push-identity/action.yml": {
+      "capability": "workflows",
+      "mode": "managed",
+      "sourcePath": ".github/actions/fuze-push-identity/action.yml",
+      "sourceSha256": "57b7c90c55a8b15649b22a73703cb6faa54ba7749d695592ff911e8a7f040963",
+      "renderedSha256": "57b7c90c55a8b15649b22a73703cb6faa54ba7749d695592ff911e8a7f040963"
+    },
+    ".github/actions/llm-endpoint/action.yml": {
+      "capability": "workflows",
+      "mode": "managed",
+      "sourcePath": ".github/actions/llm-endpoint/action.yml",
+      "sourceSha256": "939fe5e84568530a6fc2a8328deefa52a31137d639b2fbe6f5c1bd4ca8dae3c9",
+      "renderedSha256": "939fe5e84568530a6fc2a8328deefa52a31137d639b2fbe6f5c1bd4ca8dae3c9"
+    },
     ".github/labels.json": {
       "capability": "community",
       "mode": "seeded",
@@ -393,15 +456,63 @@
       "sourceSha256": "e179fa24088c360b368cf468d5974d1813029229d9f08f4127892eb4c15c5bb5",
       "renderedSha256": "e179fa24088c360b368cf468d5974d1813029229d9f08f4127892eb4c15c5bb5"
     },
+    ".github/workflows/a2a-maintain.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/a2a-maintain.yml",
+      "sourceSha256": "f05fdd6aa9c1f743da532513ef8db24aa5d7286dc344c24ea7f68549bc6d5967",
+      "renderedSha256": "f05fdd6aa9c1f743da532513ef8db24aa5d7286dc344c24ea7f68549bc6d5967",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "main",
+        "repoName": "izzywdev/FuzeKeys"
+      }
+    },
+    ".github/workflows/auto-merge.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/auto-merge.yml",
+      "sourceSha256": "05c6f798e7d9d841bd64295a633f53ac2790a25915bfe4d4eea2729635358338",
+      "renderedSha256": "05c6f798e7d9d841bd64295a633f53ac2790a25915bfe4d4eea2729635358338",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "main",
+        "repoName": "izzywdev/FuzeKeys"
+      }
+    },
+    ".github/workflows/claude-auto-pr.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/claude-auto-pr.yml",
+      "sourceSha256": "c8baa726dbaf59f4f4abb6f1e093d86635be1dc6e4465a4a2e1c41265046835e",
+      "renderedSha256": "c8baa726dbaf59f4f4abb6f1e093d86635be1dc6e4465a4a2e1c41265046835e",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "main",
+        "repoName": "izzywdev/FuzeKeys"
+      }
+    },
+    ".github/workflows/claude.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/claude.yml",
+      "sourceSha256": "2e1853d4e600002cb17b12a3b9ee0f5329d6874f824f5e1aeb83ebf520d1cbe3",
+      "renderedSha256": "2e1853d4e600002cb17b12a3b9ee0f5329d6874f824f5e1aeb83ebf520d1cbe3",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "main",
+        "repoName": "izzywdev/FuzeKeys"
+      }
+    },
     ".github/workflows/design-approval.yml": {
       "capability": "workflows",
       "mode": "stamped",
       "sourcePath": "workflow-templates/design-approval.yml",
-      "sourceSha256": "ee6fa15c16a2c5df69e184e9817da9a80fd7a68cff9f9d9cc23c6b4da376040f",
-      "renderedSha256": "ee6fa15c16a2c5df69e184e9817da9a80fd7a68cff9f9d9cc23c6b4da376040f",
+      "sourceSha256": "338c4e5f5c36e24c6262049bc42add7d0a87e75a8e60e5147ba4b34a9a8b3c03",
+      "renderedSha256": "338c4e5f5c36e24c6262049bc42add7d0a87e75a8e60e5147ba4b34a9a8b3c03",
       "renderVars": {
         "defaultBranch": "master",
-        "baselineRef": "v1",
+        "baselineRef": "main",
         "repoName": "izzywdev/FuzeKeys"
       }
     },
@@ -409,11 +520,35 @@
       "capability": "workflows",
       "mode": "stamped",
       "sourcePath": "workflow-templates/design-review-notify.yml",
-      "sourceSha256": "31efd5b3f9c6239dadf2a719eb7bebf413a02bb49580fae6cec60e1345ff1e71",
-      "renderedSha256": "31efd5b3f9c6239dadf2a719eb7bebf413a02bb49580fae6cec60e1345ff1e71",
+      "sourceSha256": "8c1c06cdcb30aa6a49e8962060f9c9251717e79a4ca0e0b231d69cf5f6236f71",
+      "renderedSha256": "8c1c06cdcb30aa6a49e8962060f9c9251717e79a4ca0e0b231d69cf5f6236f71",
       "renderVars": {
         "defaultBranch": "master",
-        "baselineRef": "v1",
+        "baselineRef": "main",
+        "repoName": "izzywdev/FuzeKeys"
+      }
+    },
+    ".github/workflows/fuze-ci-autofix.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/fuze-ci-autofix.yml",
+      "sourceSha256": "60a3d0d55c1f4aa321a35264baf8c6107269b31e66480b80419922f485c57896",
+      "renderedSha256": "60a3d0d55c1f4aa321a35264baf8c6107269b31e66480b80419922f485c57896",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "main",
+        "repoName": "izzywdev/FuzeKeys"
+      }
+    },
+    ".github/workflows/fuze-code-review.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/fuze-code-review.yml",
+      "sourceSha256": "aae996ae7e63d6cb80e6916190662574160c1f3a2d7fe56b3b1250c6e8e0df71",
+      "renderedSha256": "aae996ae7e63d6cb80e6916190662574160c1f3a2d7fe56b3b1250c6e8e0df71",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "main",
         "repoName": "izzywdev/FuzeKeys"
       }
     },
@@ -421,11 +556,83 @@
       "capability": "workflows",
       "mode": "stamped",
       "sourcePath": "workflow-templates/gate-frames-stamped.yml",
-      "sourceSha256": "cd6cba5c53b28f626ba18ca62497d0c171e0c4c8565c997ce54845e8d6903a8b",
-      "renderedSha256": "cd6cba5c53b28f626ba18ca62497d0c171e0c4c8565c997ce54845e8d6903a8b",
+      "sourceSha256": "f05b8ae6236234be5823b29b1952e42597203bdd728e5b6fd2f39eba9e5f2d52",
+      "renderedSha256": "f05b8ae6236234be5823b29b1952e42597203bdd728e5b6fd2f39eba9e5f2d52",
       "renderVars": {
         "defaultBranch": "master",
-        "baselineRef": "v1",
+        "baselineRef": "main",
+        "repoName": "izzywdev/FuzeKeys"
+      }
+    },
+    ".github/workflows/gate-fuze-code-action.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/gate-fuze-code-action.yml",
+      "sourceSha256": "a71a88121f66fcc6f2f3eb38b37ed829724104a8f98753cce75dfde88f495019",
+      "renderedSha256": "a71a88121f66fcc6f2f3eb38b37ed829724104a8f98753cce75dfde88f495019",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "main",
+        "repoName": "izzywdev/FuzeKeys"
+      }
+    },
+    ".github/workflows/gate-line-endings.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/gate-line-endings.yml",
+      "sourceSha256": "9945d715ee548ea5bd3869bfa947660649232096ba621215d49354dd8785a41f",
+      "renderedSha256": "9945d715ee548ea5bd3869bfa947660649232096ba621215d49354dd8785a41f",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "main",
+        "repoName": "izzywdev/FuzeKeys"
+      }
+    },
+    ".github/workflows/gate-required-checks.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/gate-required-checks.yml",
+      "sourceSha256": "581a9be690b17d313d6bc8211c66ecbb0399fdd5f12c71ce8b188de44c586bbd",
+      "renderedSha256": "581a9be690b17d313d6bc8211c66ecbb0399fdd5f12c71ce8b188de44c586bbd",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "main",
+        "repoName": "izzywdev/FuzeKeys"
+      }
+    },
+    ".github/workflows/governance-nightly.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/governance-nightly.yml",
+      "sourceSha256": "14f1373708bfa2f04c45089350bc2a8a4932407a465a6e58734f5c1c476e8e85",
+      "renderedSha256": "14f1373708bfa2f04c45089350bc2a8a4932407a465a6e58734f5c1c476e8e85",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "main",
+        "repoName": "izzywdev/FuzeKeys"
+      }
+    },
+    ".github/workflows/governance-sync.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/governance-sync.yml",
+      "sourceSha256": "a89839321d0b9838e94adcfe1cfeb7ed2350017065939d8fdbe3c3e720a9c4fd",
+      "renderedSha256": "a89839321d0b9838e94adcfe1cfeb7ed2350017065939d8fdbe3c3e720a9c4fd",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "main",
+        "repoName": "izzywdev/FuzeKeys"
+      }
+    },
+    ".github/workflows/harden-gate.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/harden-gate.yml",
+      "sourceSha256": "17eea21acdd7d2fe0d337a1ed513bb6558a2be854459bbb015e3cfd3b752dd85",
+      "renderedSha256": "17eea21acdd7d2fe0d337a1ed513bb6558a2be854459bbb015e3cfd3b752dd85",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "main",
         "repoName": "izzywdev/FuzeKeys"
       }
     },
@@ -433,11 +640,11 @@
       "capability": "workflows",
       "mode": "stamped",
       "sourcePath": "workflow-templates/helm-validate.yml",
-      "sourceSha256": "8de7fc7e2ac87c8dab24252b81bbfcfe9fa03d1a40f7e72df3e7b4c971da25fb",
-      "renderedSha256": "8de7fc7e2ac87c8dab24252b81bbfcfe9fa03d1a40f7e72df3e7b4c971da25fb",
+      "sourceSha256": "105766f0f291242e62cead7e67ddf18a716c7420e2a0cb4799203086926906bd",
+      "renderedSha256": "105766f0f291242e62cead7e67ddf18a716c7420e2a0cb4799203086926906bd",
       "renderVars": {
         "defaultBranch": "master",
-        "baselineRef": "v1",
+        "baselineRef": "main",
         "repoName": "izzywdev/FuzeKeys"
       }
     },
@@ -445,11 +652,35 @@
       "capability": "workflows",
       "mode": "stamped",
       "sourcePath": "workflow-templates/label-sync.yml",
-      "sourceSha256": "cbc346e3bb08d8217ee0fec7c95899876c2713ac9db68ab050bb2e1d4ae04204",
-      "renderedSha256": "cbc346e3bb08d8217ee0fec7c95899876c2713ac9db68ab050bb2e1d4ae04204",
+      "sourceSha256": "3108f5461f5089ccf6c0cc5517f5dc3d2d114f40184a9abf80b6c9577e26f5c9",
+      "renderedSha256": "3108f5461f5089ccf6c0cc5517f5dc3d2d114f40184a9abf80b6c9577e26f5c9",
       "renderVars": {
         "defaultBranch": "master",
-        "baselineRef": "v1",
+        "baselineRef": "main",
+        "repoName": "izzywdev/FuzeKeys"
+      }
+    },
+    ".github/workflows/mcp-maintain.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/mcp-maintain.yml",
+      "sourceSha256": "8bc98a377edaae0dacf5204ff9ba7096d1ebaa2e9eb2c39d56ca2275d3c6625a",
+      "renderedSha256": "8bc98a377edaae0dacf5204ff9ba7096d1ebaa2e9eb2c39d56ca2275d3c6625a",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "main",
+        "repoName": "izzywdev/FuzeKeys"
+      }
+    },
+    ".github/workflows/nightly-integration.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/nightly-integration.yml",
+      "sourceSha256": "a0f4bc0469c9ea225d269fbb3c4fe42128b9a01056484abc949920660118aad2",
+      "renderedSha256": "a0f4bc0469c9ea225d269fbb3c4fe42128b9a01056484abc949920660118aad2",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "main",
         "repoName": "izzywdev/FuzeKeys"
       }
     },
@@ -457,11 +688,35 @@
       "capability": "workflows",
       "mode": "stamped",
       "sourcePath": "workflow-templates/pages-frames.yml",
-      "sourceSha256": "65f59bb2870ac1bd38ab946e6f174fb26b6f78ce892a2d7c0a44b847f3071416",
-      "renderedSha256": "65f59bb2870ac1bd38ab946e6f174fb26b6f78ce892a2d7c0a44b847f3071416",
+      "sourceSha256": "6396633d056598fa9d99a400e00b7dd4e11a2a03533a25e410fa4aa15bfe2ece",
+      "renderedSha256": "6396633d056598fa9d99a400e00b7dd4e11a2a03533a25e410fa4aa15bfe2ece",
       "renderVars": {
         "defaultBranch": "master",
-        "baselineRef": "v1",
+        "baselineRef": "main",
+        "repoName": "izzywdev/FuzeKeys"
+      }
+    },
+    ".github/workflows/publish-expert.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/publish-expert.yml",
+      "sourceSha256": "6e1ad059aa059b4932264bc09e48a08e405686422cbafe9f9a5ce7f19bca90d8",
+      "renderedSha256": "6e1ad059aa059b4932264bc09e48a08e405686422cbafe9f9a5ce7f19bca90d8",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "main",
+        "repoName": "izzywdev/FuzeKeys"
+      }
+    },
+    ".github/workflows/telegram-pr-merged.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/telegram-pr-merged.yml",
+      "sourceSha256": "61f2d8e25da6bc6cacc89fe786875b6778ac980919ba3d5defeae33a1459f467",
+      "renderedSha256": "61f2d8e25da6bc6cacc89fe786875b6778ac980919ba3d5defeae33a1459f467",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "main",
         "repoName": "izzywdev/FuzeKeys"
       }
     },
@@ -682,12 +937,47 @@
       "sourceSha256": "39237138652a534bc4f153b428c3f287794460a4d79d0ef7c964d3d268e95c54",
       "renderedSha256": "39237138652a534bc4f153b428c3f287794460a4d79d0ef7c964d3d268e95c54"
     },
+    "governance/federation-contract-policy.json": {
+      "capability": "workflows",
+      "mode": "managed",
+      "sourcePath": "governance/federation-contract-policy.json",
+      "sourceSha256": "a22e09f472571a5ba94ae81b247dbfe945a0781f1509b0c494feb1d39ff22e67",
+      "renderedSha256": "a22e09f472571a5ba94ae81b247dbfe945a0781f1509b0c494feb1d39ff22e67"
+    },
+    "scripts/__tests__/test_fuze_code_review_verdict.py": {
+      "capability": "workflows",
+      "mode": "managed",
+      "sourcePath": "scripts/__tests__/test_fuze_code_review_verdict.py",
+      "sourceSha256": "b8b8c86efbc5dbe83d7916d2bedfba2530989a6c4ececd9c02fb7df6d8328e90",
+      "renderedSha256": "b8b8c86efbc5dbe83d7916d2bedfba2530989a6c4ececd9c02fb7df6d8328e90"
+    },
+    "scripts/__tests__/test_gate_api_version.py": {
+      "capability": "workflows",
+      "mode": "managed",
+      "sourcePath": "scripts/__tests__/test_gate_api_version.py",
+      "sourceSha256": "1fafd2bc7aa2ec7411a6486b5ea9750219dcc30d5d6074972cdc8c95c1bde67a",
+      "renderedSha256": "1fafd2bc7aa2ec7411a6486b5ea9750219dcc30d5d6074972cdc8c95c1bde67a"
+    },
+    "scripts/__tests__/test_gate_federation_contract.py": {
+      "capability": "workflows",
+      "mode": "managed",
+      "sourcePath": "scripts/__tests__/test_gate_federation_contract.py",
+      "sourceSha256": "93dd164cdfe1d9c7ed3b3ba8bc0da3e2f49b9b1628669a69d177b957693b5ba5",
+      "renderedSha256": "93dd164cdfe1d9c7ed3b3ba8bc0da3e2f49b9b1628669a69d177b957693b5ba5"
+    },
     "scripts/__tests__/test_gate_identifier.py": {
       "capability": "entity-identity",
       "mode": "managed",
       "sourcePath": "scripts/__tests__/test_gate_identifier.py",
       "sourceSha256": "d6b01fc736d59e4d1f1f8591f16f03cd4d1faa3a4b7bb422a155c13eb0040723",
       "renderedSha256": "d6b01fc736d59e4d1f1f8591f16f03cd4d1faa3a4b7bb422a155c13eb0040723"
+    },
+    "scripts/__tests__/test_gate_vacuous_check.py": {
+      "capability": "workflows",
+      "mode": "managed",
+      "sourcePath": "scripts/__tests__/test_gate_vacuous_check.py",
+      "sourceSha256": "febd1091605fc00fc31f466dcf9529317826d0d648fc5d3250e2cebdda698187",
+      "renderedSha256": "febd1091605fc00fc31f466dcf9529317826d0d648fc5d3250e2cebdda698187"
     },
     "scripts/build-frames-site.mjs": {
       "capability": "workflows",
@@ -703,12 +993,33 @@
       "sourceSha256": "fab83bb03d7505832d12095db184c019c7565d8e050c23b8f2482436c2302f30",
       "renderedSha256": "fab83bb03d7505832d12095db184c019c7565d8e050c23b8f2482436c2302f30"
     },
+    "scripts/fuze_code_review_verdict.py": {
+      "capability": "workflows",
+      "mode": "managed",
+      "sourcePath": "scripts/fuze_code_review_verdict.py",
+      "sourceSha256": "d408d9d29e01accc1a736b296a3c4367a9e23bab12a05a6eaa01ecbdc0c5e58d",
+      "renderedSha256": "d408d9d29e01accc1a736b296a3c4367a9e23bab12a05a6eaa01ecbdc0c5e58d"
+    },
+    "scripts/gate_api_version.py": {
+      "capability": "workflows",
+      "mode": "managed",
+      "sourcePath": "scripts/gate_api_version.py",
+      "sourceSha256": "dbdcc301f2a9607ac4b23b71919ff990931cea0ef6404ec8646c03b3c428fafe",
+      "renderedSha256": "dbdcc301f2a9607ac4b23b71919ff990931cea0ef6404ec8646c03b3c428fafe"
+    },
     "scripts/gate_ds_conformance.py": {
       "capability": "design-system",
       "mode": "managed",
       "sourcePath": "scripts/gate_ds_conformance.py",
       "sourceSha256": "2155d4d75c739c1cf20ef03f3a364e66d8d4d0e47d9aa6844014caa82bfc1844",
       "renderedSha256": "2155d4d75c739c1cf20ef03f3a364e66d8d4d0e47d9aa6844014caa82bfc1844"
+    },
+    "scripts/gate_federation_contract.py": {
+      "capability": "workflows",
+      "mode": "managed",
+      "sourcePath": "scripts/gate_federation_contract.py",
+      "sourceSha256": "306612164d7a33855bb4e1e36f70bbf289b1e00b29c1eebc3c8887f53351e10f",
+      "renderedSha256": "306612164d7a33855bb4e1e36f70bbf289b1e00b29c1eebc3c8887f53351e10f"
     },
     "scripts/gate_identifier.py": {
       "capability": "entity-identity",
@@ -730,6 +1041,13 @@
       "sourcePath": "scripts/gate_pagination.py",
       "sourceSha256": "7f1e0d79e2a80a79250db72ff8e437c9cb4a7b596728c4c9b377d66c080f6c35",
       "renderedSha256": "7f1e0d79e2a80a79250db72ff8e437c9cb4a7b596728c4c9b377d66c080f6c35"
+    },
+    "scripts/gate_vacuous_check.py": {
+      "capability": "workflows",
+      "mode": "managed",
+      "sourcePath": "scripts/gate_vacuous_check.py",
+      "sourceSha256": "3415c860699eda3f3a81c2d935251558f25f8a147024842e4dc8927d19bb7fb0",
+      "renderedSha256": "3415c860699eda3f3a81c2d935251558f25f8a147024842e4dc8927d19bb7fb0"
     },
     "scripts/stamp-frames.mjs": {
       "capability": "workflows",

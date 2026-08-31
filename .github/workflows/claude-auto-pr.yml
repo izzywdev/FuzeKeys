@@ -1,3 +1,4 @@
+# fuze:managed template=claude-auto-pr.yml baseline=main digest=sha256:723395e4fc0a180f3dab3e95a1db50c10e49881088c27f3e63e53c030947060e
 name: Auto-PR from claude branches
 
 # Closes the issue->PR autonomy gap: `anthropics/claude-code-action` (in claude.yml)
@@ -18,13 +19,44 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
 
+      # Agent-PR identity (governance/hardening-convention.md §8): open the PR under a
+      # collaborator-backed identity so its head actually gets CI. A PR opened by the default
+      # GITHUB_TOKEN is frozen as action_required (public) or gets no runs at all (private).
+      # Mint a fuze-agent App installation token; fall back App -> bot PAT -> GITHUB_TOKEN,
+      # the last emitting a ::warning:: so a repo lacking the App secrets degrades, not breaks.
+      - name: Mint fuze-agent App token
+        id: app_token
+        continue-on-error: true
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.FUZE_AGENT_APP_ID }}
+          private-key: ${{ secrets.FUZE_AGENT_APP_PRIVATE_KEY }}
+      - name: Resolve agent-PR identity
+        id: identity
+        env:
+          APP_TOKEN: ${{ steps.app_token.outputs.token }}
+          BOT_PAT: ${{ secrets.GH_RELEASE_PAT }}
+          GH_DEFAULT: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -n "${APP_TOKEN:-}" ]; then
+            tok="$APP_TOKEN"; who="fuze-agent (App installation token)"
+          elif [ -n "${BOT_PAT:-}" ]; then
+            tok="$BOT_PAT"; who="GH_RELEASE_PAT (bot PAT)"
+          else
+            tok="$GH_DEFAULT"; who="GITHUB_TOKEN"
+            echo "::warning title=agent-identity::No FUZE_AGENT_APP_* App secrets and no GH_RELEASE_PAT on this repo — opening this PR as GITHUB_TOKEN, whose head gets NO CI (hardening-convention.md §8). Set the fuze-agent App secrets to fix."
+          fi
+          echo "::add-mask::$tok"
+          echo "token=$tok" >> "$GITHUB_OUTPUT"
+          echo "Agent-PR identity: $who"
+
       - name: Open draft PR if none exists
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.identity.outputs.token }}
           BRANCH: ${{ github.ref_name }}
           BASE: ${{ github.event.repository.default_branch }}
         run: |
