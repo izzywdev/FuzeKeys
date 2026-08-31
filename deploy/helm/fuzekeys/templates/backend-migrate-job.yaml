@@ -5,6 +5,23 @@
   backend/frontend at wave 0 (default). Argo waits for each wave to reach
   Healthy before advancing, so migrations always complete before new pods roll out.
   Idempotent: `alembic upgrade head` is a no-op when the DB is already at head.
+
+  Replace=true is LOAD-BEARING, not a style choice. A Job's `spec.template` is
+  immutable in Kubernetes, and `fuzekeys.labels` stamps `helm.sh/chart` and
+  `app.kubernetes.io/version` onto the POD TEMPLATE -- so every chart version bump
+  changes an immutable field. A server-side apply then fails with
+  `Job.batch "fuzekeys-migrate" is invalid: spec.template: ... field is immutable`,
+  Argo retries 5 times and the whole Application goes Degraded/OutOfSync. That is
+  not an unlucky upgrade: it is guaranteed on EVERY release. It stuck prod from
+  2026-08-24 (issue #110). Replace=true makes Argo delete and recreate the Job
+  instead of patching it, which is legal precisely because the Job is idempotent.
+
+  Why NOT a Helm hook, the way vault-bootstrap-job.yaml does it: Argo maps
+  `helm.sh/hook: pre-upgrade` to PreSync, which runs before the ENTIRE sync --
+  including before the wave -2 ConfigMap and the Secret this Job consumes via
+  `envFrom`. The migration would then run against absent or stale config. The
+  sync-wave ordering below (config -2 -> migrate -1 -> workloads 0) is the thing
+  that makes the config available, so it has to stay.
 */}}
 apiVersion: batch/v1
 kind: Job
@@ -15,6 +32,7 @@ metadata:
     app.kubernetes.io/component: migrate
   annotations:
     argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/sync-options: Replace=true
 spec:
   backoffLimit: {{ .Values.migrate.backoffLimit }}
   template:

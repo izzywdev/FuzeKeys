@@ -9,7 +9,7 @@ description: |
   are provided out-of-cluster by the shared FuzeInfra stack and referenced via
   in-cluster Service DNS.
 type: application
-version: 0.1.11
+version: 0.1.12
 # appVersion tracks the platform image tag (image.tag defaults to this). The
 # release/tag-bump mechanism bumps this + the CI build matrix tags images with it.
 appVersion: "0.1.10"
