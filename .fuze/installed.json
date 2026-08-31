@@ -532,8 +532,8 @@
       "capability": "workflows",
       "mode": "stamped",
       "sourcePath": "workflow-templates/fuze-ci-autofix.yml",
-      "sourceSha256": "60a3d0d55c1f4aa321a35264baf8c6107269b31e66480b80419922f485c57896",
-      "renderedSha256": "60a3d0d55c1f4aa321a35264baf8c6107269b31e66480b80419922f485c57896",
+      "sourceSha256": "9037aba5554e53f54c0b3234ef6dcc3e1ed30150e81571dd009f79eb67bb6856",
+      "renderedSha256": "9037aba5554e53f54c0b3234ef6dcc3e1ed30150e81571dd009f79eb67bb6856",
       "renderVars": {
         "defaultBranch": "master",
         "baselineRef": "main",
@@ -600,12 +600,24 @@
         "repoName": "izzywdev/FuzeKeys"
       }
     },
+    ".github/workflows/gate-workflow-drift.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/gate-workflow-drift.yml",
+      "sourceSha256": "44386b4dfcfd303699cb994c5e280eab8a58799112c0a8bd5d6e1a5578b30e7b",
+      "renderedSha256": "44386b4dfcfd303699cb994c5e280eab8a58799112c0a8bd5d6e1a5578b30e7b",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "main",
+        "repoName": "izzywdev/FuzeKeys"
+      }
+    },
     ".github/workflows/governance-nightly.yml": {
       "capability": "workflows",
       "mode": "stamped",
       "sourcePath": "workflow-templates/governance-nightly.yml",
-      "sourceSha256": "14f1373708bfa2f04c45089350bc2a8a4932407a465a6e58734f5c1c476e8e85",
-      "renderedSha256": "14f1373708bfa2f04c45089350bc2a8a4932407a465a6e58734f5c1c476e8e85",
+      "sourceSha256": "8a8e15266987150337e457802c6df4df6ec5c437a8ed1290199c770fdd1713b9",
+      "renderedSha256": "8a8e15266987150337e457802c6df4df6ec5c437a8ed1290199c770fdd1713b9",
       "renderVars": {
         "defaultBranch": "master",
         "baselineRef": "main",
@@ -712,8 +724,8 @@
       "capability": "workflows",
       "mode": "stamped",
       "sourcePath": "workflow-templates/telegram-pr-merged.yml",
-      "sourceSha256": "61f2d8e25da6bc6cacc89fe786875b6778ac980919ba3d5defeae33a1459f467",
-      "renderedSha256": "61f2d8e25da6bc6cacc89fe786875b6778ac980919ba3d5defeae33a1459f467",
+      "sourceSha256": "676f316f97914f2969046f2fe195310d44b9cf85d779b5c3a059fa8e35a54732",
+      "renderedSha256": "676f316f97914f2969046f2fe195310d44b9cf85d779b5c3a059fa8e35a54732",
       "renderVars": {
         "defaultBranch": "master",
         "baselineRef": "main",
@@ -944,6 +956,13 @@
       "sourceSha256": "a22e09f472571a5ba94ae81b247dbfe945a0781f1509b0c494feb1d39ff22e67",
       "renderedSha256": "a22e09f472571a5ba94ae81b247dbfe945a0781f1509b0c494feb1d39ff22e67"
     },
+    "governance/workflow-drift-policy.json": {
+      "capability": "workflows",
+      "mode": "managed",
+      "sourcePath": "governance/workflow-drift-policy.json",
+      "sourceSha256": "ecf965d0dd770daf18bd3445fc157a8589dd7865d7cf03b652b25ebc04229818",
+      "renderedSha256": "ecf965d0dd770daf18bd3445fc157a8589dd7865d7cf03b652b25ebc04229818"
+    },
     "scripts/__tests__/test_fuze_code_review_verdict.py": {
       "capability": "workflows",
       "mode": "managed",
@@ -978,6 +997,13 @@
       "sourcePath": "scripts/__tests__/test_gate_vacuous_check.py",
       "sourceSha256": "febd1091605fc00fc31f466dcf9529317826d0d648fc5d3250e2cebdda698187",
       "renderedSha256": "febd1091605fc00fc31f466dcf9529317826d0d648fc5d3250e2cebdda698187"
+    },
+    "scripts/__tests__/test_gate_workflow_drift.py": {
+      "capability": "workflows",
+      "mode": "managed",
+      "sourcePath": "scripts/__tests__/test_gate_workflow_drift.py",
+      "sourceSha256": "6dbfa806b0915d972c9492d2cd64cd8cbd44d9c03f18ed724d26f582037eaa48",
+      "renderedSha256": "6dbfa806b0915d972c9492d2cd64cd8cbd44d9c03f18ed724d26f582037eaa48"
     },
     "scripts/build-frames-site.mjs": {
       "capability": "workflows",
@@ -1048,6 +1074,13 @@
       "sourcePath": "scripts/gate_vacuous_check.py",
       "sourceSha256": "3415c860699eda3f3a81c2d935251558f25f8a147024842e4dc8927d19bb7fb0",
       "renderedSha256": "3415c860699eda3f3a81c2d935251558f25f8a147024842e4dc8927d19bb7fb0"
+    },
+    "scripts/gate_workflow_drift.py": {
+      "capability": "workflows",
+      "mode": "managed",
+      "sourcePath": "scripts/gate_workflow_drift.py",
+      "sourceSha256": "6f1c8cccdc0505547ad280def523bc55361ccb37883fd95d0c00010fe5d55276",
+      "renderedSha256": "6f1c8cccdc0505547ad280def523bc55361ccb37883fd95d0c00010fe5d55276"
     },
     "scripts/stamp-frames.mjs": {
       "capability": "workflows",
