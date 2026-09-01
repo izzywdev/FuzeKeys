@@ -1,4 +1,4 @@
-# fuze:managed template=governance-nightly.yml baseline=main digest=sha256:c689fcb5cf2bdc556240641e998b32f495a3bd9ed7d59d7451df3ee0d89aeac1
+# fuze:managed template=governance-nightly.yml baseline=main digest=sha256:88de2c7e68a93de7d0e26ec09258891b53647fcd63fce79d359e6528b44b0aaa
 name: Governance Nightly
 
 # platform-governance's nightly reconciliation sweep (governance-reconciliation skill):
@@ -82,7 +82,18 @@ jobs:
             TodoWrite
           claude-args: >-
             --permission-mode bypassPermissions
-            --max-turns 60
+            # 60 was too tight and produced the worst possible outcome, measured on
+            # FuzeInfra run 33416104350: the sweep SUCCEEDED (is_error:false,
+            # permission_denials_count 19->0, and it created the first "Governance
+            # reconciliation" issue this workflow has ever produced) and the action then
+            # failed the step anyway with "Claude reported a successful result after 62
+            # turns, exceeding the configured maximum of 60".
+            #
+            # A budget that fails a run which did its job teaches people to ignore the
+            # red -- the exact habit the deliverable-verification step below exists to
+            # break. The turn count is a RUNAWAY GUARD; whether a run counted is decided
+            # by the deliverable check, not by how many turns it took.
+            --max-turns 150
           task-prompt: |
             You are the **platform-governance** agent running the nightly **governance-reconciliation**
             sweep for the repository ${{ github.repository }}. Follow the governance-reconciliation skill.

@@ -255,7 +255,12 @@ def detect_extraction_candidates(root: str, threshold: int) -> dict[str, dict]:
         uniq = sorted(set(locs))
         # recurring AND across >1 file = an extraction signal
         if len(uniq) >= threshold and len({l.split(":")[0] for l in uniq}) >= 2:
-            fp = hashlib.sha1(norm.encode()).hexdigest()[:12]
+            # sha256, not sha1: this is a non-cryptographic fingerprint used only to
+            # GROUP recurring literals, and it is truncated to 12 chars regardless --
+            # so the stronger digest is free, and it stops every consuming repo
+            # inheriting a code-scanning alert for an algorithm choice that does not
+            # matter here.
+            fp = hashlib.sha256(norm.encode()).hexdigest()[:12]
             out[fp] = {"fingerprint": fp, "locations": uniq, "sample": samples[norm]}
     return out
 
