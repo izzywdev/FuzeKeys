@@ -19,7 +19,7 @@
     "deploy/helm/fuzekeys/",
     "contracts/openapi.yaml"
   ],
-  "baselineRef": "main",
+  "baselineRef": "v1",
   "agents": [
     "fuzekeys-expert",
     "contract-designer",
