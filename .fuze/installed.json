@@ -480,18 +480,6 @@
         "repoName": "izzywdev/FuzeKeys"
       }
     },
-    ".github/workflows/claude-auto-pr.yml": {
-      "capability": "workflows",
-      "mode": "stamped",
-      "sourcePath": "workflow-templates/claude-auto-pr.yml",
-      "sourceSha256": "c8baa726dbaf59f4f4abb6f1e093d86635be1dc6e4465a4a2e1c41265046835e",
-      "renderedSha256": "c8baa726dbaf59f4f4abb6f1e093d86635be1dc6e4465a4a2e1c41265046835e",
-      "renderVars": {
-        "defaultBranch": "master",
-        "baselineRef": "main",
-        "repoName": "izzywdev/FuzeKeys"
-      }
-    },
     ".github/workflows/claude.yml": {
       "capability": "workflows",
       "mode": "stamped",
@@ -528,6 +516,18 @@
         "repoName": "izzywdev/FuzeKeys"
       }
     },
+    ".github/workflows/fuze-auto-pr.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/fuze-auto-pr.yml",
+      "sourceSha256": "38b0c76d7f488d2525ce4cddddfedf2d93e48507013d5acddf6126b674f4cebc",
+      "renderedSha256": "38b0c76d7f488d2525ce4cddddfedf2d93e48507013d5acddf6126b674f4cebc",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "main",
+        "repoName": "izzywdev/FuzeKeys"
+      }
+    },
     ".github/workflows/fuze-ci-autofix.yml": {
       "capability": "workflows",
       "mode": "stamped",
@@ -546,6 +546,18 @@
       "sourcePath": "workflow-templates/fuze-code-review.yml",
       "sourceSha256": "aae996ae7e63d6cb80e6916190662574160c1f3a2d7fe56b3b1250c6e8e0df71",
       "renderedSha256": "aae996ae7e63d6cb80e6916190662574160c1f3a2d7fe56b3b1250c6e8e0df71",
+      "renderVars": {
+        "defaultBranch": "master",
+        "baselineRef": "main",
+        "repoName": "izzywdev/FuzeKeys"
+      }
+    },
+    ".github/workflows/fuze.yml": {
+      "capability": "workflows",
+      "mode": "stamped",
+      "sourcePath": "workflow-templates/fuze.yml",
+      "sourceSha256": "1c80ac7e263fce73e866bebf98bde486f5950e79c0819f48ce62b8828487bb1b",
+      "renderedSha256": "1c80ac7e263fce73e866bebf98bde486f5950e79c0819f48ce62b8828487bb1b",
       "renderVars": {
         "defaultBranch": "master",
         "baselineRef": "main",
