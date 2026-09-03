@@ -1,4 +1,4 @@
-# fuze:managed template=governance-sync.yml baseline=main digest=sha256:cc456147d9f0089b8068b73b74d5e5fe76767ed4942c4681a8d8873edb3ef935
+# fuze:managed template=governance-sync.yml baseline=v1 digest=sha256:d6e85a50b582b2bd0d5dd78c0d24dd052039cc68dcfd2d1fdadd35cd3597821b
 name: Governance Sync
 
 # Per-repo, CI-time governance reconciliation (stamped by sdlc-bootstrap).
@@ -208,6 +208,14 @@ jobs:
               # extraheader, not a token-in-URL remote: git echoes a remote URL on several
               # error paths and never echoes a header, and some of these repos are public.
               AUTH_B64=$(printf 'x-access-token:%s' "$PUSH_TOKEN" | base64 -w0)
+              # UNSET FIRST. actions/checkout persists its own Authorization into this same
+              # config key, and this job checks out TWICE. Setting ours on top left the server
+              # receiving two Authorization headers and rejecting the push:
+              #     remote: Duplicate header: "Authorization"
+              # Observed on FuzeInfra run 33615645019: the branch never moved while the job
+              # reported "Reconciled and pushed 3 managed file(s) and 17 governed workflow
+              # file(s) ... using FUZE_AGENT_APP_WORKFLOWS".
+              git config --local --unset-all "http.https://github.com/.extraheader" || true
               git config --local "http.https://github.com/.extraheader" "AUTHORIZATION: basic ${AUTH_B64}"
               unset AUTH_B64
             fi
@@ -220,7 +228,15 @@ jobs:
             # `|| true`: if it still cannot push after the retries, that is a real failure.
             pushed=false
             for attempt in 1 2 3; do
-              if git push origin "HEAD:${HEAD_REF}" 2>&1 | tee /tmp/gs-push.log; then
+              # `git push | tee` returns TEE's exit status, which is always 0. Every push
+              # therefore "succeeded" regardless of what the server said, `pushed` was set
+              # unconditionally, and the success notice printed over a REJECTED push. That is
+              # why reconciliations were computed, announced, and silently discarded.
+              # PIPESTATUS[0] is git's own status. Not `set -o pipefail`: that would change
+              # unrelated pipelines in this block.
+              git push origin "HEAD:${HEAD_REF}" 2>&1 | tee /tmp/gs-push.log
+              push_rc=${PIPESTATUS[0]}
+              if [ "$push_rc" -eq 0 ]; then
                 pushed=true
                 break
               fi
