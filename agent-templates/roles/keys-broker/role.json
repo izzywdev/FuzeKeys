@@ -8,7 +8,8 @@
   "description": "Serves FuzeKeys' policy-mediated secret-broker surface — issuing opaque, TTL-bound, single-use grant handles; redeeming them for short-lived derived credentials; RFC 8693 token exchange for a scoped downstream token; and instant, non-disclosing revocation. A caller asks it to accomplish an access outcome and receives a credential or a decision, never stored secret material. The broker CORE is deterministic security infrastructure, not an LLM: this role is a thin mediating surface over backend/app/broker, and all authorization and lifecycle stay in that core. High-sensitivity releases are human-gated (reach_human) before any credential is released.",
   "model": "claude-opus-4-8",
   "skills": [
-    "credential-broker-mediation"
+    "credential-broker-mediation",
+    "fuzekeys-expert"
   ],
   "services": {
     "github": "none",
@@ -61,6 +62,6 @@
       "ref": "fuzekeys:jwks"
     },
     "core": "deterministic — backend/app/broker. This role mediates the human-gated path only; it does not implement authz or lifecycle.",
-    "gate": "a2a.enabled flipped false->true in .fuze/manifest.json on 2026-08-26 (owner instruction). This role now carries a valid top-level `description`, so card projection is unblocked; a2a-maintainer validates the projection against the frozen contracts/a2a/v1 on every PR. Actual serving additionally requires the FuzeKeys tenant entry in FuzeAgent's a2a-shared values-prod.yaml (cross-repo) — until that lands, the flag is set but the shared server has no tenant to route here."
+    "gate": "a2a.enabled flipped false->true in .fuze/manifest.json on 2026-08-26 (owner instruction). This role now carries a valid top-level `description`, so card projection is unblocked; a2a-maintainer validates the projection against the frozen contracts/a2a/v1 on every PR. SERVING TOPOLOGY CHANGED (2026-09-02): this repo now runs its OWN single-tenant A2A pod (deploy/helm/fuzekeys/templates/a2a.yaml) rather than depending on a cross-repo tenant entry in FuzeAgent's a2a-shared server — FuzeAgent#148 (contract v1.2.0) made `a2a.inClusterUrl` values-driven, which is what makes a per-product pod reachable at all (docs/a2a-tenant-registration.md updated accordingly). The pod's chart-level `a2a.enabled` stays false pending two operator preconditions: the `a2a-provider-anthropic` SealedSecret is not yet sealed into this repo's own `fuzekeys` namespace, and the fleet Anthropic workspace is separately reporting a low credit balance. Flipping the pod on is an operator/devops step, not a code change."
   }
 }

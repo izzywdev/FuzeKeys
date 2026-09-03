@@ -361,24 +361,115 @@ mcp:
     limits: { cpu: 500m, memory: 256Mi }
 
 # -----------------------------------------------------------------------------
-# A2A — NOT a pod in this chart, by design.
+# A2A — the product's FOURTH pod (backend, frontend, MCP, A2A).
 #
-# There is no a2a Deployment here and there must not be one. The published image
-# (ghcr.io/izzywdev/fuzeagent-a2a) is built as ONE multi-tenant server, and its
-# card generator proves it: agent-templates/a2a/card_generator.py line 29 defines
+# Runs ghcr.io/izzywdev/fuze-a2a: the shared agent-delegation runtime, ONE image
+# for both the multi-tenant server and a per-product single-tenant pod like this
+# one — they differ only in the mounted values document (this block). No
+# FuzeKeys logic is baked into the image; everything that makes this pod "the
+# FuzeKeys agent" is `tenants[0]` below plus this repo's own
+# agent-templates/roles/keys-broker/role.json + .claude/skills/*.
 #
-#     IN_CLUSTER_URL = "http://a2a-shared.fuzeagent.svc.cluster.local:8080/rpc"
+# CORRECTION (2026-09-02, superseding an earlier "no pod here" design): a
+# per-product pod's callable endpoint used to be a hardcoded constant in the
+# image (agent-templates/a2a/card_generator.py), so a pod here would have
+# booted healthy and advertised the SHARED server's address to every caller —
+# functionally dead while looking fine. FuzeAgent's contract v1.2.0 (#148) made
+# that endpoint read `a2a.inClusterUrl` below instead, which is what makes this
+# pod reachable. Full history: docs/a2a-tenant-registration.md.
 #
-# and `_interface()` returns that CONSTANT as the callable endpoint of every
-# non-external Agent Card. It is not values-driven and there is no env var that
-# overrides it. A per-product pod would therefore boot, pass its health check, and
-# advertise the SHARED server's address — a pod that looks healthy and is
-# functionally dead, which is worse than no pod at all.
+# STILL `enabled: false`. The remaining gates are OPERATIONAL, not
+# architectural: (1) `a2a-provider-anthropic` is not yet sealed into this
+# repo's own `fuzekeys` namespace (kubeseal is namespace-scoped; sealing is an
+# operator step, never done from here), and (2) the fleet Anthropic workspace
+# has separately reported a low credit balance. Flip this only once (1) is
+# confirmed sealed — flipping it earlier schedules a pod that ImagePullBackOff
+# or crash-loops for a reason nothing here makes visible.
 #
-# Onboarding this product to A2A is a `tenants[]` entry in FuzeAgent's
-# deploy/helm/a2a-shared values. The exact entry, and the preconditions this repo
-# does not yet meet, are written down in docs/a2a-tenant-registration.md.
+# Every key under `a2a` is exactly the FROZEN values interface
+# (FuzeAgent agent-templates/contracts/a2a/v1/schema/values-interface.schema.json),
+# additionalProperties:false at every level — nothing here is invented. Pure
+# deployment mechanics live in the sibling `a2aDeploy` block below, which the
+# interface deliberately does not define.
 # -----------------------------------------------------------------------------
+a2a:
+  # Gate 1 of 2 — `tenants[0].enabled` is the other, and both must be on.
+  enabled: false
+  image:
+    repository: ghcr.io/izzywdev/fuze-a2a
+    # Immutable tag, resolved against the GHCR registry (anonymous token +
+    # manifest GET -> HTTP 200) before pinning, never assumed from a green
+    # release. Never `latest` — templates/a2a.yaml refuses to render on
+    # `latest` or an empty tag, because a moving tag makes the deployed server
+    # unidentifiable.
+    tag: d9edae9b4268
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8080
+  protocolVersion: "1.0"
+  # ⇩ THE ONE VALUE A PER-PRODUCT POD MUST NOT GET WRONG (contract v1.2.0).
+  # The server publishes this string VERBATIM as the card's AgentInterface.url,
+  # so it must equal this chart's own A2A Service: templates/a2a.yaml renders a
+  # fixed `a2a-fuzekeys` Service into the release namespace, and a render-time
+  # guard there fails the chart if the two ever disagree. Leaving it unset does
+  # not fail — it silently means the SHARED server, which is the whole trap.
+  inClusterUrl: http://a2a-fuzekeys.fuzekeys.svc.cluster.local:8080/rpc
+  # Machine-to-machine identity — NOT user identity. These authenticate other
+  # AGENTS calling this surface. Values match FuzeAgent's a2a-shared
+  # values-prod.yaml (the family convention); the issuer is FuzeFront's
+  # Authentik and `callerClaim: repo` is the only trusted caller identity
+  # (contracts/a2a/v1/authz.md §2).
+  auth:
+    oidcIssuerUrl: https://app.fuzefront.com/application/o/fuzefront/
+    audience: a2a
+    callerClaim: repo
+    oidcDiscoveryUrl: http://authentik-server.fuzefront.svc.cluster.local:9000/application/o/fuzefront/.well-known/openid-configuration
+    # mTLS is in-cluster defence-in-depth on top of the bearer. Off until an
+    # `a2a-mtls-ca` SealedSecret exists in this namespace.
+    mtls:
+      enabled: false
+  # EXACTLY ONE entry — a per-product pod serves a single tenant, and
+  # templates/a2a.yaml refuses to render if more than one is enabled. The
+  # projection inputs this names are real and verified: .fuze/manifest.json
+  # carries a populated `providesTo` (18 entries; empty/absent would deny every
+  # caller) and agent-templates/roles/keys-broker/role.json has a non-empty
+  # `description` and a real `skills[]` (credential-broker-mediation,
+  # fuzekeys-expert), both resolving to real .claude/skills/*/SKILL.md bundles.
+  tenants:
+    - tenant: FuzeKeys
+      repo: izzywdev/FuzeKeys
+      ref: master
+      enabled: true
+      entryRole: keys-broker
+      external: false
+      provider:
+        name: anthropic
+        # Not yet sealed (see the STILL enabled:false note above). Referencing
+        # the name/key now, rather than after sealing, is deliberate: it is
+        # what gate-a2a's --creds check is FOR — a secretRef that does not yet
+        # resolve is a true, actionable finding, not something to hide by
+        # leaving the field out until it's convenient.
+        apiKeySecretRef: { name: a2a-provider-anthropic, key: api-key }
+
+# Deployment mechanics for the A2A pod. Kept OUT of `a2a` so that block stays
+# conformant to the frozen operator interface, which defines no templates.
+a2aDeploy:
+  replicas: 1
+  agentProvider: anthropic
+  gitImage: alpine/git:latest
+  resources:
+    requests:
+      cpu: 150m
+      memory: 384Mi
+    limits:
+      cpu: 1000m
+      memory: 896Mi
+  # This repo is class: oss-public (.fuze/manifest.json), so the init
+  # container's `git clone` of izzywdev/FuzeKeys needs no credential — null is
+  # correct here, not a placeholder for a future secret. A private repo would
+  # set { name: a2a-repos-git, key: token }.
+  reposGitTokenSecretRef: null
 
 # ---------------------------------------------------------------------------
 # FuzeFront self-registration (docs/mfe-self-registration.md).
