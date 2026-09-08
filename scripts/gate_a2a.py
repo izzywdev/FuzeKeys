@@ -97,6 +97,26 @@ import sys
 import urllib.error
 import urllib.request
 
+
+def _rel(path, start=None):
+    """A repo-relative path in POSIX form, always.
+
+    These are GIT paths, not filesystem paths for local use: they are printed in findings,
+    used as dict keys against `git ls-files` output and against the POSIX keys in
+    `.fuze/installed.json`, and read by humans who then grep for them. `os.path.relpath`
+    emits backslashes on Windows, so the same file gets two spellings depending on where
+    the gate ran -- and a non-match is indistinguishable from "not found".
+
+    Local to this module on purpose. Every scripts/gate_*.py is installed into a consuming
+    repo as a STANDALONE file (see gate_openapi_conformance.py's ImportError handler for
+    what one cross-script import already costs), so a shared module would have to be added
+    to every capability's item list and would break any repo that synced one gate without
+    it. One helper per deployable unit is the tightest sharing this model allows.
+    """
+    rel = os.path.relpath(path, start) if start is not None else os.path.relpath(path)
+    return rel.replace(os.sep, "/").replace("\\", "/")
+
+
 # --------------------------------------------------------------------------- model
 
 class Finding:
@@ -110,7 +130,19 @@ class Finding:
         return f"  {self.code}  {self.path}\n        {self.message}"
 
 
-SHARED_IMAGE = "ghcr.io/izzywdev/fuzeagent-a2a"
+# Authority for this value is FuzeAgent's FROZEN contract, not this file:
+#   contracts/a2a/v1/schema/values-interface.schema.json
+#   -> properties.a2a.properties.image.properties.repository.default
+# which reads `ghcr.io/izzywdev/fuze-a2a`. This constant said `fuzeagent-a2a` and
+# so contradicted the contract it exists to enforce -- I1 failed every repo that
+# used the CORRECT image, which is the worst kind of gate failure: it punishes
+# conformance and teaches people to ignore the finding.
+#
+# Why it survived so long: BOTH names resolve on GHCR today (anonymous manifest
+# GET returns HTTP 200 for each), so a pull-check can never catch this drift. The
+# only authority is the contract. If these ever disagree again, the contract wins
+# and this constant is the bug.
+SHARED_IMAGE = "ghcr.io/izzywdev/fuze-a2a"
 DEFAULT_POLICY = {
     "skills": {"adoption": "fail", "ratchet": {"knownUnadopted": []}},
     "image": {"repository": SHARED_IMAGE},
@@ -184,7 +216,7 @@ def find_values_docs(repo: str):
     seen = set()
     for pat in pats:
         for path in sorted(glob.glob(os.path.join(repo, pat))):
-            rel = os.path.relpath(path, repo)
+            rel = _rel(path, repo)
             if rel in seen:
                 continue
             seen.add(rel)
@@ -250,6 +282,57 @@ def registry_manifest_status(repository: str, tag: str, timeout: int = 15):
 
 # --------------------------------------------------------------------------- checks
 
+def _tenant_entry_verified(repo, served_by, timeout=6):
+    """Is `repo` actually registered as a tenant on the shared A2A server?
+
+    A repo served by FuzeAgent's shared `a2a-shared` deployment legitimately has NO
+    `a2a:` block in its own chart -- that is the topology, not a defect. But
+    "trust the declaration" is exactly the vacuous pass this gate exists to prevent,
+    so a declared `a2a.servedBy` is not sufficient on its own: the tenant entry is
+    READ from the serving repo and must name this repo with enabled=true.
+
+    Returns (verified: bool|None, detail: str). None means UNVERIFIABLE -- which the
+    caller must treat as a finding, never as a pass. Absence of proof is not proof.
+    """
+    server = (served_by or {}).get("repo") if isinstance(served_by, dict) else served_by
+    if not server:
+        return False, "no a2a.servedBy declared"
+    path = ((served_by or {}).get("valuesPath")
+            if isinstance(served_by, dict) else None) or "deploy/helm/a2a-shared/values-prod.yaml"
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if not token:
+        return None, (f"cannot read {server}/{path} to confirm the tenant entry: no "
+                      "GITHUB_TOKEN/GH_TOKEN in the environment")
+    url = f"https://api.github.com/repos/{server}/contents/{path}"
+    req = urllib.request.Request(url, headers={
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github.raw",
+        "User-Agent": "fuze-gate-a2a",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body = resp.read().decode("utf-8", "replace")
+    except Exception as exc:
+        return None, f"cannot read {server}/{path} to confirm the tenant entry ({exc})"
+    try:
+        import yaml  # imported lazily, mirroring _yaml_load: PyYAML is optional here
+        doc = yaml.safe_load(body) or {}
+    except Exception as exc:
+        return None, f"{server}/{path} did not parse as YAML ({exc})"
+    tenants = ((doc.get("a2a") or {}).get("tenants")) or doc.get("tenants") or []
+    short = repo.split("/")[-1].lower()
+    for t in tenants:
+        if not isinstance(t, dict):
+            continue
+        names = {str(t.get("tenant", "")).lower(), str(t.get("repo", "")).lower(),
+                 str(t.get("repo", "")).split("/")[-1].lower()}
+        if short in names:
+            if t.get("enabled") is False:
+                return False, f"{server}/{path} lists tenant `{t.get('tenant')}` but enabled=false"
+            return True, f"served as tenant `{t.get('tenant')}` on {server}"
+    return False, f"{server}/{path} has no tenant entry naming this repo"
+
+
 def check_image(repo, manifest, policy, docs, online=True):
     out = []
     want_repo = (policy.get("image") or {}).get("repository", SHARED_IMAGE)
@@ -259,12 +342,39 @@ def check_image(repo, manifest, policy, docs, online=True):
         # deployed nowhere -- a card that routes to a pod that does not exist.
         # Measured 2026-08-23: 4 of the 8 a2a-enabled repos were exactly here, and
         # nothing was red because nothing checked.
-        out.append(Finding(
-            "I0", ".fuze/manifest.json",
-            "a2a.enabled is true and NO chart values file in this repo carries an `a2a:` "
-            "block. The surface is advertised to other products and deployed nowhere — a "
-            "card that routes to a pod that does not exist. Add the per-product pod "
-            "(devops-engineer) or set a2a.enabled=false until it exists."))
+        # A repo served as a TENANT of the shared a2a-shared server legitimately has
+        # no `a2a:` block of its own. Before this branch existed, I0 fired on every
+        # such repo -- a fatal finding for conforming to the documented topology,
+        # which trains people to ignore the gate. But the fix is NOT an exemption
+        # flag: the tenant entry is read from the serving repo and must actually
+        # name this one. A declaration nobody checks is the vacuous pass this gate
+        # exists to prevent.
+        served_by = (manifest.get("a2a") or {}).get("servedBy")
+        ok, detail = _tenant_entry_verified(repo, served_by)
+        if ok is True:
+            pass  # verified against the serving repo's tenant list -- not a finding
+        elif ok is None:
+            out.append(Finding(
+                "I0", ".fuze/manifest.json",
+                f"a2a.enabled is true, this repo has no `a2a:` chart block, and it "
+                f"declares a2a.servedBy — but that tenancy could NOT be verified: "
+                f"{detail}. Unverifiable is reported as a finding on purpose: a check "
+                f"that passes because it could not run is worse than no check."))
+        elif served_by:
+            out.append(Finding(
+                "I0", ".fuze/manifest.json",
+                f"a2a.enabled is true and this repo declares a2a.servedBy, but {detail}. "
+                f"The card is advertised to other products and routes to a tenant that "
+                f"does not exist. Register the tenant on the serving repo, or set "
+                f"a2a.enabled=false until it is registered."))
+        else:
+            out.append(Finding(
+                "I0", ".fuze/manifest.json",
+                "a2a.enabled is true and NO chart values file in this repo carries an `a2a:` "
+                "block. The surface is advertised to other products and deployed nowhere — a "
+                "card that routes to a pod that does not exist. Add the per-product pod "
+                "(devops-engineer), declare a2a.servedBy if it is served as a tenant of the "
+                "shared server, or set a2a.enabled=false until it exists."))
     for rel, doc in docs:
         a2a = doc.get("a2a") or {}
         img = a2a.get("image") or {}
@@ -388,7 +498,15 @@ def _iter_secret_refs(node, trail=""):
     allowlist would miss the next one.
     """
     if isinstance(node, dict):
-        if set(node) <= {"name", "key"} and "name" in node:
+        # BOTH name and key are required. Matching on `name` alone made every bare
+        # {name: ...} mapping look like a credential reference -- observed on
+        # a2a.tenants[].provider: {name: anthropic}, which C1 then reported as an
+        # unsealed secret. That is a vendor label, not a secretRef, and there is no
+        # sealed secret it could ever resolve to. A ref without a key is also
+        # unactionable for this gate: C1 verifies name+key against a SealedSecret's
+        # encryptedData key names, so a keyless mapping could never be checked
+        # anyway -- reporting it produced a finding no one could fix.
+        if set(node) <= {"name", "key"} and "name" in node and "key" in node:
             yield trail, node
         for k, v in node.items():
             yield from _iter_secret_refs(v, f"{trail}.{k}" if trail else k)
@@ -505,7 +623,7 @@ def check_memory(repo, manifest, policy, docs):
                 continue
             if _CHROMA_SERVER.search(text):
                 out.append(Finding(
-                    "M1", os.path.relpath(path, repo),
+                    "M1", _rel(path, repo),
                     "the A2A chart mounts a Chroma SERVER image. chromadb carries "
                     "PYSEC-2026-311 — unfixable pre-auth code injection in the SERVER's "
                     "collections handler via trust_remote_code. FuzeAgent is unaffected "
@@ -543,9 +661,9 @@ def check_forks(repo, manifest, policy, docs):
     for path in glob.glob(os.path.join(repo, "**", "Dockerfile*"), recursive=True):
         if "node_modules" in path or "/.git/" in path:
             continue
-        rel = os.path.relpath(path, repo)
+        rel = _rel(path, repo)
         # fuzeagent owns the one true runtime Dockerfile; it is not a fork of itself.
-        if rel.replace(os.sep, "/") == "agent-templates/a2a/Dockerfile":
+        if rel == "agent-templates/a2a/Dockerfile":
             continue
         try:
             with open(path, encoding="utf-8", errors="replace") as fh:
@@ -598,12 +716,19 @@ def main(argv=None):
 
     policy, policy_src = load_policy(repo)
     adoption_hard = (policy.get("skills") or {}).get("adoption", "fail") != "warn"
-    known = set(((policy.get("skills") or {}).get("ratchet") or {}).get("knownUnadopted") or [])
+    # Case-insensitive on purpose. GitHub repo ids are case-INsensitive but
+    # case-PRESERVING, so a policy naming `izzywdev/fuzebi` never matched a manifest
+    # declaring `izzywdev/FuzeBI` under exact-string membership -- the ratchet
+    # silently did not apply and the repo stayed strict while its policy said
+    # otherwise. Silent by construction: a ratchet that fails to soften looks
+    # exactly like a repo that was never listed.
+    known = {str(x).lower()
+             for x in ((policy.get("skills") or {}).get("ratchet") or {}).get("knownUnadopted") or []}
     repo_id = manifest.get("repo") or os.path.basename(repo)
     # The ratchet softens ONLY repos it NAMES. A repo not on the worklist is hard even
     # while the mode reads `warn` -- otherwise `warn` would be a fleet-wide opt-out and
     # a NEW violation would land soft, which is the thing a ratchet exists to prevent.
-    if not adoption_hard and repo_id not in known:
+    if not adoption_hard and str(repo_id).lower() not in known:
         adoption_hard = True
 
     selected = [fn for attr, _, fn in FAMILIES if getattr(args, attr)]
