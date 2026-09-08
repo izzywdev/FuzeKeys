@@ -8,10 +8,8 @@
   "description": "Serves FuzeKeys' policy-mediated secret-broker surface — issuing opaque, TTL-bound, single-use grant handles; redeeming them for short-lived derived credentials; RFC 8693 token exchange for a scoped downstream token; and instant, non-disclosing revocation. A caller asks it to accomplish an access outcome and receives a credential or a decision, never stored secret material. The broker CORE is deterministic security infrastructure, not an LLM: this role is a thin mediating surface over backend/app/broker, and all authorization and lifecycle stay in that core. High-sensitivity releases are human-gated (reach_human) before any credential is released.",
   "model": "claude-opus-4-8",
   "skills": [
-    "keys.grant",
-    "keys.redeem",
-    "keys.mint_token",
-    "keys.revoke"
+    "credential-broker-mediation",
+    "fuzekeys-expert"
   ],
   "services": {
     "github": "none",
@@ -41,6 +39,7 @@
     "owner": "izzywdev/FuzeKeys",
     "version": "0.1.0",
     "note": "RESHAPED TO THE ROLE CONTRACT, CONTENT PRESERVED. The previous file was not careless — it carried real policy — but it did not validate: the schema is `additionalProperties: false` and the file declared `displayName`, `version`, `summary`, `owner`, `_note` and `policy` at the top level, had no `role` or `description` key at all, set `model` to \"deterministic\" (the schema wants a Claude model id), and put `securitySchemes`/`recipientKey` inside `a2a`, which is also closed and permits only publish/extendedOnly/tags/examples/inputModes/outputModes/scopes. Card projection failed with `role 'keys-broker' has no description`. Everything that was in those fields is preserved below or folded into `description`; nothing was dropped. The four skills became `a2a.examples` (the schema's `skills` is ids/names only) and their descriptions are the examples' substance. `extendedOnly: true` is NEW and deliberate: a credential broker must not appear on the anonymous /.well-known/agent-card.json, only on the authenticated extended card.",
+    "skillsFix": "CORRECTED (a2a-maintainer verification pass). The 2026-08-21 reshape moved the four operations into `a2a.examples` as intended, but left `keys.grant`/`keys.redeem`/`keys.mint_token`/`keys.revoke` ALSO sitting in the top-level `skills[]` field — the exact card-skill-id/bundle-skill conflation governance/a2a-runtime-standard.md §4 names as the live bug in this repo, and gate_a2a.py's S2 check (always fatal, never ratcheted) failed on it. `skills[]` now names one real filesystem bundle, `.claude/skills/credential-broker-mediation/SKILL.md`, which documents the session's operating contract over the existing, already-implemented deterministic core (backend/app/broker) — it does not add or change any broker behavior. The four MCP tool ids remain exactly where they belong: `backend/app/broker/mcp_tools.py` and `a2a.examples` below.",
     "release_tiers": {
       "low": "auto",
       "medium": "auto (audited)",
@@ -63,6 +62,6 @@
       "ref": "fuzekeys:jwks"
     },
     "core": "deterministic — backend/app/broker. This role mediates the human-gated path only; it does not implement authz or lifecycle.",
-    "gate": "a2a.enabled flipped false->true in .fuze/manifest.json on 2026-08-26 (owner instruction). This role now carries a valid top-level `description`, so card projection is unblocked; a2a-maintainer validates the projection against the frozen contracts/a2a/v1 on every PR. Actual serving additionally requires the FuzeKeys tenant entry in FuzeAgent's a2a-shared values-prod.yaml (cross-repo) — until that lands, the flag is set but the shared server has no tenant to route here."
+    "gate": "a2a.enabled flipped false->true in .fuze/manifest.json on 2026-08-26 (owner instruction). This role now carries a valid top-level `description`, so card projection is unblocked; a2a-maintainer validates the projection against the frozen contracts/a2a/v1 on every PR. SERVING TOPOLOGY CHANGED (2026-09-02): this repo now runs its OWN single-tenant A2A pod (deploy/helm/fuzekeys/templates/a2a.yaml) rather than depending on a cross-repo tenant entry in FuzeAgent's a2a-shared server — FuzeAgent#148 (contract v1.2.0) made `a2a.inClusterUrl` values-driven, which is what makes a per-product pod reachable at all (docs/a2a-tenant-registration.md updated accordingly). The pod's chart-level `a2a.enabled` stays false pending two operator preconditions: the `a2a-provider-anthropic` SealedSecret is not yet sealed into this repo's own `fuzekeys` namespace, and the fleet Anthropic workspace is separately reporting a low credit balance. Flipping the pod on is an operator/devops step, not a code change."
   }
 }

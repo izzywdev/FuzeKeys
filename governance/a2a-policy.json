@@ -1,0 +1,16 @@
+{
+  "$doc": "Policy read by scripts/gate_a2a.py (FuzeSDLC governance/a2a-runtime-standard.md). Absence of this file makes the gate run in `fail` mode by design — this file exists to correct ONE repo-specific path, not to soften any check.",
+  "skills": {
+    "adoption": "fail",
+    "ratchet": { "knownUnadopted": [] }
+  },
+  "image": {
+    "repository": "ghcr.io/izzywdev/fuze-a2a"
+  },
+  "creds": {
+    "sealedSecretDirs": ["deploy/argocd/sealed"],
+    "_sealedSecretDirs_why": "The gate's own default is deploy/sealed-secrets, which does not exist in this repo. FuzeKeys' actual SealedSecret convention is deploy/argocd/sealed/ (fuzekeys-secrets.yaml, fuzekeys-tokenizer-secrets.yaml, ghcr-pull-secret.yaml, fuzefront-registration.yaml) — this entry points the gate at the real location instead of silently finding nothing there and failing every secretRef for the wrong reason.",
+    "externallyProvisioned": {}
+  },
+  "memory": { "mode": "client-only" }
+}
