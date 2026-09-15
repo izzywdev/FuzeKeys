@@ -141,3 +141,13 @@ mcp:
   # Empty = derive from the in-cluster backend Service, i.e.
   # http://fuzekeys-backend:8002. Set explicitly only to override.
   upstreamBaseUrl: ""
+
+# A2A prod overlay. `enabled` stays false here too (base values.yaml has the
+# full rationale) — Always-pull is the only prod-specific override needed
+# once the base image/tag/inClusterUrl/tenants are already correct.
+a2a:
+  enabled: false
+  image:
+    repository: ghcr.io/izzywdev/fuze-a2a
+    tag: d9edae9b4268
+    pullPolicy: Always
