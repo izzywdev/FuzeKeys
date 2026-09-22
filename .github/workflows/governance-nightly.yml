@@ -1,4 +1,4 @@
-# fuze:managed template=governance-nightly.yml baseline=main digest=sha256:88de2c7e68a93de7d0e26ec09258891b53647fcd63fce79d359e6528b44b0aaa
+# fuze:managed template=governance-nightly.yml baseline=v1 digest=sha256:f0119dd4b24b859af442e7e02bdc760fad31c547f69ae4506f2cf3b832e12276
 name: Governance Nightly
 
 # platform-governance's nightly reconciliation sweep (governance-reconciliation skill):
@@ -64,8 +64,31 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          # allowed_bots: `fuzeone-bot`, the identity GitHub reports as the actor for
+          # this repo's SCHEDULED runs. Without it claude-code-action's human-actor check
+          # aborts the rung ~1s in, BEFORE any model call, with:
+          #   "Workflow initiated by non-human actor: fuzeone-bot (actor not found on
+          #    GitHub). Add bot to allowed_bots list or use '*' to allow all bots."
+          # Measured, not inferred: izzywdev/FuzeSales run 33508720260 (2026-09-01) shows
+          # `ALLOWED_BOTS: ` / `"allowed_bots": ""` immediately above that error, and
+          # izzywdev/FuzeInfra run 33505900409 fails identically in nightly-integration's
+          # autofix job. The failure is indistinguishable in a skimmed log from a provider
+          # outage, which is why this was mis-attributed to "credit balance too low" —
+          # that string comes from a DIFFERENT, upstream failure mode.
+          #
+          # `fuzeone-bot` has no backing GitHub user (GET /users/fuzeone-bot -> 404), so it
+          # lands in claude-code-action's `catch` branch in src/github/validation/actor.ts,
+          # which still consults isAllowedBot() before throwing — a literal login here is
+          # sufficient and no `*` is needed.
+          #
+          # Deliberately NOT `*`. This repo runs dependabot; under `*` any bot-authored
+          # event could start an agent run holding the resolved LLM credential and repo
+          # write. A cron cannot be triggered by dependabot, so naming the one scheduler
+          # identity keeps the gate doing its job.
+          allowed-bots: "fuzeone-bot,fuze-agent"
           # THE FIX: without these, every mutating tool call (git push, gh pr/issue
           # create, file edits) sits behind an interactive approval gate that nothing
           # can clear in headless CI and is silently denied on the claude-code-action
@@ -105,7 +128,7 @@ jobs:
                take safe actions (update-branch, request review, nudge autofix). NEVER auto-merge; never
                merge a deploy-on-push repo.
             3. OPEN ISSUES — drive each to a concrete next step: close ones demonstrably resolved (with
-               evidence), open a PR or delegate small actionable ones via an @claude comment with a STATE
+               evidence), open a PR or delegate small actionable ones via an @fuze comment with a STATE
                block, and summarize decision-needing ones for the human.
             4. DRIFT — compare .claude/agents + CLAUDE.md + the workflow stack against the expectation in
                .fuze/manifest.json and the FuzeSDLC canonical; open a fix PR for mechanical drift, flag

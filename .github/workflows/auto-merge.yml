@@ -1,4 +1,4 @@
-# fuze:managed template=auto-merge.yml baseline=main digest=sha256:45fc616f7bf7e89d6c2e0cb38ae5383f80b974ed5130892dbbbe5f7bc7f97707
+# fuze:managed template=auto-merge.yml baseline=v1 digest=sha256:45fc616f7bf7e89d6c2e0cb38ae5383f80b974ed5130892dbbbe5f7bc7f97707
 name: Auto Merge PR
 
 on:

@@ -1,4 +1,4 @@
-# fuze:managed template=telegram-pr-merged.yml baseline=main digest=sha256:88f1f683caf4f797c6fdc41d81d819735cf3df14a21b29ba593087858d3ee27b
+# fuze:managed template=telegram-pr-merged.yml baseline=v1 digest=sha256:88f1f683caf4f797c6fdc41d81d819735cf3df14a21b29ba593087858d3ee27b
 name: Notify Telegram on PR merge
 
 # SELF-CONTAINED (inlined) as of the FuzeSDLC#758 fix. This job used to be a `uses:`

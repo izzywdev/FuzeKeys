@@ -1,4 +1,4 @@
-# fuze:managed template=fuze-ci-autofix.yml baseline=main digest=sha256:6b346a752716fca7bafa70d49a2bbc267a7f2d93cdefdd4038e606094a5d7b1d
+# fuze:managed template=fuze-ci-autofix.yml baseline=v1 digest=sha256:15cc8bf0f5e7439e92d49453daf4ec58329fc0c9b7e1950e6d49ade782d480e1
 name: Fuze Auto-Fix CI
 
 # RENAMED from claude-ci-autofix.yml (the claude-* -> fuze-* fleet rename; see
@@ -18,39 +18,42 @@ name: Fuze Auto-Fix CI
 #
 # It still calls `./.github/actions/fuze-code-action` (PR #196) -- that composite
 # action (and the `llm-endpoint` action it wraps) travels to every repo unconditionally
-# via scripts/bootstrap/caps/workflows.py's ACTIONS tuple, the same way every other
-# STAMPED template that references a local `.github/actions/**` path already relies on
-# it being vendored alongside. Inlining this workflow does not change that -- the
-# action ships with the template exactly as it did before, so the LiteLLM-gateway-first
-# -with-runner-local-fallback behaviour is unaffected.
+# via scripts/bootstrap/caps/workflows.py's ACTIONS tuple.
 #
-# The `claude-auto-fix-ci-` branch-name guard below matches the literal prefix the
-# "Create fix branch" step still generates (`claude-auto-fix-ci-${SAFE_BRANCH}-
-# ${RUN_ID}`) -- this is the loop guard that stops an auto-fix failure from triggering
-# another auto-fix. FuzeInfra has been bitten by a self-trigger loop before (691
-# comments on one issue, see claude.yml's own loop-guard sentinel); do not remove or
-# rename this guard without keeping it in lockstep with the branch prefix it matches.
+# TWO PATHS, BRANCHED ON `github.event.workflow_run.name`:
 #
-# Two real bugs, both measured and both fixed under izzywdev/FuzeSDLC#29 (mirroring
-# the same fix already landed in izzywdev/FuzeFront#159) -- carried forward unchanged
-# by this inlining:
+#   * SEPARATE-PR PATH (job `call-autofix`) — for "Harden Gate" / "Infrastructure
+#     Tests" / "Helm Chart Validation". UNCHANGED: it opens a throwaway
+#     `claude-auto-fix-ci-*` branch and a NEW PR, and NEVER pushes to the PR under
+#     repair. The `claude-auto-fix-ci-` branch-name guard is the loop guard that stops
+#     an auto-fix failure from triggering another auto-fix (FuzeInfra was once bitten by
+#     a 691-comment self-trigger loop). Do not remove or rename it without keeping it in
+#     lockstep with the branch prefix it generates.
 #
-#   1. `pull_requests[0]` as a truthiness GATE silently dropped every dispatch-triggered
-#      run: `workflow_run.pull_requests` is an empty array outside a pull_request-headed
-#      run, so the whole condition was false and auto-fix never fired. Not present here --
-#      the `pr_number` reference below already tolerates an absent PR via `|| ''`, so
-#      there is nothing left that needs the array non-empty.
-#   2. No guard against firing on a direct push to the default branch. Present below as
-#      the literal `'master'` (not a template variable) because this condition runs BEFORE
-#      any render-time substitution touches it, and the guard exists to protect exactly
-#      the branch that deploys/publishes on push (CLAUDE.baseline.md hardening) --
-#      naming it explicitly is the point, not a limitation. A repo whose default branch
-#      is `main` gets no false sense of protection from this line and is unaffected by
-#      it either way, since pushes to `main` were never what this guarded against.
+#   * REVIEW LOOP PATH (job `review-loop`) — for "Fuze Code Review". The owner's mandate:
+#     "fuze-ci-autofix must be triggered in a LOOP with code-review until the PR is
+#     approved." So it checks out the PR's OWN head branch, fixes exactly what the
+#     reviewer flagged, and pushes the fix commit BACK to that head branch. The push
+#     re-triggers fuze-code-review (`synchronize`), which re-reviews, which — if still
+#     not approved — re-triggers this loop, until the review approves or the round CAP is
+#     hit. The push uses a fuze-agent App / bot-PAT identity precisely so it DOES
+#     re-trigger CI (a GITHUB_TOKEN push triggers nothing). It is bounded three ways:
+#       - MAX ROUNDS (FUZE_AUTOFIX_MAX_ROUNDS, default 3): counted from `[fuze-autofix-
+#         round]`-marked commits on the head branch. At the cap it comments and STOPS.
+#       - GENUINE ABSTAIN: if the latest review is an abstain (no actionable findings —
+#         a review that could not run, not a set of fixes), there is nothing to fix, so
+#         it comments "human needed" and stops rather than thrashing.
+#       - SENSITIVE PATHS: a PR touching the approval machinery / governance surface is
+#         human-gated anyway and an App often cannot push workflow changes, so the loop
+#         does not attempt the auto-push there — it comments and stops.
+#     A CREDIT OUTAGE never reaches this path: an availability outage PASSES the review
+#     check (scripts/fuze_code_review_verdict.py rule 8), so the workflow_run conclusion
+#     is `success` and neither job's `if` fires. autofix never triggers autofix: this job
+#     triggers only on a fuze-code-review `workflow_run`, never on its own push.
 
 on:
   workflow_run:
-    workflows: ["Infrastructure Tests", "Helm Chart Validation", "Harden Gate"]
+    workflows: ["Infrastructure Tests", "Helm Chart Validation", "Harden Gate", "Fuze Code Review"]
     types: [completed]
 
 permissions:
@@ -60,28 +63,26 @@ permissions:
   issues: write
   id-token: write
 
+# The bounded-loop cap for the review-loop path. Greppable, workflow-level, one place to
+# change. Counted from `[fuze-autofix-round]`-marked commits on the PR head branch.
+env:
+  FUZE_AUTOFIX_MAX_ROUNDS: '3'
+
 jobs:
   call-autofix:
+    # SEPARATE-PR PATH — Harden Gate / Infrastructure Tests / Helm Chart Validation only.
+    # Explicitly NOT "Fuze Code Review": that has its own loop path below, and letting it
+    # fall in here would open a throwaway PR instead of pushing the fix into the loop.
     if: >-
-      ${{ github.event.workflow_run.conclusion == 'failure' &&
+      ${{ github.event.workflow_run.name != 'Fuze Code Review' &&
+          github.event.workflow_run.conclusion == 'failure' &&
           !startsWith(github.event.workflow_run.head_branch, 'claude-auto-fix-ci-') &&
           github.event.workflow_run.head_branch != 'master' }}
     # Rewritten by the installer to this repo's ci.runner (render.py) via the same
-    # generic `runs-on: ubuntu-latest` substitution every other STAMPED workflow in
-    # this canonical gets -- no bespoke handling needed now that this is a plain job
-    # instead of a reusable-workflow call with its own `runner:` input. 21 of 22 repos
-    # currently pin ubuntu-latest while a healthy self-hosted `fuze-runner` ARC scale
-    # set idles -- that is the direct cause of the "budget exhausted, job never
-    # starts" failures across the fleet described above. Left at ubuntu-latest as the
-    # canonical default anyway (correct for a repo that has not migrated).
+    # generic `runs-on: ubuntu-latest` substitution every other STAMPED workflow gets.
     runs-on: ubuntu-latest
     steps:
-      # Preflight: run auto-fix only when at least one LLM key is configured on this
-      # repo. With every key optional (there is no `workflow_call` boundary anymore to
-      # declare `required: false` against -- a repo simply has the secret or doesn't),
-      # a repo that configured none would otherwise reach fuze-code-action with no
-      # credentials and fail there; skipping cleanly here keeps an unconfigured repo's
-      # CI green instead of red for something it never opted into.
+      # Preflight: run auto-fix only when at least one LLM key is configured on this repo.
       - name: Preflight — is any LLM key configured?
         id: keys
         env:
@@ -131,9 +132,7 @@ jobs:
         env:
           # Passed through env, NOT interpolated into the script body. `${{ ... }}`
           # is substituted as raw text BEFORE the JS is parsed, so an input carrying
-          # a quote would escape the string literal and execute as code. Number()
-          # around it would not help -- the injection happens at substitution time,
-          # not at evaluation time. Same class of fix as #98.
+          # a quote would escape the string literal and execute as code.
           RUN_ID: ${{ github.event.workflow_run.id }}
         with:
           script: |
@@ -157,7 +156,6 @@ jobs:
                   job_id: job.id,
                 });
                 const text = typeof res.data === 'string' ? res.data : String(res.data);
-                // Keep the tail of each job log where failures usually surface.
                 const tail = text.slice(-4000);
                 combined += `\n===== Job: ${job.name} =====\n${tail}\n`;
               } catch (e) {
@@ -171,16 +169,15 @@ jobs:
 
       # NOTE ON PROMPT INJECTION: the CI logs below are attacker-influenceable --
       # anyone who can open a PR can make a build print arbitrary text into them.
-      # That is inherent to the job (diagnosing a failure means reading its output),
-      # so it is bounded rather than eliminated: --allowedTools is an explicit
-      # allow-list with no arbitrary Bash, the work happens on a throwaway
-      # claude-auto-fix-ci-* branch, and the result is a PR a human reviews -- never
-      # a push to the PR under repair.
+      # Bounded rather than eliminated: --allowedTools is an explicit allow-list with
+      # no arbitrary Bash, the work happens on a throwaway claude-auto-fix-ci-* branch,
+      # and the result is a PR a human reviews -- never a push to the PR under repair.
       - name: Fix CI failures with Claude
         if: steps.keys.outputs.present == 'true'
         uses: ./.github/actions/fuze-code-action
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           claude-args: >-
             --model claude-sonnet-4-6
@@ -213,3 +210,273 @@ jobs:
           litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
+
+  review-loop:
+    # REVIEW LOOP PATH — "Fuze Code Review" only. Fix what the reviewer flagged and push
+    # the fix BACK to the PR head branch so fuze-code-review re-reviews it, bounded by
+    # FUZE_AUTOFIX_MAX_ROUNDS. The `claude-auto-fix-ci-` guard keeps the separate-PR
+    # path's branches out of this loop; the default-branch guard is unchanged.
+    if: >-
+      ${{ github.event.workflow_run.name == 'Fuze Code Review' &&
+          github.event.workflow_run.conclusion == 'failure' &&
+          !startsWith(github.event.workflow_run.head_branch, 'claude-auto-fix-ci-') &&
+          github.event.workflow_run.head_branch != 'master' &&
+          github.event.workflow_run.head_branch != 'main' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Preflight — is any LLM key configured?
+        id: keys
+        env:
+          ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY }}
+          LITELLM: ${{ secrets.LITELLM_FUZE_KEY }}
+          OPENAI: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -n "${ANTHROPIC}" ] || [ -n "${LITELLM}" ] || [ -n "${OPENAI}" ] || [ -n "${GEMINI}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No LLM key configured on ${{ github.repository }} — skipping fuze-code-review auto-fix loop (not a failure)."
+          fi
+
+      - name: Resolve the PR number under repair
+        id: pr
+        if: steps.keys.outputs.present == 'true'
+        env:
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number || '' }}
+        run: |
+          if [ -z "${PR_NUMBER:-}" ]; then
+            echo "::notice::no pull_request attached to this fuze-code-review run — nothing to loop on."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # CI-triggering identity. A GITHUB_TOKEN push triggers NO downstream workflows, so a
+      # fix pushed with it would NOT re-run fuze-code-review and the loop would silently
+      # stall. Mint a fuze-agent App token (fall back App -> bot PAT -> GITHUB_TOKEN, the
+      # last warning that the loop will not re-trigger). Same pattern as fuze-auto-pr.yml.
+      - name: Mint fuze-agent App token
+        id: app_token
+        if: steps.keys.outputs.present == 'true' && steps.pr.outputs.found == 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.FUZE_AGENT_APP_ID }}
+          private-key: ${{ secrets.FUZE_AGENT_APP_PRIVATE_KEY }}
+
+      - name: Resolve push identity
+        id: identity
+        if: steps.keys.outputs.present == 'true' && steps.pr.outputs.found == 'true'
+        env:
+          APP_TOKEN: ${{ steps.app_token.outputs.token }}
+          BOT_PAT: ${{ secrets.GH_RELEASE_PAT }}
+          GH_DEFAULT: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -n "${APP_TOKEN:-}" ]; then
+            tok="$APP_TOKEN"; who="fuze-agent (App installation token)"; triggers_ci=true
+          elif [ -n "${BOT_PAT:-}" ]; then
+            tok="$BOT_PAT"; who="GH_RELEASE_PAT (bot PAT)"; triggers_ci=true
+          else
+            tok="$GH_DEFAULT"; who="GITHUB_TOKEN"; triggers_ci=false
+            echo "::warning title=autofix-identity::No FUZE_AGENT_APP_* App secrets and no GH_RELEASE_PAT — a fix pushed as GITHUB_TOKEN will NOT re-trigger fuze-code-review, so the loop cannot continue. Set the fuze-agent App secrets to fix."
+          fi
+          echo "::add-mask::$tok"
+          echo "token=$tok" >> "$GITHUB_OUTPUT"
+          echo "triggers_ci=$triggers_ci" >> "$GITHUB_OUTPUT"
+          echo "Push identity: $who"
+
+      - name: Checkout PR head branch
+        if: steps.keys.outputs.present == 'true' && steps.pr.outputs.found == 'true'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.event.workflow_run.head_branch }}
+          fetch-depth: 0
+          token: ${{ steps.identity.outputs.token }}
+
+      - name: Configure git identity
+        if: steps.keys.outputs.present == 'true' && steps.pr.outputs.found == 'true'
+        run: |
+          git config user.email "claude[bot]@users.noreply.github.com"
+          git config user.name "claude[bot]"
+
+      # LOOP GUARD 1 — SENSITIVE PATHS. A PR touching the approval machinery / governance
+      # surface is human-gated regardless (fuze-code-review downgrades it to comment-only),
+      # and the fuze-agent App often cannot push .github/workflows changes anyway. Do not
+      # attempt the auto-push loop there — comment and stop.
+      - name: Guard — sensitive paths are human-gated (no auto-push loop)
+        id: sensitive
+        if: steps.keys.outputs.present == 'true' && steps.pr.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ steps.identity.outputs.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          BASE_REF: ${{ github.event.workflow_run.pull_requests[0].base.ref || 'main' }}
+        run: |
+          set -uo pipefail
+          git fetch origin "$BASE_REF" --depth=1 || true
+          git diff --name-only "origin/${BASE_REF}...HEAD" > /tmp/loop_changed.txt 2>/dev/null || true
+          SENSITIVE_PATTERN='^(\.github/workflows/|\.github/actions/|workflow-templates/|governance/|scripts/apply_ruleset\.sh$|scripts/bootstrap/)'
+          if grep -Eq "$SENSITIVE_PATTERN" /tmp/loop_changed.txt; then
+            echo "sensitive=true" >> "$GITHUB_OUTPUT"
+            gh pr comment "$PR_NUMBER" --body "🤖 fuze-code-review auto-fix loop: this PR changes the approval machinery / governance surface, which is human-gated (fuze-code-review is comment-only here and the app cannot self-push workflow changes). Not attempting an auto-fix push — a human is needed."
+            echo "::notice::sensitive-path PR — auto-fix loop not attempted."
+          else
+            echo "sensitive=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # LOOP GUARD 2 — MAX-ROUND CAP. Count `[fuze-autofix-round]`-marked commits already on
+      # the head branch; at the cap, comment once and STOP (prevents runaway cost/thrash).
+      - name: Guard — max-round cap
+        id: cap
+        if: steps.keys.outputs.present == 'true' && steps.pr.outputs.found == 'true' && steps.sensitive.outputs.sensitive == 'false'
+        env:
+          GH_TOKEN: ${{ steps.identity.outputs.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          MAX_ROUNDS: ${{ env.FUZE_AUTOFIX_MAX_ROUNDS }}
+          BASE_REF: ${{ github.event.workflow_run.pull_requests[0].base.ref || 'main' }}
+        run: |
+          set -uo pipefail
+          # Count ONLY the autofix rounds unique to THIS PR branch. With fetch-depth 0,
+          # `git log HEAD` traverses ALL reachable history, so a [fuze-autofix-round]-marked
+          # commit that reached the base branch (a non-squash merge of a previously
+          # auto-fixed PR, or a squash whose concatenated body carried the marker) would be
+          # counted too, inflating ROUNDS and potentially firing the cap before the first fix
+          # round of a new PR. Scope to origin/BASE_REF..HEAD; re-fetch the base defensively
+          # (the sensitive-path guard above already fetched it) and fall back to the full log
+          # only if the base ref is somehow absent.
+          git fetch origin "$BASE_REF" --depth=1 2>/dev/null || true
+          if git rev-parse --verify --quiet "origin/${BASE_REF}" >/dev/null; then
+            ROUNDS=$(git log "origin/${BASE_REF}..HEAD" --format=%s | grep -cF '[fuze-autofix-round]' || true)
+          else
+            ROUNDS=$(git log --format=%s | grep -cF '[fuze-autofix-round]' || true)
+          fi
+          NEXT=$((ROUNDS + 1))
+          echo "rounds so far: ${ROUNDS}; cap: ${MAX_ROUNDS}"
+          if [ "${ROUNDS}" -ge "${MAX_ROUNDS}" ]; then
+            echo "capped=true" >> "$GITHUB_OUTPUT"
+            gh pr comment "$PR_NUMBER" --body "🤖 fuze-code-review auto-fix loop: reached the cap of ${MAX_ROUNDS} auto-fix round(s) without an approving review. Stopping to avoid a runaway loop — a human review is needed."
+            echo "::warning::auto-fix loop cap (${MAX_ROUNDS}) reached — stopping."
+          else
+            echo "capped=false" >> "$GITHUB_OUTPUT"
+            echo "next_round=${NEXT}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Fetch the latest fuze-code-review verdict so the fix targets exactly what was
+      # flagged — AND distinguish a genuine ABSTAIN (a review that could not run: nothing
+      # to fix, do not thrash) from real findings.
+      - name: Fetch the reviewer's findings
+        id: findings
+        if: steps.keys.outputs.present == 'true' && steps.pr.outputs.found == 'true' && steps.sensitive.outputs.sensitive == 'false' && steps.cap.outputs.capped == 'false'
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        with:
+          script: |
+            const pull_number = Number(process.env.PR_NUMBER);
+            const HEADER = "fuze-code-review — automated verdict";
+            const ABSTAIN = "No verdict was reached";
+            // Reviews (request_changes / commented) carry the findings; the abstain path
+            // posts an issue COMMENT instead. Look at both, newest first.
+            const reviews = await github.rest.pulls.listReviews({
+              owner: context.repo.owner, repo: context.repo.repo, pull_number, per_page: 100,
+            });
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner, repo: context.repo.repo, issue_number: pull_number, per_page: 100,
+            });
+            const ours = [];
+            for (const r of reviews.data) {
+              if (r.body && r.body.includes(HEADER)) ours.push({ when: r.submitted_at, body: r.body });
+            }
+            for (const c of comments.data) {
+              if (c.body && c.body.includes(HEADER)) ours.push({ when: c.created_at, body: c.body });
+            }
+            ours.sort((a, b) => new Date(a.when) - new Date(b.when));
+            const latest = ours.length ? ours[ours.length - 1] : null;
+            if (!latest) {
+              core.setOutput("actionable", "false");
+              core.setOutput("findings", "");
+              return;
+            }
+            // A genuine abstain / deferral / outage is NOT a set of fixes — there is
+            // nothing in the PR to change, so do not thrash the loop on it.
+            const actionable = !latest.body.includes(ABSTAIN);
+            core.setOutput("actionable", actionable ? "true" : "false");
+            core.setOutput("findings", latest.body.slice(0, 8000));
+
+      - name: Stop — nothing actionable to fix (genuine abstain)
+        if: steps.keys.outputs.present == 'true' && steps.pr.outputs.found == 'true' && steps.sensitive.outputs.sensitive == 'false' && steps.cap.outputs.capped == 'false' && steps.findings.outputs.actionable != 'true'
+        env:
+          GH_TOKEN: ${{ steps.identity.outputs.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+        run: |
+          gh pr comment "$PR_NUMBER" --body "🤖 fuze-code-review auto-fix loop: the latest review did not produce actionable findings (it abstained — no review could be produced, so there is nothing to auto-fix). A human is needed."
+          echo "::notice::latest review is a genuine abstain — no auto-fix attempted."
+
+      # Fix ONLY what the reviewer flagged. No git/gh in the tool allow-list: the commit +
+      # push happen in the dedicated step below, under the CI-triggering identity, so the
+      # push actually re-runs fuze-code-review.
+      - name: Fix the flagged issues with Claude
+        id: fix
+        if: steps.keys.outputs.present == 'true' && steps.pr.outputs.found == 'true' && steps.sensitive.outputs.sensitive == 'false' && steps.cap.outputs.capped == 'false' && steps.findings.outputs.actionable == 'true'
+        uses: ./.github/actions/fuze-code-action
+        with:
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github-token: ${{ steps.identity.outputs.token }}
+          claude-args: >-
+            --model claude-sonnet-4-6
+            --allowedTools 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(npm:*),Bash(npx:*),Bash(yarn:*),Bash(pnpm:*),Bash(python:*),Bash(pip:*),Bash(php:*),Bash(composer:*)'
+          task-prompt: |
+            An automated code review (fuze-code-review) did NOT approve this pull request.
+            You are checked out on the PR's own head branch. Make the MINIMAL changes needed
+            to resolve exactly the issues the reviewer flagged, so the next review can approve.
+
+            Repository: ${{ github.repository }}
+            Pull request: #${{ steps.pr.outputs.number }}
+            Head branch (already checked out): ${{ github.event.workflow_run.head_branch }}
+            Auto-fix round: ${{ steps.cap.outputs.next_round }} of ${{ env.FUZE_AUTOFIX_MAX_ROUNDS }}
+
+            The reviewer's verdict and findings:
+            ${{ steps.findings.outputs.findings }}
+
+            Instructions:
+            1. Address every blocking finding above with the smallest correct change. Do not
+               touch unrelated code, CI secrets, or workflow files.
+            2. Make your edits to the files only. Do NOT run git and do NOT open a PR — the
+               workflow commits and pushes your changes back to this branch afterwards.
+            3. If you cannot determine a safe fix for a finding, make the fixes you can and
+               leave the rest; a human will take over if the loop cannot converge.
+
+      # Commit the fix with the round marker and push it BACK to the PR head branch, under
+      # the CI-triggering identity, so fuze-code-review re-reviews it (the loop).
+      - name: Commit and push the fix to the PR head branch
+        if: steps.keys.outputs.present == 'true' && steps.pr.outputs.found == 'true' && steps.sensitive.outputs.sensitive == 'false' && steps.cap.outputs.capped == 'false' && steps.findings.outputs.actionable == 'true'
+        env:
+          GH_TOKEN: ${{ steps.identity.outputs.token }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          NEXT_ROUND: ${{ steps.cap.outputs.next_round }}
+          MAX_ROUNDS: ${{ env.FUZE_AUTOFIX_MAX_ROUNDS }}
+          TRIGGERS_CI: ${{ steps.identity.outputs.triggers_ci }}
+        run: |
+          set -uo pipefail
+          if git diff --quiet && git diff --cached --quiet; then
+            gh pr comment "$PR_NUMBER" --body "🤖 fuze-code-review auto-fix loop (round ${NEXT_ROUND}/${MAX_ROUNDS}): the reviewer flagged issues but auto-fix produced no code changes. A human is needed."
+            echo "::notice::auto-fix produced no changes — nothing to push."
+            exit 0
+          fi
+          git add -A
+          git commit -m "fix(review): auto-fix fuze-code-review findings (round ${NEXT_ROUND}/${MAX_ROUNDS}) [fuze-autofix-round]
+
+          Automated fix from the fuze-code-review <-> fuze-ci-autofix loop for PR #${PR_NUMBER}.
+
+          Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
+          git push origin "HEAD:${HEAD_BRANCH}"
+          if [ "${TRIGGERS_CI}" = "true" ]; then
+            echo "::notice::pushed round ${NEXT_ROUND} to ${HEAD_BRANCH} — fuze-code-review will re-review and the loop continues until it approves or the cap is hit."
+          else
+            gh pr comment "$PR_NUMBER" --body "🤖 fuze-code-review auto-fix loop: pushed a fix (round ${NEXT_ROUND}/${MAX_ROUNDS}) but only a GITHUB_TOKEN identity was available, which does NOT re-trigger CI. fuze-code-review will not automatically re-review; set the fuze-agent App secrets to enable the loop. A human can re-run fuze-code-review to continue."
+            echo "::warning::pushed with GITHUB_TOKEN — the loop will not auto-continue."
+          fi

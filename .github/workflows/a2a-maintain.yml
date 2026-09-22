@@ -1,4 +1,4 @@
-# fuze:managed template=a2a-maintain.yml baseline=main digest=sha256:684c100ffe796edbd561c6b9bb6912ac9d14d8386fa30083f84abb4f110f1889
+# fuze:managed template=a2a-maintain.yml baseline=v1 digest=sha256:e8e47218064dc3783fc8dc3cf853b0c26f36135acacb86e41c9689b2747a9d7e
 name: A2A Maintain
 
 # Keeps this repo's agent-to-agent (A2A) surface current, as part of CI. On every PR it
@@ -255,6 +255,7 @@ jobs:
           # ANTHROPIC_AUTH_TOKEN, some SDK paths still read ANTHROPIC_API_KEY, so
           # both carry the resolved credential — whichever endpoint won the probe.
           anthropic-api-key: ${{ steps.llm.outputs.auth-token }}
+          claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # allowed_bots: scoped to `claude`, deliberately NOT `*`.
           #
           # The gate exists because claude-code-action hard-fails a Bot actor:

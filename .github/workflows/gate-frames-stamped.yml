@@ -1,4 +1,4 @@
-# fuze:managed template=gate-frames-stamped.yml baseline=main digest=sha256:7224f74c2207aa0f259231de6de30ed6632d690eb13396c0460ebc10e7a7912c
+# fuze:managed template=gate-frames-stamped.yml baseline=v1 digest=sha256:7224f74c2207aa0f259231de6de30ed6632d690eb13396c0460ebc10e7a7912c
 name: gate-frames-stamped
 
 # A PR that touches design/frames/** must carry an up-to-date `stamp` in each

@@ -1,4 +1,4 @@
-# fuze:managed template=harden-gate.yml baseline=main digest=sha256:fa58d2eaa28d7aedb740e7d97a61b0c6e66b1577d52f12e313c03e9fa8f19c63
+# fuze:managed template=harden-gate.yml baseline=v1 digest=sha256:1605ee96f45ba7355487e7113ad66c0864e2c75e1e18fc43ccd775f323769414
 name: Harden Gate
 
 # Unified protection gate shared verbatim across all hardened repos.
@@ -31,6 +31,16 @@ on:
   # remedies are pushing commits that may also not be delivered, or waiting.
   workflow_dispatch:
 
+  # MERGE QUEUE. Required for a merge queue to be usable at all: a queue builds a
+  # merge-group ref and gates on checks reported against IT, so a gate that does not
+  # listen here reports nothing and the group can never satisfy branch protection.
+  # Enabling the queue BEFORE this trigger exists produces merge groups with ZERO
+  # checks — the same empty-rollup condition that stranded 43 PRs, except
+  # self-inflicted and on the path to main.
+  #
+  # The queue itself stays DISABLED. This is the prerequisite, not the switch.
+  merge_group:
+
 permissions:
   contents: read
   security-events: write
@@ -57,6 +67,7 @@ jobs:
     # ever validated this file — the only reference to the schema in any executable was a
     # filename inside an error string.
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
@@ -96,6 +107,7 @@ jobs:
     # Enforcement scope is deliberately "broken", not "unstylish" — see the ruff
     # comment below for the measurement that forced that split.
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
@@ -242,6 +254,7 @@ jobs:
     # ubuntu-latest here is the canonical default; the installer re-renders it onto the
     # repo's ci.runner when one is declared (governance/ci-runners.md).
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
@@ -267,6 +280,7 @@ jobs:
 
   gate-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
@@ -316,6 +330,7 @@ jobs:
 
   gate-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
@@ -357,6 +372,7 @@ jobs:
 
   gate-sast:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       # setup-python is REQUIRED, not decorative. This job called `pip` directly while every
@@ -407,6 +423,7 @@ jobs:
 
   gate-secret-scan:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with: { fetch-depth: 0 }
@@ -428,8 +445,11 @@ jobs:
       - name: gitleaks (gates new secrets)
         shell: bash
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          # merge_group carries NO pull_request context. Without this fallback the range
+          # collapses and gitleaks scans the wrong tree — a gate that RUNS and measures
+          # nothing, which is worse than one that does not run: the queue goes GREEN on it.
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
         run: |
           set -euo pipefail
 
@@ -461,6 +481,7 @@ jobs:
 
   gate-dependency-scan:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: Trivy filesystem scan (report-only, SARIF)
@@ -485,6 +506,7 @@ jobs:
     # Endpoint security / authorization (BOLA/BOPLA). Report-only first pass; security
     # ratchets to enforcing per-repo once the rules are tuned green (see architecture-guidelines.md).
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with: { fetch-depth: 0 }
@@ -536,6 +558,7 @@ jobs:
     # on a reconstruction of the FuzeFinance code. A gate proven only on a clean tree
     # is the thing this whole job exists to stop.
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with: { fetch-depth: 0 }
@@ -562,7 +585,7 @@ jobs:
 
       - name: Platform auth gate — per-route coverage (ratchet)
         env:
-          GATE_BASE_REF: ${{ github.event.pull_request.base.sha || 'origin/master' }}
+          GATE_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || 'origin/master' }}
         run: |
           # --routes asks the per-route question the families above cannot: is
           # THIS endpoint guarded? Run hot on the fleet as it stands it produces
@@ -585,6 +608,7 @@ jobs:
     # (|| true) — flip to enforcing per-repo once contracts are annotated. Owned by contract-designer
     # (contract) + backend-engineer (impl) + test-engineer (verify); policy by platform-governance.
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
@@ -597,10 +621,20 @@ jobs:
           for c in scripts/gate_pagination.py .fuze/gate_pagination.py .github/scripts/gate_pagination.py; do
             [ -f "$c" ] && SCRIPT="$c" && break
           done
+          # ENFORCING. This job used to fail open TWICE: `exit 0` when the script was
+          # absent, and `|| true` when it was present — so it could not fail on any repo,
+          # with or without the script. Measured 2026-09-01: gate_pagination.py is absent
+          # from 4 of 22 repos, and on the other 18 the `|| true` meant it had still never
+          # failed a build once. A gate that cannot fail is not a gate; it is a green tick
+          # that costs CI minutes, and every sibling gate in this file (manifest,
+          # identifier, vacuous-check, api-version, federation-contract, platform-auth)
+          # already hard-errors on a missing script and says "Do NOT 'fix' this by
+          # skipping". This is now consistent with them.
           if [ -z "$SCRIPT" ]; then
-            echo "::warning title=gate-pagination::no gate_pagination.py found in repo — skipping"; exit 0
+            echo "::error title=gate-pagination::gate_pagination.py is missing. sdlc-bootstrap installs it together with this job — if you have this job you must have the script. Do NOT 'fix' this by skipping."
+            exit 1
           fi
-          python "$SCRIPT" . || true   # report-only first pass; remove "|| true" to enforce
+          python "$SCRIPT" .
 
   gate-identifier:
     # Server-owned entity identifiers (governance/identifier-standard.md).
@@ -620,6 +654,7 @@ jobs:
     # docstring names the reason it exists: "a family standard whose gate is
     # satisfied by non-adoption is not a standard."
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
@@ -654,7 +689,7 @@ jobs:
       - name: Identifier gate — self-tests (the gate must be known to FIRE)
         shell: bash
         # Asserts the gate FAILS on a violation, not merely that it passes on a
-        # clean tree. `claude-auto-pr.yml` was green for its whole life because
+        # clean tree. `fuze-auto-pr.yml` (then named `claude-auto-pr.yml`) was green for its whole life because
         # every run took its early-exit path; the one time it had real work, it
         # failed. Passing is not evidence. These run FIRST so a broken gate
         # reports as a broken gate rather than as a clean repo.
@@ -732,6 +767,7 @@ jobs:
     # model) are all legitimate and must stay green. Blunting that distinction is how this
     # gate gets disabled the first time it is wrong.
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
@@ -804,6 +840,7 @@ jobs:
     # someone remembers" — there is no state in which a new un-versioned route
     # lands quietly.
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
@@ -839,6 +876,7 @@ jobs:
     # idempotent `ds-extraction` GitHub issue per recurring UI pattern that should become a DS
     # primitive. Report-only first pass (|| true). Owned by frontend-engineer (sole DS owner).
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       issues: write
@@ -856,19 +894,26 @@ jobs:
           for c in scripts/gate_ds_conformance.py .fuze/gate_ds_conformance.py .github/scripts/gate_ds_conformance.py; do
             [ -f "$c" ] && SCRIPT="$c" && break
           done
+          # ENFORCING — same correction as gate-pagination above, same reason. This failed
+          # open twice (`exit 0` on a missing script, `|| true` on a present one), so it
+          # has never failed a build on any repo. Measured 2026-09-01: absent from 9 of 22
+          # repos. The "report-only first pass" this comment used to promise was a ramp
+          # nobody ever completed, which is how a temporary allowance becomes permanent.
           if [ -z "$SCRIPT" ]; then
-            echo "::warning title=gate-ds-conformance::no gate_ds_conformance.py found in repo — skipping"; exit 0
+            echo "::error title=gate-ds-conformance::gate_ds_conformance.py is missing. sdlc-bootstrap installs it together with this job — if you have this job you must have the script. Do NOT 'fix' this by skipping."
+            exit 1
           fi
           EMIT=""
           # Only emit extraction issues on push to the default branch (not on every PR) to avoid noise.
           if [ "${{ github.event_name }}" = "push" ]; then EMIT="--emit-issues"; fi
-          python "$SCRIPT" . $EMIT || true   # report-only first pass; remove "|| true" to enforce hard violations
+          python "$SCRIPT" . $EMIT
 
   gate-localup:
     # Bounded local deployability. Stands up FuzeInfra consumer-test (if vendored) + validates the
     # Helm chart; warns (tracked) when no bounded local-up is wired yet. local-env-verifier ratchets
     # to enforcing per-repo (see local-environment.md).
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with: { submodules: recursive }
@@ -942,6 +987,7 @@ jobs:
     # module-federation is a FINDING, not a reason to pass -- that distinction is the whole
     # difference between this gate and the vacuous ones this fleet spent a sweep removing.
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
@@ -1007,6 +1053,7 @@ jobs:
     # reactPeerRange/typesReact/moduleFederationRequiredVersion/dockerBaseImage/ciNodeVersion).
     # That block is the canonical shape — promote it, do not invent a second one.
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
@@ -1068,6 +1115,7 @@ jobs:
     # gate FAILS on a reconstruction of a real defect — `gate-toolchain` had a job in 7
     # repos and its script in 1, so six reported green while enforcing nothing.
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
@@ -1099,13 +1147,14 @@ jobs:
     # must bump its version. Report-only first pass; ratchet to enforcing per repo.
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with: { fetch-depth: 0 }
       - name: SemVer bump check (packages + API contracts, report-only)
         shell: bash
         env:
-          BASE: ${{ github.base_ref }}
+          BASE: ${{ github.base_ref || github.event.merge_group.base_ref }}
         run: |
           set +e
           # BASE comes from this step's `env:` block, which shellcheck cannot see, so
@@ -1144,6 +1193,9 @@ jobs:
           exit 0
 
   gate-code-review:
+      # NOTE: the `if:` below already excludes merge_group — a merge group has no
+      # pull_request context, and this job needs github.event.pull_request.number.
+      # It is not one of the 8 required contexts, so skipping it cannot block a queue.
     # Automated code review via Claude. REPORT-ONLY: posts a review summary for
     # correctness bugs found in the diff; never blocks merge. PRs only.
     #
@@ -1172,6 +1224,7 @@ jobs:
     # red meant only "an agent opened this PR".
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       pull-requests: write
@@ -1221,7 +1274,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.LITELLM_FUZE_KEY }}
           ANTHROPIC_MODEL: claude-opus-5
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BASE_REF: ${{ github.base_ref }}
+          BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         shell: bash
         run: |

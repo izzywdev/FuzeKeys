@@ -1,4 +1,4 @@
-# fuze:managed template=mcp-maintain.yml baseline=main digest=sha256:2ae3e7179694000b85f3b11eba4b1125e0e963a506f57af39f28e9a1239cad5d
+# fuze:managed template=mcp-maintain.yml baseline=v1 digest=sha256:02295db8ceab15bc94878224b3ba60f5b02c91a86d53fc6c1f7e9b9b299ba474
 name: MCP Maintain
 
 # Keeps this repo's Model Context Protocol (MCP) surface current, as part of CI. The
@@ -217,6 +217,7 @@ jobs:
           # ANTHROPIC_AUTH_TOKEN, some SDK paths still read ANTHROPIC_API_KEY, so
           # both carry the resolved credential — whichever endpoint won the probe.
           anthropic-api-key: ${{ steps.llm.outputs.auth-token }}
+          claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # allowed_bots: scoped to `claude`, deliberately NOT `*`.
           #
           # The gate exists because claude-code-action hard-fails a Bot actor:

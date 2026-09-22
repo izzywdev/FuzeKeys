@@ -1,4 +1,4 @@
-# fuze:managed template=gate-required-checks.yml baseline=main digest=sha256:3bf7264ff4fe6dbc9cc181e4db5b9aa824610a89ee5eadc60fac87b622889215
+# fuze:managed template=gate-required-checks.yml baseline=v1 digest=sha256:3bf7264ff4fe6dbc9cc181e4db5b9aa824610a89ee5eadc60fac87b622889215
 name: gate-required-checks
 
 # Split out of harden-gate.yml so this gate's `runs-on` can be reasoned about
