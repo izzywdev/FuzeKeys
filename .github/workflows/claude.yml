@@ -1,9 +1,9 @@
-# fuze:managed template=claude.yml baseline=main digest=sha256:de7a215a2824648f82152cf2bbdc8476f2c1852cfa1acd9a4ab989d880eb5420
+# fuze:managed template=claude.yml baseline=v1 digest=sha256:1e0db1ac0c2cee7c9c4b5bedc555c023cf5b146068400add8fda2a492f90e03a
 name: Claude
 
 # Lets maintainers delegate work to Claude by mentioning @claude in an issue,
 # issue comment, PR, or review comment. Claude reads the thread + repo and
-# responds / pushes a claude/** branch. The companion `claude-auto-pr.yml`
+# responds / pushes a claude/** branch. The companion `fuze-auto-pr.yml`
 # workflow then opens a draft PR from that branch (issue -> PR autonomy).
 #
 # LLM credential: routed through .github/actions/llm-endpoint (LiteLLM in-cluster with
@@ -82,6 +82,7 @@ jobs:
         uses: ./.github/actions/fuze-code-action
         with:
           anthropic-api-key: ${{ steps.llm.outputs.auth-token }}
+          claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           show-full-output: true
           litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}

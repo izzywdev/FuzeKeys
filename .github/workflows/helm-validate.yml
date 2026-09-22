@@ -1,4 +1,4 @@
-# fuze:managed template=helm-validate.yml baseline=main digest=sha256:11da4f47a3597456979e2936adc7d00224ab1ec8699e2d2a8ee2d392364a4b04
+# fuze:managed template=helm-validate.yml baseline=v1 digest=sha256:44496753a19e4afa17b5b91a72e9988e62e93e8377af0d7eee612704bddc9b23
 name: Helm Chart Validation
 
 on:
@@ -19,6 +19,11 @@ on:
       - 'helm/**'
       - 'deploy/helm/**'
       - '.github/workflows/helm-validate.yml'
+  # Merge queue: this job emits the required context "Lint & schema-validate chart",
+  # so without merge_group a queued group can never satisfy branch protection.
+  # It reads no pull_request context (verified: 0 references), so no fallbacks
+  # are needed here.
+  merge_group:
   pull_request:
     branches: [master]
 

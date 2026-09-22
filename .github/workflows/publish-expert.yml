@@ -1,4 +1,4 @@
-# fuze:managed template=publish-expert.yml baseline=main digest=sha256:e6d9dc241f710c9b5a4cb940c60f4873ea5e9de530c38cf87a90df0e206646b2
+# fuze:managed template=publish-expert.yml baseline=v1 digest=sha256:e6d9dc241f710c9b5a4cb940c60f4873ea5e9de530c38cf87a90df0e206646b2
 name: Publish Expert Agent
 
 # Owner-published experts: this repo AUTHORS its own `<repo>-expert` agent (co-located with

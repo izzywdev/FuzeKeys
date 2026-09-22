@@ -1,4 +1,4 @@
-# fuze:managed template=label-sync.yml baseline=main digest=sha256:e8eba800befdef5c76239559e27ff1f8f30682426f4cd5ceffe05d3840f9cb2a
+# fuze:managed template=label-sync.yml baseline=v1 digest=sha256:e8eba800befdef5c76239559e27ff1f8f30682426f4cd5ceffe05d3840f9cb2a
 name: Label Sync
 
 # Upsert the FuzeSDLC governance label set from the in-repo manifest (.github/labels.json).

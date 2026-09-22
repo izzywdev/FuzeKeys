@@ -1,4 +1,4 @@
-# fuze:managed template=pages-frames.yml baseline=main digest=sha256:b8850b0397fa1f028af34bb4fbd0d0bea92d9613e7d39bf60007631013cf4a8d
+# fuze:managed template=pages-frames.yml baseline=v1 digest=sha256:b8850b0397fa1f028af34bb4fbd0d0bea92d9613e7d39bf60007631013cf4a8d
 name: pages-frames
 
 # Publishes design/frames/** to GitHub Pages so every feature awaiting UX approval

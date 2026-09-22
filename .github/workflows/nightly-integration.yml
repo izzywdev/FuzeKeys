@@ -1,4 +1,4 @@
-# fuze:managed template=nightly-integration.yml baseline=main digest=sha256:d99afa674c1c88a5d9455b26f14ab3ca70f9b036f25c64c8e9f4d49b5a1b06f0
+# fuze:managed template=nightly-integration.yml baseline=v1 digest=sha256:0ee895cda90ae069cc1ff4f96d93732a7d2899f1116967b426918787bd06e1da
 name: Nightly Integration
 
 # ADLC govern-loop, integration arm (sibling of governance-nightly.yml).
@@ -6,7 +6,7 @@ name: Nightly Integration
 # consumer-test stack + external-service mocks, no prod egress) and run its integration/
 # contract suite. On failure -> Claude opens a loop-guarded DRAFT fix PR + tracking issue
 # (NEVER auto-merges). Where no suite / bounded local-up exists yet, the job no-ops GREEN
-# and files ONE idempotent @claude issue to build it (self-propagating adoption).
+# and files ONE idempotent @fuze issue to build it (self-propagating adoption).
 #
 # LLM credential (autofix job): routed through .github/actions/llm-endpoint (LiteLLM
 # in-cluster with automatic fallback to a direct vendor). Requires repo secret
@@ -21,7 +21,7 @@ on:
 permissions:
   contents: write           # open fix branches/PRs
   pull-requests: write      # draft fix PR
-  issues: write             # tracking issue + @claude build issue
+  issues: write             # tracking issue + @fuze build issue
   actions: read             # read the failed run for diagnosis
   id-token: write           # claude-code-action OIDC
 
@@ -32,6 +32,7 @@ concurrency:
 jobs:
   integration:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     outputs:
       ran: ${{ steps.detect.outputs.ran }}
     steps:
@@ -64,7 +65,7 @@ jobs:
           # first, as before. Only the ABSENCE OF A SUITE is a no-op that re-files the issue.
           if [ -z "$SUITE" ]; then
             echo "ran=false" >> "$GITHUB_OUTPUT"; echo "SUITE_PRESENT=false" >> "$GITHUB_ENV"
-            echo "::notice title=nightly-integration::No integration suite detected — no-op green; filing/keeping the @claude build issue."
+            echo "::notice title=nightly-integration::No integration suite detected — no-op green; filing/keeping the @fuze build issue."
           else
             echo "ran=true" >> "$GITHUB_OUTPUT"
             {
@@ -90,6 +91,18 @@ jobs:
           docker compose "${envf[@]}" -f "$CT" up -d --wait || { echo "bounded stack failed to come up"; docker compose -f "$CT" logs | tail -120; exit 1; }
           echo "::endgroup::"
 
+      # Explicit setup-python, and it is load-bearing on a self-hosted runner.
+      # Nothing preinstalls Python on an ARC runner image the way a GitHub-hosted
+      # image does, so the bare `pip install -q pytest` in the `pytest` case below
+      # dies with `pip: command not found` — and because that step runs under
+      # `set -e`, it takes the whole job down before any fallback line executes.
+      # Every consuming repo that hit this (FuzeService, FuzeSocial, FuzeSales,
+      # FuzeInfra) had already added this step locally, which is drift the canonical
+      # caused: a re-render from this template would have silently deleted their fix
+      # and reintroduced the failure. Hosted runners are unaffected — setup-python
+      # is a no-op there when the version is already cached.
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with: { python-version: '3.12' }
       - name: Run integration/contract suite (mocks only — no real external egress)
         if: env.SUITE_PRESENT == 'true'
         shell: bash
@@ -115,7 +128,7 @@ jobs:
         shell: bash
         run: docker compose -f "$CT" down -v || true
 
-      - name: No suite yet — file ONE idempotent @claude build issue
+      - name: No suite yet — file ONE idempotent @fuze build issue
         if: env.SUITE_PRESENT == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -123,10 +136,10 @@ jobs:
         run: |
           title="Build nightly integration suite + bounded local-up"
           existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$title in:title" --json number --jq '.[0].number // empty')
-          if [ -n "$existing" ]; then echo "tracking issue #$existing already open — not re-mentioning @claude"; exit 0; fi
+          if [ -n "$existing" ]; then echo "tracking issue #$existing already open — not re-mentioning @fuze"; exit 0; fi
           gh label create integration --color 1d76db --description "nightly integration tests" 2>/dev/null || true
           gh issue create --repo "$GITHUB_REPOSITORY" --label integration --title "$title" --body "$(cat <<'EOF'
-          @claude — this repo has no nightly integration suite / bounded local-up yet, so **Nightly Integration** is a no-op here. Please build it (contract-first), per the FuzeSDLC standard, landing a **DRAFT PR** (do not merge):
+          @fuze — this repo has no nightly integration suite / bounded local-up yet, so **Nightly Integration** is a no-op here. Please build it (contract-first), per the FuzeSDLC standard, landing a **DRAFT PR** (do not merge):
 
           - **devops-engineer** — vendor FuzeInfra as a submodule; wire `docker-compose.consumer-test.yml` + `versions.env` + the external-service mock matrix (MailHog / Twilio-mock / Permit-offline / Stripe-test / Prism-MSW / LocalStack); enforce no prod egress.
           - **test-engineer** — author the integration/contract suite against that bounded stack; expose it as `test:integration` (npm) or `pytest -m integration`, or declare `integrationTest` in `.fuze/manifest.json`.
@@ -149,6 +162,7 @@ jobs:
           needs.integration.outputs.ran == 'true' &&
           !startsWith(github.ref_name, 'nightly-autofix-') }}
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -167,6 +181,29 @@ jobs:
         uses: ./.github/actions/fuze-code-action
         with:
           anthropic-api-key: ${{ steps.llm.outputs.auth-token }}
+          claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # allowed_bots: `fuzeone-bot`, the identity GitHub reports as the actor for
+          # this repo's SCHEDULED runs. Without it claude-code-action's human-actor check
+          # aborts the rung ~1s in, BEFORE any model call, with:
+          #   "Workflow initiated by non-human actor: fuzeone-bot (actor not found on
+          #    GitHub). Add bot to allowed_bots list or use '*' to allow all bots."
+          # Measured, not inferred: izzywdev/FuzeSales run 33508720260 (2026-09-01) shows
+          # `ALLOWED_BOTS: ` / `"allowed_bots": ""` immediately above that error, and
+          # izzywdev/FuzeInfra run 33505900409 fails identically in nightly-integration's
+          # autofix job. The failure is indistinguishable in a skimmed log from a provider
+          # outage, which is why this was mis-attributed to "credit balance too low" —
+          # that string comes from a DIFFERENT, upstream failure mode.
+          #
+          # `fuzeone-bot` has no backing GitHub user (GET /users/fuzeone-bot -> 404), so it
+          # lands in claude-code-action's `catch` branch in src/github/validation/actor.ts,
+          # which still consults isAllowedBot() before throwing — a literal login here is
+          # sufficient and no `*` is needed.
+          #
+          # Deliberately NOT `*`. This repo runs dependabot; under `*` any bot-authored
+          # event could start an agent run holding the resolved LLM credential and repo
+          # write. A cron cannot be triggered by dependabot, so naming the one scheduler
+          # identity keeps the gate doing its job.
+          allowed-bots: "fuzeone-bot,fuze-agent"
           task-prompt: |
             The **nightly integration suite** for ${{ github.repository }} FAILED
             (run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}).

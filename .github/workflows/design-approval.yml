@@ -1,4 +1,4 @@
-# fuze:managed template=design-approval.yml baseline=main digest=sha256:941a0601f96d593057cff1f9666eae878074a159ada756443bb59a0dacd68404
+# fuze:managed template=design-approval.yml baseline=v1 digest=sha256:941a0601f96d593057cff1f9666eae878074a159ada756443bb59a0dacd68404
 name: design-approval
 
 # Turns an in-frame "Approve" click into a verified, signed manifest flip.
