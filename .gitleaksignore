@@ -1,0 +1,38 @@
+# Verified FALSE POSITIVES only. Each line is an exact gitleaks fingerprint
+# (commit:file:rule:line), so it matches that one historical occurrence and nothing else:
+# it cannot hide a new leak, and a real secret is never listed here.
+# Real or unverified findings are deliberately ABSENT so gate-secret-scan stays red on them.
+
+# FP-sealed: SealedSecret encryptedData - ciphertext, verified kind at the flagged commit
+6c4bacdee98ea5bdf119261762100d04d21a3aa2:deploy/argocd/sealed/fuzefront-registration.yaml:generic-api-key:10
+c1b734c0fc6a6c77ac933b49c1e49b2d4b6db6d3:deploy/argocd/sealed/fuzefront-registration.yaml:generic-api-key:10
+6a91d176450ddfb8b6008b56bb7ac8ebefa95fa1:deploy/argocd/sealed/fuzekeys-tokenizer-secrets.yaml:generic-api-key:10
+0820c3d0ee40414178408d89c0d15cd59c20e621:deploy/argocd/sealed/fuzekeys-secrets.yaml:generic-api-key:9
+0820c3d0ee40414178408d89c0d15cd59c20e621:deploy/argocd/sealed/fuzekeys-secrets.yaml:generic-api-key:14
+6a91d176450ddfb8b6008b56bb7ac8ebefa95fa1:deploy/argocd/sealed/fuzekeys-secrets.yaml:generic-api-key:10
+6a91d176450ddfb8b6008b56bb7ac8ebefa95fa1:deploy/argocd/sealed/fuzekeys-secrets.yaml:generic-api-key:13
+6a91d176450ddfb8b6008b56bb7ac8ebefa95fa1:deploy/argocd/sealed/fuzekeys-secrets.yaml:generic-api-key:14
+6a91d176450ddfb8b6008b56bb7ac8ebefa95fa1:deploy/argocd/sealed/fuzekeys-secrets.yaml:generic-api-key:16
+876c03d1cc2df423ef5eed532d17011bc1403d42:deploy/argocd/sealed/fuzekeys-secrets.yaml:generic-api-key:9
+876c03d1cc2df423ef5eed532d17011bc1403d42:deploy/argocd/sealed/fuzekeys-secrets.yaml:generic-api-key:14
+
+# FP-test: test fixture under a tests path - not a credential
+17980dd86dd601b6afdc6b9a8d03729cc1415d90:backend/tests/test_broker_service.py:generic-api-key:70
+17980dd86dd601b6afdc6b9a8d03729cc1415d90:backend/tests/test_identities.py:generic-api-key:165
+0a37797355c4290df4e6bb72807d03a8d0c9ff6b:backend/tests/test_broker_service.py:generic-api-key:70
+0a37797355c4290df4e6bb72807d03a8d0c9ff6b:backend/tests/test_identities.py:generic-api-key:152
+27894bc59fd943ac665cefdb3afa08c8f0bbf5d3:backend/tests/test_broker_service.py:generic-api-key:71
+27894bc59fd943ac665cefdb3afa08c8f0bbf5d3:backend/tests/test_broker_service.py:generic-api-key:297
+27894bc59fd943ac665cefdb3afa08c8f0bbf5d3:backend/tests/test_broker_adversarial.py:generic-api-key:56
+384f1206b263dd1cc732b7f0be5ec3ba3cf241c7:backend/tests/test_broker_adversarial.py:generic-api-key:56
+51cae2fd7d130612d988a96d722c666b4278ec1d:backend/tests/test_broker_service.py:generic-api-key:71
+51cae2fd7d130612d988a96d722c666b4278ec1d:backend/tests/test_broker_service.py:generic-api-key:286
+0820c3d0ee40414178408d89c0d15cd59c20e621:pii-tokenizer/test_features.py:slack-legacy-workspace-token:333
+90fd5879a4f944c5435b862ca3bcd5edc60f6692:backend/tests/test_identities.py:generic-api-key:146
+90fd5879a4f944c5435b862ca3bcd5edc60f6692:backend/tests/test_accounts.py:generic-api-key:182
+
+# FP-example: documentation example against localhost - not a credential
+90fd5879a4f944c5435b862ca3bcd5edc60f6692:CREDENTIALS_API_GUIDE.md:curl-auth-header:27
+
+# FP-modename: auth MODE name compared as a string - not a credential
+60807580172347b7c673a222557ba07e08e393cd:frontend/src/services/securityClient.ts:generic-api-key:27
