@@ -1,4 +1,4 @@
-# fuze:managed template=helm-validate.yml baseline=v1 digest=sha256:44496753a19e4afa17b5b91a72e9988e62e93e8377af0d7eee612704bddc9b23
+# fuze:managed template=helm-validate.yml baseline=v1 digest=sha256:05153514c3fcd9bcd633731888dbac7e3c3aa32d66999f9a408bf6b66df2b6e5
 name: Helm Chart Validation
 
 on:
@@ -65,6 +65,16 @@ jobs:
       # Fix discovery, never the layout.
       - name: Lint & validate all charts (helm/ and deploy/helm/)
         run: |
+          # `pipefail` is the fix for issue #385. This block used to inherit Actions'
+          # default `bash -e {0}` — `-e` on, `pipefail` OFF — and validated via
+          # `helm template ... | kubeconform ...`. Without pipefail a pipeline's exit
+          # status is the LAST command's, so a failed `helm template` (render error)
+          # produced empty stdin, kubeconform reported "0 resource found" and exited 0,
+          # and this gate went GREEN while validating nothing. `helm template` is now
+          # rendered to a FILE first (below), which removes the pipe entirely — a more
+          # durable fix than remembering pipefail on every future edit — and pipefail
+          # is set as belt-and-suspenders for the remaining commands.
+          set -euo pipefail
           shopt -s nullglob
           charts=(helm/*/Chart.yaml deploy/helm/*/Chart.yaml)
           if [ ${#charts[@]} -eq 0 ]; then
@@ -79,22 +89,48 @@ jobs:
             exit 0
           fi
           echo "Discovered ${#charts[@]} chart(s): ${charts[*]}"
+
+          # Render to a file, THEN validate the file — never `helm template | kubeconform`.
+          # A non-zero `helm template` now fails the step directly (via set -e), instead
+          # of being swallowed by the pipe. $@ carries the optional `-f <overlay>` flag.
+          render_and_validate() {
+            local name="$1" chart="$2"; shift 2
+            local out; out="$(mktemp)"
+            helm template "$name" "$chart" "$@" > "$out"
+            # A chart may legitimately render zero resources: the canonical starter chart
+            # (community-templates/chart) is `enabled: false`-gated and renders NOTHING
+            # until the real service ships. That is not a failure — a render FAILURE was
+            # already caught above by the non-zero exit. Warn (visible on the run) rather
+            # than failing, so a freshly-onboarded repo's disabled starter chart does not
+            # go red. (Issue #385 pt.4: zero-resource-is-hard-fail would break these.)
+            if [ ! -s "$out" ]; then
+              echo "::warning title=helm-validate::$chart $* rendered zero resources (e.g. an enabled:false starter chart) — nothing for kubeconform to validate"
+              rm -f "$out"; return 0
+            fi
+            kubeconform -strict -summary -kubernetes-version 1.29.0 -ignore-missing-schemas < "$out"
+            rm -f "$out"
+          }
+
           for chartyaml in "${charts[@]}"; do
             chart="$(dirname "$chartyaml")"
             name="$(basename "$chart")"
+            # helm lint severity contract (issue #385 pt.3): `helm lint` exits non-zero
+            # only on [ERROR] severity — [INFO]/[WARNING] (incl. an `[INFO] Fail` from a
+            # chart's own fail-closed guard) exit 0 and do NOT fail this step by design.
+            # `--strict` (promote warnings to errors) is deliberately NOT enabled: it
+            # would red charts fleet-wide on pre-existing warnings. The render+pipefail
+            # change below — not lint — is what closes the vacuous-pass hole.
             echo "::group::helm lint $chart"
             helm lint "$chart"
             echo "::endgroup::"
             echo "::group::template + kubeconform $chart (base values)"
-            helm template "$name" "$chart" \
-              | kubeconform -strict -summary -kubernetes-version 1.29.0 -ignore-missing-schemas
+            render_and_validate "$name" "$chart"
             echo "::endgroup::"
             for overlay in "$chart"/values-*.yaml; do
               [ -e "$overlay" ] || continue
               echo "::group::overlay $(basename "$overlay")"
               helm lint "$chart" -f "$overlay"
-              helm template "$name" "$chart" -f "$overlay" \
-                | kubeconform -strict -summary -kubernetes-version 1.29.0 -ignore-missing-schemas
+              render_and_validate "$name" "$chart" -f "$overlay"
               echo "::endgroup::"
             done
           done
