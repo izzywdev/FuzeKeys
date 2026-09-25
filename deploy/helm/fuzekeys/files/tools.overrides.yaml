@@ -31,6 +31,21 @@
 
 tools:
 
+  get_connectors_google_gmail_recent_messages:
+    mutates: false
+    reason: >-
+      Reads Gmail metadata through a server-side vaulted OAuth token; the token
+      itself is never returned to the MCP caller
+  get_connectors_google_gmail_status:
+    mutates: false
+    reason: >-
+      Returns only connection state and non-secret configuration
+  delete_connectors_google_gmail:
+    reversibility: irreversible
+    reason: >-
+      Deletes the user's vaulted OAuth grant and local connector metadata;
+      reconnecting creates a new Google authorization rather than restoring it
+
   # --- 1. Secret disclosure over a safe method ------------------------------
   # GET, but it delegates straight to request_account_credentials and returns
   # DECRYPTED credentials. Classified as a write so it is never reachable from a

@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from .identity import TransportContext, TransportIdentity
 from .service import BrokerConfig, BrokerService
-from .vault import InMemoryVault, SecretResolver
+from .vault import InMemoryVault, OpenBaoKV2Vault, SecretResolver
 
 
 def _sync_database_url() -> str:
@@ -64,7 +64,17 @@ _vault_singleton: Optional[SecretResolver] = None
 def get_vault() -> SecretResolver:
     global _vault_singleton
     if _vault_singleton is None:
-        _vault_singleton = InMemoryVault()
+        address = os.getenv("VAULT_ADDR") or os.getenv("OPENBAO_ADDR")
+        token = os.getenv("VAULT_TOKEN") or os.getenv("OPENBAO_TOKEN")
+        if address and token:
+            _vault_singleton = OpenBaoKV2Vault(
+                address,
+                token,
+                mount=os.getenv("VAULT_KV_MOUNT", "secret"),
+                namespace=os.getenv("VAULT_NAMESPACE", ""),
+            )
+        else:
+            _vault_singleton = InMemoryVault()
     return _vault_singleton
 
 

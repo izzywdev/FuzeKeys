@@ -13,6 +13,7 @@ from .signup_script import SignupScript
 from .site import DifficultyLevel, ImplementationStatus, Site
 from .user import User
 from .vault_assets import ApiCredential, IdentityCard
+from .connector import ConnectorCredential
 
 __all__ = [
     "User",

@@ -1012,6 +1012,7 @@ paths:
           application/json:
             schema:
               type: object
+              additionalProperties: true
               title: Error Data
       responses:
         '200':
@@ -1055,6 +1056,7 @@ paths:
           application/json:
             schema:
               type: object
+              additionalProperties: true
               title: Success Data
       responses:
         '200':
@@ -1307,6 +1309,7 @@ paths:
           application/json:
             schema:
               type: object
+              additionalProperties: true
               title: Context
       responses:
         '200':
@@ -1686,6 +1689,7 @@ paths:
           content:
             application/json:
               schema:
+                additionalProperties: true
                 type: object
                 title: Response Manual Signup Api Google Signup Manual Post
         '422':
@@ -1720,9 +1724,7 @@ paths:
         content:
           application/json:
             schema:
-              allOf:
-              - $ref: '#/components/schemas/GoogleSignupConfig'
-              title: Config
+              $ref: '#/components/schemas/GoogleSignupConfig'
       responses:
         '200':
           description: Successful Response
@@ -1730,6 +1732,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: true
                 title: Response Signup With Identity Api Google Signup  Identity Id  Post
         '422':
           description: Validation Error
@@ -1792,6 +1795,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: true
                 title: Response Test Identity Conversion Api Google Test Identity Conversion  Identity
                   Id  Post
         '422':
@@ -1831,6 +1835,7 @@ paths:
             application/json:
               schema:
                 type: object
+                additionalProperties: true
                 title: Response Get Google Accounts Api Google Accounts  Identity Id  Get
         '422':
           description: Validation Error
@@ -2116,6 +2121,151 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/connectors/google-gmail/oauth/start:
+    post:
+      tags:
+      - Connectors
+      - Connectors
+      summary: Oauth Start
+      operationId: post_connectors_google_gmail_oauth_start
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthStartRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /api/v1/connectors/google-gmail/oauth/callback:
+    get:
+      tags:
+      - Connectors
+      - Connectors
+      summary: Oauth Callback
+      operationId: get_connectors_google_gmail_oauth_callback
+      parameters:
+      - name: code
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Code
+      - name: state
+        in: query
+        required: true
+        schema:
+          type: string
+          title: State
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/connectors/google-gmail:
+    get:
+      tags:
+      - Connectors
+      - Connectors
+      summary: Status
+      operationId: get_connectors_google_gmail
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+    delete:
+      tags:
+      - Connectors
+      - Connectors
+      summary: Disconnect
+      operationId: delete_connectors_google_gmail
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+    patch:
+      tags:
+      - Connectors
+      - Connectors
+      summary: Configure
+      operationId: patch_connectors_google_gmail
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectorConfiguration'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /api/v1/connectors/google-gmail/messages/recent:
+    get:
+      tags:
+      - Connectors
+      - Connectors
+      summary: Recent Messages
+      operationId: get_connectors_google_gmail_messages_recent
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 20
+          minimum: 1
+          default: 5
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/sites/categories:
     get:
       tags:
@@ -2342,6 +2492,7 @@ paths:
         content:
           application/json:
             schema:
+              additionalProperties: true
               type: object
               title: Message
         required: true
@@ -2529,7 +2680,8 @@ components:
           title: Error Message
         stage_data:
           anyOf:
-          - type: object
+          - additionalProperties: true
+            type: object
           - type: 'null'
           title: Stage Data
       type: object
@@ -2546,7 +2698,8 @@ components:
           title: Message
         details:
           anyOf:
-          - type: object
+          - additionalProperties: true
+            type: object
           - type: 'null'
           title: Details
       type: object
@@ -2609,8 +2762,7 @@ components:
         signup_data:
           $ref: '#/components/schemas/GoogleSignupData'
         config:
-          allOf:
-          - $ref: '#/components/schemas/GoogleSignupConfig'
+          $ref: '#/components/schemas/GoogleSignupConfig'
       type: object
       required:
       - signup_data
@@ -2649,6 +2801,19 @@ components:
       required:
       - response
       title: ChatResponse
+    ConnectorConfiguration:
+      properties:
+        include_spam_trash:
+          type: boolean
+          title: Include Spam Trash
+          default: false
+        query:
+          type: string
+          maxLength: 500
+          title: Query
+          default: in:inbox
+      type: object
+      title: ConnectorConfiguration
     CredentialRequest:
       properties:
         identity_id:
@@ -2710,6 +2875,7 @@ components:
           title: Credentials
           description: Generated credentials
         metadata:
+          additionalProperties: true
           type: object
           title: Metadata
           description: Request metadata and tracking information
@@ -2756,7 +2922,8 @@ components:
           description: Credentials to store
         metadata:
           anyOf:
-          - type: object
+          - additionalProperties: true
+            type: object
           - type: 'null'
           title: Metadata
           description: Additional metadata about the credentials
@@ -2837,10 +3004,12 @@ components:
           type: string
           title: Action Type
         patterns:
+          additionalProperties: true
           type: object
           title: Patterns
           default: {}
         test_data:
+          additionalProperties: true
           type: object
           title: Test Data
           default: {}
@@ -2973,6 +3142,7 @@ components:
           title: Redeemer Identity
           description: Bound transport identity that may redeem
         scope:
+          additionalProperties: true
           type: object
           title: Scope
         ttl_seconds:
@@ -3089,7 +3259,8 @@ components:
           title: Bio
         custom_fields:
           anyOf:
-          - type: object
+          - additionalProperties: true
+            type: object
           - type: 'null'
           title: Custom Fields
         preferred_username_pattern:
@@ -3207,7 +3378,8 @@ components:
           title: Bio
         custom_fields:
           anyOf:
-          - type: object
+          - additionalProperties: true
+            type: object
           - type: 'null'
           title: Custom Fields
         preferred_username_pattern:
@@ -3334,7 +3506,8 @@ components:
           title: Bio
         custom_fields:
           anyOf:
-          - type: object
+          - additionalProperties: true
+            type: object
           - type: 'null'
           title: Custom Fields
         preferred_username_pattern:
@@ -3353,6 +3526,7 @@ components:
           type: string
           title: Action Type
         execution_result:
+          additionalProperties: true
           type: object
           title: Execution Result
       type: object
@@ -3371,7 +3545,8 @@ components:
           title: Message
         data:
           anyOf:
-          - type: object
+          - additionalProperties: true
+            type: object
           - type: 'null'
           title: Data
         error:
@@ -3412,6 +3587,7 @@ components:
           type: string
           title: Command Type
         parameters:
+          additionalProperties: true
           type: object
           title: Parameters
         timeout_seconds:
@@ -3423,6 +3599,15 @@ components:
       - command_type
       - parameters
       title: MobileCommandRequest
+    OAuthStartRequest:
+      properties:
+        return_to:
+          type: string
+          maxLength: 1000
+          title: Return To
+          default: /connectors
+      type: object
+      title: OAuthStartRequest
     OtpRequest:
       properties:
         otp:
@@ -3483,6 +3668,7 @@ components:
       properties:
         scrapers:
           items:
+            additionalProperties: true
             type: object
           type: array
           title: Scrapers
@@ -3512,7 +3698,8 @@ components:
           title: Code
         metadata:
           anyOf:
-          - type: object
+          - additionalProperties: true
+            type: object
           - type: 'null'
           title: Metadata
         error_message:
@@ -3871,6 +4058,11 @@ components:
         type:
           type: string
           title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
       type: object
       required:
       - loc

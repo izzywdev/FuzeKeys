@@ -1664,6 +1664,42 @@ paths:
           content:
             application/json:
               schema: {}
+  /api/google/signup/manual:
+    post:
+      tags:
+      - Google Integration
+      - Google Integration
+      summary: Manual Signup
+      description: 'Create a Google account with manually provided data.
+
+
+        SECURITY: requires auth. This route drives real signup automation from the
+
+        request body and must not be reachable unauthenticated.'
+      operationId: post_google_signup_manual
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Body_manual_signup_api_google_signup_manual_post'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Manual Signup Api Google Signup Manual Post
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
   /api/google/signup/{identity_id}:
     post:
       tags:
@@ -1704,42 +1740,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/google/signup/manual:
-    post:
-      tags:
-      - Google Integration
-      - Google Integration
-      summary: Manual Signup
-      description: 'Create a Google account with manually provided data.
-
-
-        SECURITY: requires auth. This route drives real signup automation from the
-
-        request body and must not be reachable unauthenticated.'
-      operationId: post_google_signup_manual
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/Body_manual_signup_api_google_signup_manual_post'
-        required: true
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                additionalProperties: true
-                type: object
-                title: Response Manual Signup Api Google Signup Manual Post
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - HTTPBearer: []
   /api/google/config/default:
     get:
       tags:
@@ -1857,12 +1857,7 @@ paths:
           content:
             application/json:
               schema:
-                additionalProperties:
-                  items:
-                    type: string
-                  type: array
-                type: object
-                title: Response List Available Sites Api V1 Integrations Sites Get
+                $ref: '#/components/schemas/AvailableSitesResponse'
   /api/v1/integrations/sites/{site_name}/capabilities:
     get:
       tags:
@@ -2126,6 +2121,151 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/connectors/google-gmail/oauth/start:
+    post:
+      tags:
+      - Connectors
+      - Connectors
+      summary: Oauth Start
+      operationId: post_connectors_google_gmail_oauth_start
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthStartRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /api/v1/connectors/google-gmail/oauth/callback:
+    get:
+      tags:
+      - Connectors
+      - Connectors
+      summary: Oauth Callback
+      operationId: get_connectors_google_gmail_oauth_callback
+      parameters:
+      - name: code
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Code
+      - name: state
+        in: query
+        required: true
+        schema:
+          type: string
+          title: State
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/connectors/google-gmail:
+    get:
+      tags:
+      - Connectors
+      - Connectors
+      summary: Status
+      operationId: get_connectors_google_gmail
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+    delete:
+      tags:
+      - Connectors
+      - Connectors
+      summary: Disconnect
+      operationId: delete_connectors_google_gmail
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+    patch:
+      tags:
+      - Connectors
+      - Connectors
+      summary: Configure
+      operationId: patch_connectors_google_gmail
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectorConfiguration'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /api/v1/connectors/google-gmail/messages/recent:
+    get:
+      tags:
+      - Connectors
+      - Connectors
+      summary: Recent Messages
+      operationId: get_connectors_google_gmail_messages_recent
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 20
+          minimum: 1
+          default: 5
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/sites/categories:
     get:
       tags:
@@ -2304,6 +2444,17 @@ paths:
           content:
             application/json:
               schema: {}
+  /api/info:
+    get:
+      summary: API Metadata
+      description: Name and version of this API, for clients and smoke checks
+      operationId: get_info
+      responses:
+        '200':
+          description: API name and version
+          content:
+            application/json:
+              schema: {}
   /api/v1/demo/identities:
     get:
       tags:
@@ -2468,7 +2619,7 @@ components:
       example:
         account_id: 1
         credentials:
-          api_key: ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+          api_key: <example-api-key-not-a-real-token>
           email: john.doe.1703123456@example.com
           password: JohnDoePass123!
         last_used: '2024-01-01T12:00:00Z'
@@ -2591,6 +2742,21 @@ components:
       - email
       - password
       title: ApiKeyRequest
+    AvailableSitesResponse:
+      properties:
+        sites:
+          items:
+            type: string
+          type: array
+          title: Sites
+        count:
+          type: integer
+          title: Count
+      type: object
+      required:
+      - sites
+      - count
+      title: AvailableSitesResponse
     Body_manual_signup_api_google_signup_manual_post:
       properties:
         signup_data:
@@ -2635,6 +2801,19 @@ components:
       required:
       - response
       title: ChatResponse
+    ConnectorConfiguration:
+      properties:
+        include_spam_trash:
+          type: boolean
+          title: Include Spam Trash
+          default: false
+        query:
+          type: string
+          maxLength: 500
+          title: Query
+          default: in:inbox
+      type: object
+      title: ConnectorConfiguration
     CredentialRequest:
       properties:
         identity_id:
@@ -2758,7 +2937,7 @@ components:
       example:
         account_id: 1
         credentials:
-          api_key: ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+          api_key: <example-api-key-not-a-real-token>
           email: john.doe.1703123456@example.com
           password: JohnDoePass123!
           username: johndoe_a1b2
@@ -3420,6 +3599,15 @@ components:
       - command_type
       - parameters
       title: MobileCommandRequest
+    OAuthStartRequest:
+      properties:
+        return_to:
+          type: string
+          maxLength: 1000
+          title: Return To
+          default: /connectors
+      type: object
+      title: OAuthStartRequest
     OtpRequest:
       properties:
         otp:

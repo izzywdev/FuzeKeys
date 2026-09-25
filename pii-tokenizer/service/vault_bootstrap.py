@@ -14,6 +14,7 @@ import urllib.request
 VAULT_ADDR = os.environ.get("VAULT_ADDR", "http://vault:8200")
 INIT_FILE = os.environ.get("VAULT_INIT_FILE", "/init/.vault-init.json")
 TRANSIT_KEY = os.environ.get("VAULT_TRANSIT_KEY", "pii")
+KV_MOUNT = os.environ.get("VAULT_KV_MOUNT", "secret")
 
 
 def _req(path, payload=None, token=None, method="GET"):
@@ -74,7 +75,15 @@ def main():
              token=root_token, method="POST")
     except Exception:
         pass  # already exists
-    print(f"vault-bootstrap: transit '{TRANSIT_KEY}' ready; done.", flush=True)
+    # 5. Ensure a KV-v2 mount for per-user connector grants. FuzeKeys backend
+    # receives a separately provisioned least-privilege token; it never reads
+    # the root token or this init file.
+    try:
+        _req(f"/v1/sys/mounts/{KV_MOUNT}", {"type": "kv", "options": {"version": "2"}},
+             token=root_token, method="POST")
+    except Exception:
+        pass  # already mounted
+    print(f"vault-bootstrap: transit '{TRANSIT_KEY}' and kv-v2 '{KV_MOUNT}' ready; done.", flush=True)
 
 
 if __name__ == "__main__":
