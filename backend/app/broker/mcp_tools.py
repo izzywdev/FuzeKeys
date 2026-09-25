@@ -135,4 +135,14 @@ MCP_TOOL_SPECS = [
         "name": "keys.revoke",
         "description": "Instantly revoke a grant by id. Idempotent and non-disclosing.",
     },
+    {
+        "name": "connectors.google_gmail.status",
+        "description": "Return the caller's Gmail connector status and non-secret configuration.",
+        "operation_id": "get_connectors_google_gmail_status",
+    },
+    {
+        "name": "connectors.google_gmail.recent_messages",
+        "description": "Read recent Gmail metadata through the user's vaulted OAuth grant.",
+        "operation_id": "get_connectors_google_gmail_recent_messages",
+    },
 ]

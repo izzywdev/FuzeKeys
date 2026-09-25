@@ -45,6 +45,15 @@ spec:
                 name: {{ include "fuzekeys.fullname" . }}-config
             - secretRef:
                 name: {{ include "fuzekeys.secretName" . }}
+          env:
+            {{- if or .Values.config.vaultAddress .Values.vault.enabled }}
+            - name: VAULT_ADDR
+              value: {{ (.Values.config.vaultAddress | default (printf "http://%s-vault:%v" (include "fuzekeys.fullname" .) .Values.vault.port)) | quote }}
+            {{- end }}
+            - name: VAULT_KV_MOUNT
+              value: {{ .Values.config.vaultKvMount | quote }}
+            - name: GOOGLE_OAUTH_REDIRECT_URI
+              value: {{ .Values.config.googleOAuthRedirectUri | quote }}
           livenessProbe:
             httpGet:
               path: {{ $comp.probes.path }}

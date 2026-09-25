@@ -103,4 +103,5 @@ def test_high_sensitivity_returns_approval_required(service):
 
 def test_tool_specs_declared():
     names = {t["name"] for t in mcp_tools.MCP_TOOL_SPECS}
-    assert names == {"keys.grant", "keys.redeem", "keys.mint_token", "keys.revoke"}
+    assert {"keys.grant", "keys.redeem", "keys.mint_token", "keys.revoke"}.issubset(names)
+    assert "connectors.google_gmail.recent_messages" in names

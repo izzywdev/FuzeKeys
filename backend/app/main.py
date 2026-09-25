@@ -22,6 +22,7 @@ from app.routers import (
     llm_scraper,
     site_integrations,
     sms,
+    connectors,
 )
 
 # Temporarily use mock sites router
@@ -499,6 +500,7 @@ app.include_router(credentials.router, tags=["Credentials"])
 app.include_router(google_integration.router, tags=["Google Integration"])
 app.include_router(site_integrations.router, tags=["Site Integrations"])
 app.include_router(broker_router.router, tags=["Secret Broker"])
+app.include_router(connectors.router, tags=["Connectors"])
 app.include_router(sites_router, tags=["Sites Management"])
 
 

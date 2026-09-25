@@ -75,6 +75,11 @@ config:
   # REACT_APP_* vars are baked at BUILD time, so this runtime value is advisory
   # for the pre-built image; the real value must be baked at image build.
   apiBaseUrl: "https://api.keys.prod.fuzefront.com"
+  googleOAuthRedirectUri: "https://api.keys.prod.fuzefront.com/api/v1/connectors/google-gmail/oauth/callback"
+  vaultKvMount: "secret"
+  # Prefer a separately managed, auto-unsealed Vault in production. When empty
+  # and vault.enabled=true, the chart uses its internal Vault Service.
+  vaultAddress: ""
 
 # -----------------------------------------------------------------------------
 # Secrets — FUZEKEYS-OWNED credentials (NOT FuzeInfra's).
@@ -99,6 +104,12 @@ secrets:
   credentialEncryptionKey: ""
   masterKeySalt: ""
   openaiApiKey: ""
+  googleOAuthClientId: ""
+  googleOAuthClientSecret: ""
+  connectorStateSigningKey: ""
+  connectorInternalToken: ""
+  # Token for a least-privilege policy limited to secret/data/connectors/*.
+  vaultToken: ""
 
 # -----------------------------------------------------------------------------
 # Shared persistence for app logs/data (NOT datastores).
