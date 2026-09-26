@@ -1,4 +1,4 @@
-# fuze:managed template=nightly-integration.yml baseline=v1 digest=sha256:0ee895cda90ae069cc1ff4f96d93732a7d2899f1116967b426918787bd06e1da
+# fuze:managed template=nightly-integration.yml baseline=v1 digest=sha256:3867a9f7a8297ca5640bca18db1d41eaec2a33232980fc848bc375710dbe5459
 name: Nightly Integration
 
 # ADLC govern-loop, integration arm (sibling of governance-nightly.yml).
@@ -220,6 +220,7 @@ jobs:
             the draft PR with a STATE block. If you cannot reproduce, or the fix needs a human decision,
             post the diagnosis on the issue and stop. Do NOT use plan mode / AskUserQuestion.
           litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
+          litellm-ci-key: ${{ secrets.LITELLM_CI_KEY }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
         # No merge step — draft PR + tracking issue only, per the ADLC (never auto-merge).

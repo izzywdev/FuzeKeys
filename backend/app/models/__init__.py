@@ -6,6 +6,7 @@ from .account import Account, AccountStage, StageStatus, StageType
 from .agent import Agent, AgentScope
 from .api_key import ApiKey
 from .approval import ApprovalRequest, AuditLog
+from .connector import ConnectorCredential
 from .grant import Grant
 from .identity import Identity
 from .organization import Organization, OrganizationMember
@@ -13,7 +14,6 @@ from .signup_script import SignupScript
 from .site import DifficultyLevel, ImplementationStatus, Site
 from .user import User
 from .vault_assets import ApiCredential, IdentityCard
-from .connector import ConnectorCredential
 
 __all__ = [
     "User",

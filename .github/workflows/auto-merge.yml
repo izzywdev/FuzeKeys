@@ -1,4 +1,4 @@
-# fuze:managed template=auto-merge.yml baseline=v1 digest=sha256:45fc616f7bf7e89d6c2e0cb38ae5383f80b974ed5130892dbbbe5f7bc7f97707
+# fuze:managed template=auto-merge.yml baseline=v1 digest=sha256:0f080b370f6ac7516efae66a3476d7a4970c6d4fa90ca1a44939fc29da94bf31
 name: Auto Merge PR
 
 on:
@@ -10,10 +10,14 @@ on:
 # The default GITHUB_TOKEN is read-only unless a permissions block grants more.
 # `gh pr merge --auto` needs pull-requests: write (to enable auto-merge) and
 # contents: write (for the squash + branch delete); without these the step
-# fails with "Resource not accessible by integration".
+# fails with "Resource not accessible by integration". `checks: read` is for
+# the check-runs lookup below — with only the two write scopes declared, every
+# other scope (including checks) defaults to none on a private repo, and the
+# lookup itself would fail closed with nothing to read.
 permissions:
   contents: write
   pull-requests: write
+  checks: read
 
 jobs:
   auto-merge:
@@ -67,9 +71,43 @@ jobs:
         run: |
           echo "::notice title=Auto-merge withheld::.fuze/manifest.json sets hardening.deployOnPush=true. Merging this PR deploys to production, so it must be merged by a human in a deploy window. This job is green because withholding the merge IS the correct outcome here, not a failure."
 
+      # A repo with no ruleset yet — every repo between the onboarding PR and
+      # `apply_ruleset.sh`, by the anti-lockout ordering governance/hardening-convention.md
+      # mandates — has no required contexts, so GitHub's native auto-merge merges on
+      # NOTHING once enabled: the onboarding PR itself has been observed opened and merged
+      # one second apart, with two dozen checks still queued or running, several of which
+      # then failed. `gh pr merge --auto` only ENABLES native auto-merge; it does not wait
+      # for anything the repo has not declared required, so the degenerate case is enabling
+      # it before a single check has even reported.
+      #
+      # The cheapest guard available at this layer: refuse to enable auto-merge while the
+      # head SHA has zero completed check runs. It cannot deadlock a repo that genuinely has
+      # no workflows yet — that repo's onboarding PR is the one that installs them, and this
+      # job re-fires on check_suite: [completed] once the first suite finishes. This does not
+      # replace requiring contexts via a ruleset (that is the fuller fix, and belongs to
+      # onboarding ordering, not this template); it only closes the one-second window.
+      - name: Check for completed check runs on the head SHA
+        id: checks
+        run: |
+          sha="${{ github.event.pull_request.head.sha }}"
+          completed=$(gh api "repos/${{ github.repository }}/commits/${sha}/check-runs" \
+            --jq '[.check_runs[] | select(.status == "completed")] | length')
+          echo "completed=$completed" >> "$GITHUB_OUTPUT"
+          echo "completed=$completed"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Zero completed checks on head SHA — auto-merge withheld
+        if: |
+          steps.policy.outputs.deployOnPush != 'true' &&
+          steps.checks.outputs.completed == '0'
+        run: |
+          echo "::notice title=Auto-merge withheld::The head SHA has zero completed check runs. Enabling auto-merge now would arm it before any gate has reported — on a repo with no required contexts yet, that is how an onboarding PR merges itself a second after opening. This job re-runs when a check suite completes."
+
       - name: Enable auto-merge
         if: |
           steps.policy.outputs.deployOnPush != 'true' &&
+          steps.checks.outputs.completed != '0' &&
           (github.event.pull_request.user.login == github.repository_owner ||
            contains(github.event.pull_request.labels.*.name, 'auto-merge'))
         run: |

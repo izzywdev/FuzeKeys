@@ -57,7 +57,11 @@ class OpenBaoKV2Vault:
     The adapter deliberately exposes only opaque bytes to the rest of FuzeKeys.
     """
 
-    def __init__(self, address: str, token: str, mount: str = "secret", namespace: str = ""):
+    def __init__(
+        self, address: str, token: str, mount: str = "secret", namespace: str = ""
+    ):
+        if urllib.parse.urlparse(address).scheme not in {"http", "https"}:
+            raise ValueError("vault address must use http or https")
         self.address = address.rstrip("/")
         self.token = token
         self.mount = mount.strip("/")
@@ -75,7 +79,8 @@ class OpenBaoKV2Vault:
             method=method,
         )
         try:
-            with urllib.request.urlopen(request, timeout=10) as response:
+            # Address is constrained to http(s) in __init__.
+            with urllib.request.urlopen(request, timeout=10) as response:  # nosec B310
                 raw = response.read()
                 return json.loads(raw) if raw else {}
         except urllib.error.HTTPError as exc:
@@ -85,10 +90,16 @@ class OpenBaoKV2Vault:
 
     def put(self, secret_ref: str, root: bytes) -> None:
         encoded = root.decode("utf-8")
-        self._request("POST", f"data/{urllib.parse.quote(secret_ref, safe='/')}", {"data": {"value": encoded}})
+        self._request(
+            "POST",
+            f"data/{urllib.parse.quote(secret_ref, safe='/')}",
+            {"data": {"value": encoded}},
+        )
 
     def load_root(self, secret_ref: str) -> Optional[bytes]:
-        result = self._request("GET", f"data/{urllib.parse.quote(secret_ref, safe='/')}")
+        result = self._request(
+            "GET", f"data/{urllib.parse.quote(secret_ref, safe='/')}"
+        )
         if not result:
             return None
         value = result.get("data", {}).get("data", {}).get("value")

@@ -1,4 +1,4 @@
-# fuze:managed template=fuze-code-review.yml baseline=v1 digest=sha256:9943843d9bfe2a1dcc714cb1e6167ee5319ee8a498b028349acc6973a2f2150c
+# fuze:managed template=fuze-code-review.yml baseline=v1 digest=sha256:554ed00a59af9b34a8e39ef04c04b87dba29fb8bdab0fcc2a6fb691a239acc90
 name: Fuze Code Review
 
 # THE CANONICAL LLM CODE REVIEW + APPROVAL GATE — now a MANDATORY approve-or-fail check.
@@ -98,20 +98,20 @@ name: Fuze Code Review
 # it resets. The chooser MUST stay hosted-default and MUST NOT be hardcoded to a pool
 # (no_self_hosted_required / gate-required-checks C3).
 #
-# WHY THIS REVERSES THE EARLIER "kept out of the template" note (and why harden-gate.yml
-# still keeps its own chooser out). This template previously omitted the chooser for the
-# same reason harden-gate does: the chooser JOB itself runs on `fuze-runner`, so a consumer
-# that has no such pool cannot run it and its check would queue forever. That risk is now
-# CONTAINED, not removed — by the #337 rollout gate, not by anything in this file. A repo is
-# listed `Fuze Code Review` required ONLY after it is verified emitting the check AND
-# `available` is satisfied (a reachable `fuze-runner` pool, or the owner having raised the
-# hosted budget). A repo without a healthy pool simply stays unlisted (never required), so
-# the chooser's presence here can never DEADLOCK it — it only makes the `available` property
-# ACHIEVABLE for the repos that do have the pool, which is exactly Stage-4 unblock path 2.
-# The installer no longer rewrites any `runs-on:` in this file: the two review jobs use the
-# `${{ needs.pick-runner.outputs.runner }}` expression form (render.py's scalar substitution
-# does not match it) and the chooser job's `fuze-runner` is not `ubuntu-latest`, so both are
-# left exactly as written in every consuming repo.
+# WHY THE CHOOSER IS NOW SHIPPED (it once was not). This template previously omitted the
+# chooser because the chooser JOB itself ran on `fuze-runner`, so a consumer with no such
+# pool could not run it and its check would queue forever. That is now fixed at the root: the
+# chooser runs HOSTED-DEFAULT and NEVER on the pool it chooses (izzywdev/FuzeSDLC#266) — a
+# chooser stamped onto `fuze-runner` cannot start when that pool is down, deadlocking every
+# job that `needs:` it. With a hosted default the chooser always starts, on any consumer,
+# pool or no pool. A repo is still listed `Fuze Code Review` required ONLY after it is
+# verified emitting the check AND `available` is satisfied (a reachable `fuze-runner` pool, or
+# the owner having raised the hosted budget). The installer does not rewrite any `runs-on:` in
+# this file: the two review jobs use the `${{ needs.pick-runner.outputs.runner }}` expression
+# and the chooser uses the hosted-default
+# `${{ vars.HARDEN_GATE_RUNNER || vars.CI_RUNNER_LABELS || 'ubuntu-latest' }}` expression, and
+# render.py's scalar substitution matches neither, so all three are left as written in every
+# consuming repo.
 
 on:
   pull_request:
@@ -136,17 +136,19 @@ jobs:
   # on GitHub-hosted runners by DEFAULT; on a private repo whose Actions budget is exhausted
   # a hosted job never starts, so this falls the required context back to the self-hosted
   # `fuze-runner` pool for the rest of the billing cycle, returning to hosted when the budget
-  # resets. It MUST run on the pool itself: on ubuntu-latest an exhausted budget would block
-  # it first and the fallback would never be reached. `fuze-runner` is in
+  # resets. It runs HOSTED-DEFAULT and never on the pool it chooses: a chooser stamped onto
+  # `fuze-runner` cannot start when that pool is down, deadlocking every job that needs it
+  # (izzywdev/FuzeSDLC#266). `fuze-runner` is in
   # governance/required-checks.json `allowed_self_hosted_runners`, which is what lets
-  # gate-required-checks accept this fallback (C3). This chooser job is NOT itself a required
-  # status context — only the decisive `Fuze Code Review` job below is.
+  # gate-required-checks accept it as the chooser's fallback arm (C3). This chooser job is NOT
+  # itself a required status context — only the decisive `Fuze Code Review` job below is.
   pick-runner:
-    # Public repositories have unmetered GitHub-hosted capacity. Sending their
-    # chooser to a self-hosted pool first can deadlock every PR before the
-    # workflow has a chance to select the hosted path. Private repositories
-    # retain the budget-aware fallback pool.
-    runs-on: ${{ github.event.repository.private && 'fuze-runner' || 'ubuntu-latest' }}
+    # The chooser runs HOSTED-DEFAULT and NEVER on the pool it chooses: a chooser stamped
+    # onto `fuze-runner` cannot start when that pool is down, so every job that `needs:` it
+    # would queue forever behind a decision that can never be made (izzywdev/FuzeSDLC#266).
+    # `vars.HARDEN_GATE_RUNNER` pins it (or another pool) when set; `vars.CI_RUNNER_LABELS` is
+    # Runner Watch's observed-online label; else `ubuntu-latest`.
+    runs-on: ${{ vars.HARDEN_GATE_RUNNER || vars.CI_RUNNER_LABELS || 'ubuntu-latest' }}
     outputs:
       runner: ${{ steps.pick.outputs.runner }}
     steps:
@@ -155,9 +157,12 @@ jobs:
         env:
           IS_PRIVATE: ${{ github.event.repository.private }}
           OWNER: ${{ github.repository_owner }}
-          # Optional org Actions-billing read token. With it, a private repo returns to
-          # GitHub-hosted the moment the budget resets. Without it (GITHUB_TOKEN cannot read
-          # billing) the safe default is the self-hosted pool — free and never budget-gated.
+          # Optional org Actions-billing read token, now ALSO used for the runner-liveness
+          # probe below, which needs `administration:read` in addition to billing read. With
+          # it a private repo returns to GitHub-hosted the moment the budget resets, and the
+          # chooser can see whether the pool has a runner online before falling back to it.
+          # Without it (GITHUB_TOKEN reads neither) the safe default is the self-hosted pool —
+          # free and never budget-gated — with liveness left UNVERIFIED.
           # fuze:secret-sourcing CI_BUDGET_TOKEN=fleet — OPTIONAL org-wide Actions-billing read token; the chooser degrades to the self-hosted pool by name when unset (no repo needs to provision it), tracked separately from FLEET_SOURCED like CLAUDE_CODE_OAUTH_TOKEN above
           BUDGET_TOKEN: ${{ secrets.CI_BUDGET_TOKEN }}
           # Manual override, highest priority (e.g. pin ubuntu-latest or another pool).
@@ -165,6 +170,33 @@ jobs:
         run: |
           set -euo pipefail
           emit() { echo "runner=$1" >> "$GITHUB_OUTPUT"; echo "selected runner: $1"; }
+
+          # The self-hosted pool is chosen ONLY when it is observed to have a runner online.
+          # A `runs-on` naming a pool with 0 online does not fail — it queues forever
+          # (izzywdev/FuzeSDLC#266) — so budget alone must never route CI there. The probe
+          # needs a token with `administration:read` (CI_BUDGET_TOKEN). Degrade, do not
+          # invent: with no token or a non-200 the liveness is UNVERIFIED and we keep today's
+          # behaviour (emit the pool). Safe to call only because the chooser itself now runs
+          # hosted-default, not on the pool it is probing.
+          choose_pool() {
+            if [ -n "${BUDGET_TOKEN:-}" ]; then
+              local runners online
+              runners="$(curl -sS -H "Authorization: Bearer ${BUDGET_TOKEN}" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runners?per_page=100" || true)"
+              online="$(printf '%s' "${runners}" | jq -r '[.runners[]? | select(.status=="online")] | length' 2>/dev/null || true)"
+              if printf '%s' "${online}" | grep -qE '^[0-9]+$'; then
+                if [ "${online}" -eq 0 ]; then
+                  echo "::warning title=pick-runner::the fuze-runner pool has 0 runners online — routing to ubuntu-latest instead of queueing forever (izzywdev/FuzeSDLC#266)"
+                  emit ubuntu-latest; return
+                fi
+                echo "::notice title=pick-runner::fuze-runner pool has ${online} runner(s) online"
+                emit fuze-runner; return
+              fi
+              echo "::notice title=pick-runner::runner liveness unverified (runners API unreadable) — using the self-hosted pool"
+              emit fuze-runner; return
+            fi
+            echo "::notice title=pick-runner::runner liveness unverified (no CI_BUDGET_TOKEN; the runners probe needs administration:read) — using the self-hosted pool"
+            emit fuze-runner
+          }
 
           if [ -n "${FORCE_RUNNER:-}" ]; then
             emit "${FORCE_RUNNER}"; exit 0
@@ -175,8 +207,7 @@ jobs:
           fi
           # Private repo: prefer hosted only when we can CONFIRM included minutes remain.
           if [ -z "${BUDGET_TOKEN:-}" ]; then
-            echo "::notice title=pick-runner::no CI_BUDGET_TOKEN; using the self-hosted pool (free, not budget-gated)"
-            emit fuze-runner; exit 0
+            choose_pool; exit 0
           fi
           resp="$(curl -sS -H "Authorization: Bearer ${BUDGET_TOKEN}" -H "Accept: application/vnd.github+json" "https://api.github.com/orgs/${OWNER}/settings/billing/actions" || true)"
           used="$(printf '%s' "${resp}" | jq -r '.total_minutes_used // empty' 2>/dev/null || true)"
@@ -184,8 +215,8 @@ jobs:
           if printf '%s' "${used}" | grep -qE '^[0-9]+$' && printf '%s' "${incl}" | grep -qE '^[0-9]+$' && [ "${used}" -lt "${incl}" ]; then
             emit ubuntu-latest
           else
-            echo "::notice title=pick-runner::Actions budget exhausted or unreadable (used=${used:-?} incl=${incl:-?}) — using the self-hosted pool"
-            emit fuze-runner
+            echo "::notice title=pick-runner::Actions budget exhausted or unreadable (used=${used:-?} incl=${incl:-?})"
+            choose_pool
           fi
 
   # The review MACHINERY. Deliberately NOT the required status context: it carries the
@@ -348,6 +379,7 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
+          litellm-ci-key: ${{ secrets.LITELLM_CI_KEY }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           # fuze:secret-sourcing CLAUDE_CODE_OAUTH_TOKEN=fleet — distributed by provision-llm-vendor-keys.yml (optional, skipped-by-name when unset); tracked separately from the provision-secrets.yml SRC_ block that FLEET_SOURCED mirrors
           claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

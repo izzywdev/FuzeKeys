@@ -1,4 +1,4 @@
-# fuze:managed template=harden-gate.yml baseline=v1 digest=sha256:1605ee96f45ba7355487e7113ad66c0864e2c75e1e18fc43ccd775f323769414
+# fuze:managed template=harden-gate.yml baseline=v1 digest=sha256:28c9214203ae139eff071a7835c87f429fe22eec5f566fbff9a2898d6bcd0359
 name: Harden Gate
 
 # Unified protection gate shared verbatim across all hardened repos.
@@ -108,6 +108,20 @@ jobs:
     # comment below for the measurement that forced that split.
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # `packages: read` is REQUIRED on every job that installs root npm dependencies, and
+    # it is not inherited. A repo whose package.json pulls from GitHub Packages
+    # (npm.pkg.github.com, e.g. @izzywdev/fuzefront-identity) authenticates with
+    # `${GITHUB_TOKEN}` from .npmrc; without this scope every install is a 401. Job-level
+    # permissions REPLACE the workflow-level set, so `contents: read` is restated. None of
+    # these jobs needs security-events or pull-requests (verified when this was added).
+    #
+    # Upstreamed from FuzeDeploy, where it was fixed locally (#168) and then SILENTLY
+    # REVERTED: once governance-sync's commit-back started working, the reconciler
+    # re-stamped harden-gate.yml from this canonical, which did not carry the fix. A fix
+    # made downstream of a managed file lasts exactly until the next reconcile.
+    permissions:
+      contents: read
+      packages: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
@@ -116,6 +130,10 @@ jobs:
         with: { python-version: '3.12' }
       - name: Lint (adaptive, enforcing)
         shell: bash
+        # .npmrc reads `${GITHUB_TOKEN}`, which Actions does NOT export into a step's
+        # environment on its own; unset, npm sends no credential at all.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           checked=0
@@ -281,6 +299,20 @@ jobs:
   gate-test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # `packages: read` is REQUIRED on every job that installs root npm dependencies, and
+    # it is not inherited. A repo whose package.json pulls from GitHub Packages
+    # (npm.pkg.github.com, e.g. @izzywdev/fuzefront-identity) authenticates with
+    # `${GITHUB_TOKEN}` from .npmrc; without this scope every install is a 401. Job-level
+    # permissions REPLACE the workflow-level set, so `contents: read` is restated. None of
+    # these jobs needs security-events or pull-requests (verified when this was added).
+    #
+    # Upstreamed from FuzeDeploy, where it was fixed locally (#168) and then SILENTLY
+    # REVERTED: once governance-sync's commit-back started working, the reconciler
+    # re-stamped harden-gate.yml from this canonical, which did not carry the fix. A fix
+    # made downstream of a managed file lasts exactly until the next reconcile.
+    permissions:
+      contents: read
+      packages: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
@@ -289,6 +321,10 @@ jobs:
         with: { python-version: '3.12' }
       - name: Test (adaptive, report-only)
         shell: bash
+        # .npmrc reads `${GITHUB_TOKEN}`, which Actions does NOT export into a step's
+        # environment on its own; unset, npm sends no credential at all.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set +e
           if [ -f package.json ] && grep -q '"test"' package.json; then
@@ -331,6 +367,20 @@ jobs:
   gate-build:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # `packages: read` is REQUIRED on every job that installs root npm dependencies, and
+    # it is not inherited. A repo whose package.json pulls from GitHub Packages
+    # (npm.pkg.github.com, e.g. @izzywdev/fuzefront-identity) authenticates with
+    # `${GITHUB_TOKEN}` from .npmrc; without this scope every install is a 401. Job-level
+    # permissions REPLACE the workflow-level set, so `contents: read` is restated. None of
+    # these jobs needs security-events or pull-requests (verified when this was added).
+    #
+    # Upstreamed from FuzeDeploy, where it was fixed locally (#168) and then SILENTLY
+    # REVERTED: once governance-sync's commit-back started working, the reconciler
+    # re-stamped harden-gate.yml from this canonical, which did not carry the fix. A fix
+    # made downstream of a managed file lasts exactly until the next reconcile.
+    permissions:
+      contents: read
+      packages: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
@@ -350,6 +400,10 @@ jobs:
       # FuzeHub (`make: not found` on its self-hosted runner) were fixed first.
       - name: Build (adaptive, enforcing)
         shell: bash
+        # .npmrc reads `${GITHUB_TOKEN}`, which Actions does NOT export into a step's
+        # environment on its own; unset, npm sends no credential at all.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ ! -f package.json ] || ! grep -q '"build"' package.json; then
             # Say it. A gate that is a no-op here is fine; a gate that is SILENTLY a no-op
@@ -503,8 +557,15 @@ jobs:
           category: trivy
 
   gate-authz:
-    # Endpoint security / authorization (BOLA/BOPLA). Report-only first pass; security
-    # ratchets to enforcing per-repo once the rules are tuned green (see architecture-guidelines.md).
+    # Endpoint security / authorization (BOLA/BOPLA). ADVISORY BY DECISION — this gate is
+    # non-enforcing PERMANENTLY, not "report-only until tuned" (FuzeSDLC#384). It is a
+    # pattern-absence scan: it cannot distinguish "no BOLA risk" from "idiom not recognised"
+    # (facade-based data access matches none of its rules), so a green here is not authorization
+    # coverage. The ENFORCING authorization gate is gate-platform-auth (positive requirement:
+    # state-changing routes vs authz call sites), NOT this job. gate-authz is in never_require
+    # (governance/required-checks.json) and its advisory status is emitted in the signal below,
+    # not only in this comment. Any rule here that security wants enforced migrates into
+    # scripts/gate_platform_auth.py with self-tests. See architecture-guidelines.md.
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -513,14 +574,24 @@ jobs:
       # Same portability defect as gate-sast — see the comment there.
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with: { python-version: '3.12' }
-      - name: Semgrep authz/appsec scan (report-only, SARIF)
+      - name: Semgrep authz/appsec scan (ADVISORY — never blocks, SARIF)
         shell: bash
         run: |
           python3 -m pip install -q semgrep
           CFG=()
           [ -f .semgrep/fuze-authz.yml ] && CFG+=(--config .semgrep/fuze-authz.yml)
-          semgrep scan "${CFG[@]}" --config p/owasp-top-ten --config p/secrets --sarif --output authz.sarif || true
+          # Capture the scanner exit rather than discarding it with a bare `|| true`: this
+          # gate is advisory (FuzeSDLC#384), so it never fails the job — but a green with 40
+          # findings must be distinguishable from a green with none. The empty-SARIF fallback
+          # is only ever written when semgrep actually ran and emitted nothing.
+          rc=0
+          semgrep scan "${CFG[@]}" --config p/owasp-top-ten --config p/secrets --sarif --output authz.sarif || rc=$?
           test -f authz.sarif || echo '{"version":"2.1.0","runs":[]}' > authz.sarif
+          n=$(jq '[.runs[].results[]?]|length' authz.sarif 2>/dev/null || echo 0)
+          # On EVERY run, name the advisory status in the signal itself, not only in the
+          # YAML comment above — a warning annotation on the PR plus the job summary.
+          echo "::warning title=gate-authz is ADVISORY (never blocks)::${n} finding(s), semgrep exit ${rc}. Pattern-absence scan — NOT object-level authorization coverage; that is gate-platform-auth."
+          echo "gate-authz is ADVISORY (never blocks): ${n} finding(s), semgrep exit ${rc}. Pattern-absence scan — NOT object-level authorization coverage; the enforcing gate is gate-platform-auth." >> "$GITHUB_STEP_SUMMARY"
       # Enforced on public repos, skipped by condition on private ones — see the
       # long note on the same step in gate-sast above for why this is not continue-on-error.
       - name: Upload SARIF (skipped on private repos — code scanning unavailable)

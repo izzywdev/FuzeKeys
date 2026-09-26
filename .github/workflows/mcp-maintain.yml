@@ -1,4 +1,4 @@
-# fuze:managed template=mcp-maintain.yml baseline=v1 digest=sha256:02295db8ceab15bc94878224b3ba60f5b02c91a86d53fc6c1f7e9b9b299ba474
+# fuze:managed template=mcp-maintain.yml baseline=v1 digest=sha256:1eb9ed65b819760f0b606bc8b8f3e687dfb78bc8ae1685631f7eac498c13291c
 name: MCP Maintain
 
 # Keeps this repo's Model Context Protocol (MCP) surface current, as part of CI. The
@@ -141,7 +141,7 @@ jobs:
       - name: Mint fuze-agent App token
         id: app_token
         continue-on-error: true
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.FUZE_AGENT_APP_ID }}
           private-key: ${{ secrets.FUZE_AGENT_APP_PRIVATE_KEY }}
@@ -236,15 +236,23 @@ jobs:
           # `*` defeats the gate rather than configuring it.
           #
           # `claude` is a LOGIN allowlist matched against the actor with `[bot]` stripped
-          # -- not a vendor or product name. This family's other bot is `fuzeone-bot`,
-          # which triggers only scheduled workflows (governance-nightly, nightly-*), none
-          # of which call this action; adding it here would grant an unused permission.
+          # -- not a vendor or product name. `fuze-agent`, `fuzeone-bot`, and
+          # `github-actions` are also allowed here, matching the canonical list already
+          # carried by fuze.yml / fuze-cluster.yml: the "Mint fuze-agent App token" step
+          # above pushes this job's own commit-back AS the fuze-agent App, so a PR that
+          # re-triggers on that push (or one opened by governance-sync / a scheduled
+          # reconciliation) presents the actor as `fuze-agent` -- a Bot -- to this same
+          # gate. Without it, claude-code-action rejected EVERY such run in ~2s with
+          # "Workflow initiated by non-human actor: fuze-agent (type: Bot)", which the
+          # rung then reported as an AVAILABILITY failure indistinguishable from an
+          # expired/exhausted subscription token rather than the config gap it actually
+          # was (issue #418).
           #
           # The fork case stays closed independently: the trigger is `pull_request` (not
           # `pull_request_target`), so a fork PR gets no secrets at all — neither
           # LITELLM_FUZE_KEY nor ANTHROPIC_API_KEY — so llm-endpoint resolves nothing,
           # preflight fails closed, and this job never starts.
-          allowed-bots: "claude"
+          allowed-bots: "fuzeone-bot,github-actions,fuze-agent,claude"
           task-prompt: |
             You are the **mcp-maintainer** for this repo (follow `.claude/agents/mcp-maintainer.md`
             exactly — same scope, boundaries, and done-contract). This is an automated CI run on
@@ -277,5 +285,6 @@ jobs:
             (`MCP SURFACE: <in-sync|scaffolded|reconciled>` + what landed + `NEEDS PRODUCT/OPERATOR:` if any).
           claude-args: '--allowedTools "Bash,Read,Edit,MultiEdit,Write,Glob,Grep,WebFetch"'
           litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
+          litellm-ci-key: ${{ secrets.LITELLM_CI_KEY }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           gemini-api-key: ${{ secrets.GEMINI_API_KEY }}

@@ -1,4 +1,4 @@
-# fuze:managed template=governance-nightly.yml baseline=v1 digest=sha256:f0119dd4b24b859af442e7e02bdc760fad31c547f69ae4506f2cf3b832e12276
+# fuze:managed template=governance-nightly.yml baseline=v1 digest=sha256:7795422cd789d2eb20e41390a879be9e74a03397b4d5de0e1d8bcb8e95c08472
 name: Governance Nightly
 
 # platform-governance's nightly reconciliation sweep (governance-reconciliation skill):
@@ -63,6 +63,7 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
+          litellm-ci-key: ${{ secrets.LITELLM_CI_KEY }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           gemini-api-key: ${{ secrets.GEMINI_API_KEY }}

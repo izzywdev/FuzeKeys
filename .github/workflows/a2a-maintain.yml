@@ -1,4 +1,4 @@
-# fuze:managed template=a2a-maintain.yml baseline=v1 digest=sha256:e8e47218064dc3783fc8dc3cf853b0c26f36135acacb86e41c9689b2747a9d7e
+# fuze:managed template=a2a-maintain.yml baseline=v1 digest=sha256:0d39ca6fecd99bce1f9edd18aab69fbfd74e8d4909c835bc540ccc4ca1c63d2f
 name: A2A Maintain
 
 # Keeps this repo's agent-to-agent (A2A) surface current, as part of CI. On every PR it
@@ -175,7 +175,7 @@ jobs:
       - name: Mint fuze-agent App token
         id: app_token
         continue-on-error: true
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.FUZE_AGENT_APP_ID }}
           private-key: ${{ secrets.FUZE_AGENT_APP_PRIVATE_KEY }}
@@ -274,15 +274,23 @@ jobs:
           # `*` defeats the gate rather than configuring it.
           #
           # `claude` is a LOGIN allowlist matched against the actor with `[bot]` stripped
-          # -- not a vendor or product name. This family's other bot is `fuzeone-bot`,
-          # which triggers only scheduled workflows (governance-nightly, nightly-*), none
-          # of which call this action; adding it here would grant an unused permission.
+          # -- not a vendor or product name. `fuze-agent`, `fuzeone-bot`, and
+          # `github-actions` are also allowed here, matching the canonical list already
+          # carried by fuze.yml / fuze-cluster.yml: the "Mint fuze-agent App token" step
+          # above pushes this job's own commit-back AS the fuze-agent App, so a PR that
+          # re-triggers on that push (or one opened by governance-sync / a scheduled
+          # reconciliation) presents the actor as `fuze-agent` -- a Bot -- to this same
+          # gate. Without it, claude-code-action rejected EVERY such run in ~2s with
+          # "Workflow initiated by non-human actor: fuze-agent (type: Bot)", which the
+          # rung then reported as an AVAILABILITY failure indistinguishable from an
+          # expired/exhausted subscription token rather than the config gap it actually
+          # was (issue #418).
           #
           # The fork case stays closed independently: the trigger is `pull_request` (not
           # `pull_request_target`), so a fork PR gets no secrets at all — neither
           # LITELLM_FUZE_KEY nor ANTHROPIC_API_KEY — so llm-endpoint resolves nothing,
           # preflight fails closed, and this job never starts.
-          allowed-bots: "claude"
+          allowed-bots: "fuzeone-bot,github-actions,fuze-agent,claude"
           task-prompt: |
             You are the **a2a-maintainer** for this repo (follow `.claude/agents/a2a-maintainer.md`
             exactly — same scope, boundaries, and done-contract). This is an automated CI run on
@@ -312,6 +320,7 @@ jobs:
             (`A2A SURFACE: <in-sync|scaffolded|reconciled>` + what landed + `NEEDS PRODUCT/OPERATOR:` if any).
           claude-args: '--allowedTools "Bash,Read,Edit,MultiEdit,Write,Glob,Grep,WebFetch"'
           litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
+          litellm-ci-key: ${{ secrets.LITELLM_CI_KEY }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
 
@@ -354,8 +363,19 @@ jobs:
             echo "${DELIM}"
           } >> "$GITHUB_OUTPUT"
 
+      # The `execution-file != ''` guard is load-bearing, not belt-and-suspenders.
+      # `if-no-files-found: ignore` handles a path that resolves to a MISSING file,
+      # but upload-artifact rejects an EMPTY `path` outright — "Input required and
+      # not supplied: path" — before it is ever consulted. execution-file is empty
+      # whenever rung 1 produced no log (skipped for lack of a credential, could not
+      # start, or the run fell through to another rung), and on any repo still
+      # carrying a stale fuze-code-action that does not declare the output at all
+      # (FuzeSDLC#386). Without this guard the failure-path upload — the step whose
+      # whole job is to surface the log when the agent fails — hard-errors exactly
+      # when it is needed. Skipping the upload on an empty path is the correct
+      # degrade: there is no log to attach.
       - name: Upload agent execution log
-        if: always() && steps.maintainer.outcome == 'failure'
+        if: always() && steps.maintainer.outcome == 'failure' && steps.maintainer.outputs.execution-file != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
           name: a2a-maintain-execution-log
