@@ -1,4 +1,4 @@
-# fuze:managed template=fuze-ci-autofix.yml baseline=v1 digest=sha256:15cc8bf0f5e7439e92d49453daf4ec58329fc0c9b7e1950e6d49ade782d480e1
+# fuze:managed template=fuze-ci-autofix.yml baseline=v1 digest=sha256:c9894c073f0d04ba46f4c082c3a18dbcf72de8ee2d29035ff6082d83517ff0c8
 name: Fuze Auto-Fix CI
 
 # RENAMED from claude-ci-autofix.yml (the claude-* -> fuze-* fleet rename; see
@@ -208,6 +208,7 @@ jobs:
             If you cannot determine a safe fix, push nothing and instead leave a comment on
             PR #${{ github.event.workflow_run.pull_requests[0].number || '' }} explaining what you found.
           litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
+          litellm-ci-key: ${{ secrets.LITELLM_CI_KEY }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
 
@@ -425,6 +426,15 @@ jobs:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github-token: ${{ steps.identity.outputs.token }}
+          # Forward the full vendor set, matching the call-autofix job above and the
+          # keys-preflight (which gates on ANTHROPIC/LITELLM/OPENAI/GEMINI): the preflight
+          # admits a run on ANY one of these being configured, so a fix step that carries
+          # only the Anthropic pair silently has no credential — and no fallover — on a
+          # repo keyed to LiteLLM/OpenAI/Gemini. Enforced by scripts/__tests__/test_fuze_code_action_caller_parity.py.
+          litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
+          litellm-ci-key: ${{ secrets.LITELLM_CI_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
           claude-args: >-
             --model claude-sonnet-4-6
             --allowedTools 'Edit,MultiEdit,Write,Read,Glob,Grep,LS,Bash(npm:*),Bash(npx:*),Bash(yarn:*),Bash(pnpm:*),Bash(python:*),Bash(pip:*),Bash(php:*),Bash(composer:*)'

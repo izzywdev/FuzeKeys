@@ -1,4 +1,4 @@
-# fuze:managed template=claude.yml baseline=v1 digest=sha256:1e0db1ac0c2cee7c9c4b5bedc555c023cf5b146068400add8fda2a492f90e03a
+# fuze:managed template=claude.yml baseline=v1 digest=sha256:dbdbe420083667d5842e0c5f35791b8941c6e6766d08ac097a6c696939842d89
 name: Claude
 
 # Lets maintainers delegate work to Claude by mentioning @claude in an issue,
@@ -85,5 +85,6 @@ jobs:
           claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           show-full-output: true
           litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
+          litellm-ci-key: ${{ secrets.LITELLM_CI_KEY }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
