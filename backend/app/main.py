@@ -15,6 +15,7 @@ from app.routers import accounts, auth, automation
 from app.routers import broker as broker_router
 from app.routers import (
     chat,
+    connectors,
     credentials,
     google_integration,
     identities,
@@ -22,7 +23,6 @@ from app.routers import (
     llm_scraper,
     site_integrations,
     sms,
-    connectors,
 )
 
 # Temporarily use mock sites router

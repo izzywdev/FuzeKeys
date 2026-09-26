@@ -52,8 +52,15 @@ spec:
             {{- end }}
             - name: VAULT_KV_MOUNT
               value: {{ .Values.config.vaultKvMount | quote }}
-            - name: GOOGLE_OAUTH_REDIRECT_URI
-              value: {{ .Values.config.googleOAuthRedirectUri | quote }}
+            {{- if .Values.vault.enabled }}
+            - name: VAULT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "fuzekeys.fullname" . }}-vault-runtime
+                  key: token
+            {{- end }}
+            - name: FUZEFRONT_SECURITY_URL
+              value: {{ .Values.config.fuzefrontSecurityUrl | quote }}
           livenessProbe:
             httpGet:
               path: {{ $comp.probes.path }}
@@ -77,11 +84,21 @@ spec:
           resources:
             {{- toYaml $comp.resources | nindent 12 }}
           volumeMounts:
+            - name: fuzefront-workload-token
+              mountPath: /var/run/secrets/tokens
+              readOnly: true
             - name: logs
               mountPath: /app/logs
             - name: data
               mountPath: /app/data
       volumes:
+        - name: fuzefront-workload-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: fuzefront-security
+                  expirationSeconds: 600
         - name: logs
           {{- if .Values.persistence.logs.enabled }}
           persistentVolumeClaim:

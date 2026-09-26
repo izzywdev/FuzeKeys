@@ -26,6 +26,7 @@ spec:
         {{- include "fuzekeys.labels" . | nindent 8 }}
         app.kubernetes.io/component: vault-bootstrap
     spec:
+      serviceAccountName: {{ include "fuzekeys.fullname" . }}-vault-bootstrap
       restartPolicy: Never
       {{- include "fuzekeys.nodeSelector" . | nindent 6 }}
       {{- with .Values.global.imagePullSecrets }}
@@ -42,6 +43,12 @@ spec:
               value: {{ printf "http://%s-vault:%v" (include "fuzekeys.fullname" .) .Values.vault.port | quote }}
             - name: VAULT_INIT_FILE
               value: "/init/.vault-init.json"
+            - name: VAULT_RUNTIME_SECRET
+              value: {{ printf "%s-vault-runtime" (include "fuzekeys.fullname" .) | quote }}
+            - name: KUBERNETES_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
             {{- range $k, $v := $comp.env }}
             - name: {{ $k }}
               value: {{ $v | quote }}
@@ -55,4 +62,34 @@ spec:
         - name: vault-init
           persistentVolumeClaim:
             claimName: {{ include "fuzekeys.fullname" . }}-vault-init
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "fuzekeys.fullname" . }}-vault-bootstrap
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "fuzekeys.fullname" . }}-vault-bootstrap
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: [{{ printf "%s-vault-runtime" (include "fuzekeys.fullname" .) | quote }}]
+    verbs: ["get", "patch", "update"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "fuzekeys.fullname" . }}-vault-bootstrap
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "fuzekeys.fullname" . }}-vault-bootstrap
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "fuzekeys.fullname" . }}-vault-bootstrap
 {{- end }}

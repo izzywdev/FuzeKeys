@@ -89,12 +89,11 @@ spec:
     - name: http
       port: {{ $comp.port }}
       targetPort: http
-{{- if .Values.tokenizer.enabled }}
+{{- if .Values.vaultBootstrap.enabled }}
 ---
 {{/*
-  Shared Vault init-file PVC (crown jewels: unseal key + root token). Written by
-  the vault-bootstrap Job, read by the tokenizer. RWO — only works when both land
-  on the SAME node. FOLLOW-UP: replace with a proper auto-unseal + secret store.
+  Shared Vault init-file PVC (crown jewels: unseal key + root token). Written and
+  read only by the bootstrap job. The backend receives a separately scoped token.
 */}}
 apiVersion: v1
 kind: PersistentVolumeClaim

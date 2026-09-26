@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, Integer, JSON, String, UniqueConstraint
+from sqlalchemy import JSON, Column, DateTime, Integer, String, UniqueConstraint
 from sqlalchemy.sql import func
 
 from app.database import Base
@@ -8,7 +8,11 @@ class ConnectorCredential(Base):
     """Non-secret connector metadata. OAuth material lives only in the vault."""
 
     __tablename__ = "connector_credentials"
-    __table_args__ = (UniqueConstraint("owner_subject", "provider", name="uq_connector_owner_provider"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "owner_subject", "provider", name="uq_connector_owner_provider"
+        ),
+    )
 
     id = Column(Integer, primary_key=True)
     owner_subject = Column(String(255), nullable=False, index=True)
@@ -18,5 +22,12 @@ class ConnectorCredential(Base):
     scopes = Column(JSON, nullable=False, default=list)
     configuration = Column(JSON, nullable=False, default=dict)
     status = Column(String(32), nullable=False, default="connected")
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )

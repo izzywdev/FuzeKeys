@@ -95,19 +95,21 @@ federatedMount:
   enabled: true
   host: app.fuzefront.com
 
-# ---- PII-TOKENIZER STACK: OFF for MVP -------------------------------------
-# FOLLOW-UP: enable after Vault-in-k8s auto-unseal design + security review.
-# Ollama stays OFF regardless (GPU/heavy).
+# ---- CONNECTOR VAULT: ON ---------------------------------------------------
+# Persistent single-node Vault custody for connector OAuth grants. The
+# bootstrap job unseals it and provisions a connector-only runtime token into
+# a Kubernetes Secret; FuzeKeys never receives the root token.
+# The unrelated PII/tokenizer services remain off.
 tokenizer:
   enabled: false
 vaultBootstrap:
-  enabled: false
+  enabled: true
 presidio:
   enabled: false
 litellm:
   enabled: false
 vault:
-  enabled: false
+  enabled: true
   persistence:
     storageClass: local-path
 ollama:
