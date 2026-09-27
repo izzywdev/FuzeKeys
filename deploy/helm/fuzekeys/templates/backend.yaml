@@ -100,14 +100,14 @@ spec:
                   audience: fuzefront-security
                   expirationSeconds: 600
         - name: logs
-          {{- if .Values.persistence.logs.enabled }}
+          {{- if and .Values.persistence.logs.enabled $comp.mountPersistence }}
           persistentVolumeClaim:
             claimName: {{ include "fuzekeys.fullname" . }}-logs
           {{- else }}
           emptyDir: {}
           {{- end }}
         - name: data
-          {{- if .Values.persistence.data.enabled }}
+          {{- if and .Values.persistence.data.enabled $comp.mountPersistence }}
           persistentVolumeClaim:
             claimName: {{ include "fuzekeys.fullname" . }}-data
           {{- else }}
