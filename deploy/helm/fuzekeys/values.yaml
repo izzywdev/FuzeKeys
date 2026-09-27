@@ -187,6 +187,10 @@ serviceAccount:
 # --- Backend: FastAPI (app.main:app), port 8002, /health. ------------------
 backend:
   enabled: true
+  # Mount the chart-managed /app/logs and /app/data PVCs. Production can turn
+  # this off while retaining the PVC objects when a local-path node is lost;
+  # Postgres and Vault remain the durable stores.
+  mountPersistence: true
   image:
     repository: "" # defaults to <global.imageRepository>/backend
     tag: ""        # defaults to Chart.appVersion

@@ -42,6 +42,10 @@ secrets:
 # ---- MVP: backend + frontend + migrate ON --------------------------------
 backend:
   enabled: true
+  # The existing local-path PVCs are pinned to a retired elastic node. Keep the
+  # claims rendered (no destructive prune) but use emptyDir for these cache/log
+  # paths; durable application data is in Postgres and credentials are in Vault.
+  mountPersistence: false
   replicas: 2
   resources:
     requests: { cpu: 200m, memory: 384Mi }
