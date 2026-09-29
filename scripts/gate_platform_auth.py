@@ -115,6 +115,8 @@ import sys
 CANONICAL_AUTH_PKG = "@fuzefront/auth"
 PUBLISHED_AUTH_PKG = "@izzywdev/fuzefront-auth"
 AUTH_PKGS = (CANONICAL_AUTH_PKG, PUBLISHED_AUTH_PKG)
+PYTHON_AUTH_PKG = "fuzefront-service-auth"
+PYTHON_AUTH_IMPORT = re.compile(r"^\s*(?:from\s+fuzefront_service_auth(?:\.|\s+import)|import\s+fuzefront_service_auth(?:\.|\s|$))")
 
 # Source files worth reading. Deliberately excludes tests: a test SHOULD be able
 # to construct a permissive stub, and flagging that would train people to
@@ -165,6 +167,11 @@ def tracked_files(repo):
 def source_files(repo):
     for rel in tracked_files(repo):
         if SKIP_DIR.search(rel) or SKIP_FILE.search(os.path.basename(rel)):
+            continue
+        # The gate describes forbidden examples in its own source and is not
+        # shipped as an application route. Scanning itself produces false D/F/Z
+        # findings while missing the application code those checks target.
+        if rel == "scripts/gate_platform_auth.py":
             continue
         if rel.endswith(SRC_EXT):
             yield rel
@@ -243,6 +250,13 @@ def declares_auth(repo):
                 spec = (data.get(field) or {}).get(name) or ""
                 if isinstance(spec, str) and any(p in spec for p in AUTH_PKGS):
                     return rel
+    for rel in tracked_files(repo):
+        if rel.endswith("requirements.txt") and not SKIP_DIR.search(rel):
+            if re.search(r"^\s*fuzefront-service-auth\s*(?:\[.*?\])?\s*(?:@|[=<>~])", read(repo, rel), re.M | re.I):
+                return rel
+        if os.path.basename(rel) == "pyproject.toml" and not SKIP_DIR.search(rel):
+            if re.search(r"['\"]fuzefront-service-auth(?:\[.*?\])?\s*(?:@|[=<>~])", read(repo, rel), re.I):
+                return rel
     return None
 
 
@@ -276,7 +290,7 @@ def imports_auth(repo):
         body = read(repo, rel)
         for i, line in enumerate(body.splitlines(), 1):
             code = strip_comments(line)
-            if any(rx.search(code) for rx in IMPORT_FORMS):
+            if any(rx.search(code) for rx in IMPORT_FORMS) or PYTHON_AUTH_IMPORT.search(code):
                 hits.append((rel, i))
     return hits
 
@@ -381,8 +395,8 @@ def check_declared(repo):
         rel, line = used[0]
         out.append(Finding(
             "D1", rel, line,
-            f"imports {AUTH_PKGS[0]} but NO package.json declares it (checked "
-            "dependencies, devDependencies, peerDependencies, optionalDependencies). "
+            "imports the platform auth package but NO package manifest declares it "
+            "(checked npm manifests and Python requirements/pyproject). "
             "The import can only ever throw at runtime. If it is wrapped in a "
             "try/catch, the fallback is not a degraded mode — it is the only mode."))
     if declared_in and not used:
@@ -472,7 +486,11 @@ def check_authz(repo):
         for i, line in enumerate(body.splitlines(), 1):
             if is_authz_service:
                 break  # this repo IS the Security API; see serves_authz_api()
-            if re.search(r"permit\.check|permitio|from\s+['\"]permitio", line, re.I):
+            # Permit.io account signup automation is a valid integration. Only
+            # SDK imports/check calls bypass the platform authorization API.
+            code = strip_comments(line)
+            if re.search(r"\bpermit\s*\.\s*check\s*\(|\b(?:from|import)\s+permitio\b|"
+                         r"\b(?:from|require|import)\s*\(?\s*['\"]permitio(?:/[^'\"]*)?['\"]", code, re.I):
                 out.append(Finding(
                     "Z3", rel, i,
                     "calls the Permit SDK directly. Products must not: they know exactly "
