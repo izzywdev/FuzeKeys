@@ -78,7 +78,7 @@ const GoogleSignupForm: React.FC<GoogleSignupFormProps> = ({ onSignup, loading =
       <Card>
         <Space direction="vertical" size="large" style={{ width: '100%' }}>
           <div style={{ textAlign: 'center' }}>
-            <GoogleOutlined style={{ fontSize: '48px', color: '#1890ff', marginBottom: '16px' }} />
+            <GoogleOutlined className="text-primary-500" style={{ fontSize: '48px', marginBottom: '16px' }} />
             <Title level={2}>Google Account Signup</Title>
             <Text type="secondary">
               Automate Google account creation using your identities or manual data
@@ -326,4 +326,4 @@ const GoogleSignupForm: React.FC<GoogleSignupFormProps> = ({ onSignup, loading =
   );
 };
 
-export default GoogleSignupForm; 
+export default GoogleSignupForm;

@@ -19,7 +19,7 @@ export default function MfeApp() {
         position="top-right"
         toastOptions={{
           duration: 4000,
-          style: { background: '#363636', color: '#fff' },
+          style: { background: 'var(--fk-toast-background)', color: 'var(--fk-toast-foreground)' },
         }}
       />
       <Routes>

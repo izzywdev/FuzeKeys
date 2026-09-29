@@ -1,30 +1,30 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Card, 
-  Tabs, 
-  Typography, 
-  Space, 
-  Alert, 
-  Button, 
-  Table, 
-  Tag, 
+import {
+  Card,
+  Tabs,
+  Typography,
+  Space,
+  Alert,
+  Button,
+  Table,
+  Tag,
   Modal,
   notification
 } from 'antd';
-import { 
-  GoogleOutlined, 
-  ReloadOutlined, 
+import {
+  GoogleOutlined,
+  ReloadOutlined,
   ExperimentOutlined,
   HistoryOutlined
 } from '@ant-design/icons';
 
 import GoogleSignupForm from './components/GoogleSignupForm';
-import googleApiService, { 
-  GoogleSignupData, 
-  GoogleSignupConfig, 
-  GoogleSignupResult, 
+import googleApiService, {
+  GoogleSignupData,
+  GoogleSignupConfig,
+  GoogleSignupResult,
   GoogleAccount,
-  Identity 
+  Identity
 } from './services/googleApi';
 
 const { Title, Text } = Typography;
@@ -123,7 +123,7 @@ const GoogleIntegrationPage: React.FC = () => {
         description: error.message,
         duration: 10,
       });
-      
+
       setLastSignupResult({
         success: false,
         message: error.message,
@@ -156,7 +156,7 @@ const GoogleIntegrationPage: React.FC = () => {
       key: 'email',
       render: (email: string) => (
         <Space>
-          <GoogleOutlined style={{ color: '#1890ff' }} />
+          <GoogleOutlined className="text-primary-500" />
           <Text strong>{email}</Text>
         </Space>
       ),
@@ -166,7 +166,7 @@ const GoogleIntegrationPage: React.FC = () => {
       dataIndex: 'status',
       key: 'status',
       render: (status: string) => {
-        const color = status === 'active' ? 'green' : 
+        const color = status === 'active' ? 'green' :
                      status === 'verification_required' ? 'orange' : 'red';
         return <Tag color={color}>{status.replace('_', ' ').toUpperCase()}</Tag>;
       },
@@ -182,8 +182,8 @@ const GoogleIntegrationPage: React.FC = () => {
       key: 'actions',
       render: () => (
         <Space>
-          <Button 
-            size="small" 
+          <Button
+            size="small"
             onClick={() => window.open(`https://accounts.google.com`, '_blank')}
           >
             Open Gmail
@@ -197,7 +197,7 @@ const GoogleIntegrationPage: React.FC = () => {
     <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
       <Space direction="vertical" size="large" style={{ width: '100%' }}>
         <div style={{ textAlign: 'center' }}>
-          <GoogleOutlined style={{ fontSize: '64px', color: '#1890ff', marginBottom: '16px' }} />
+            <GoogleOutlined className="text-primary-500" style={{ fontSize: '64px', marginBottom: '16px' }} />
           <Title level={1}>Google Integration</Title>
           <Text type="secondary">
             Automate Google account creation and management
@@ -333,12 +333,11 @@ const GoogleIntegrationPage: React.FC = () => {
                 message={testResult.message}
                 showIcon
               />
-              
+
               {testResult.success && testResult.signup_data && (
                 <Card size="small" title="Generated Signup Data">
-                  <pre style={{ 
-                    backgroundColor: '#f5f5f5', 
-                    padding: '12px', 
+                  <pre className="bg-secondary-100" style={{
+                    padding: '12px',
                     borderRadius: '4px',
                     overflow: 'auto'
                   }}>

@@ -5,8 +5,13 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --fk-toast-background: theme('colors.secondary.800');
+    --fk-toast-foreground: theme('colors.secondary.50');
+  }
+
   html {
-    font-family: 'Inter', system-ui, sans-serif;
+    @apply font-sans;
   }
   
   body {
