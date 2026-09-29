@@ -1,13 +1,11 @@
 #!/usr/bin/env node
 
 const { spawn } = require('child_process');
-const path = require('path');
 
 console.log('🧪 Running SitesDatabase tests...');
 console.log('Working directory:', process.cwd());
 
-// Run the Jest test command
-const testProcess = spawn('npm', ['test', '--', '--testPathPattern=SitesDatabase', '--watchAll=false', '--verbose'], {
+const testProcess = spawn('npm', ['test', '--', 'SitesDatabase'], {
   stdio: 'inherit',
   shell: true,
   cwd: __dirname
@@ -26,4 +24,4 @@ testProcess.on('close', (code) => {
 testProcess.on('error', (error) => {
   console.error('❌ Failed to start test process:', error);
   process.exit(1);
-}); 
+});

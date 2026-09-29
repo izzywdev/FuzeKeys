@@ -180,7 +180,7 @@ const GoogleIntegrationPage: React.FC = () => {
     {
       title: 'Actions',
       key: 'actions',
-      render: (_: any, record: GoogleAccount) => (
+      render: () => (
         <Space>
           <Button 
             size="small" 
@@ -354,4 +354,4 @@ const GoogleIntegrationPage: React.FC = () => {
   );
 };
 
-export default GoogleIntegrationPage; 
+export default GoogleIntegrationPage;
