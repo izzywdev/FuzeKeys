@@ -10,6 +10,7 @@
  */
 
 import React from 'react';
+import { vi as jest } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import '@testing-library/jest-dom';
@@ -17,7 +18,7 @@ import SitesDatabase from '../SitesDatabase';
 
 // Mock fetch globally
 const mockFetch = jest.fn();
-global.fetch = mockFetch;
+globalThis.fetch = mockFetch;
 
 // Test data
 const mockSitesData = [
@@ -348,4 +349,4 @@ describe('SitesDatabase Component', () => {
       }, { timeout: 1000 });
     });
   });
-}); 
+});
