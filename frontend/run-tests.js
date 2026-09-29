@@ -7,7 +7,6 @@ console.log('Working directory:', process.cwd());
 
 const testProcess = spawn('npm', ['test', '--', 'SitesDatabase'], {
   stdio: 'inherit',
-  shell: true,
   cwd: __dirname
 });
 

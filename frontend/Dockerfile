@@ -29,6 +29,11 @@ COPY --from=build-mfe /app/dist-mfe /usr/share/nginx/html/apps/fuzekeys
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
+RUN sed -i 's#pid /var/run/nginx.pid;#pid /tmp/nginx.pid;#' /etc/nginx/nginx.conf \
+    && chown -R nginx:nginx /var/cache/nginx /var/run /usr/share/nginx/html
+
+USER nginx
+
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
