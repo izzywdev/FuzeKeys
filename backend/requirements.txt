@@ -58,7 +58,7 @@ docker==6.1.3
 # Data Processing
 pandas==2.1.4
 numpy==1.25.2
-pydantic==2.5.0
+pydantic==2.12.5
 pydantic-settings==2.1.0
 
 # Email Processing
@@ -85,4 +85,4 @@ pytest==7.4.3
 pytest-asyncio==0.21.1
 black==23.11.0
 isort==5.12.0
-mypy==1.7.1 
+mypy==1.7.1
