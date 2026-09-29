@@ -2,6 +2,7 @@
 
 Provider protocols live in consuming Fuze services. Secrets stay in OpenBao.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -54,7 +55,9 @@ def _vault() -> MutableSecretVault:
     return vault
 
 
-async def _record(db: AsyncSession, owner: str, provider: str) -> Optional[ConnectorCredential]:
+async def _record(
+    db: AsyncSession, owner: str, provider: str
+) -> Optional[ConnectorCredential]:
     result = await db.execute(
         select(ConnectorCredential).where(
             ConnectorCredential.owner_subject == owner,
@@ -84,7 +87,9 @@ async def status(
     }
 
 
-@router.patch("/google-gmail", operation_id="patch_connectors_google_gmail_configuration")
+@router.patch(
+    "/google-gmail", operation_id="patch_connectors_google_gmail_configuration"
+)
 async def configure_gmail(
     body: ConnectorConfiguration,
     identity: Identity = Depends(delegated_auth("connectors:metadata")),
@@ -103,7 +108,9 @@ async def configure(
     return await _configure(_provider(provider), body, identity, db)
 
 
-async def _configure(provider: str, configuration: Dict[str, Any], identity: Identity, db: AsyncSession):
+async def _configure(
+    provider: str, configuration: Dict[str, Any], identity: Identity, db: AsyncSession
+):
     row = await _record(db, identity.subject, provider)
     if row is None:
         raise HTTPException(status_code=404, detail="connector is not connected")
@@ -141,8 +148,13 @@ async def lease_credential(
         raise HTTPException(status_code=404, detail="connector is not connected")
     raw = await asyncio.to_thread(_vault().load_root, cast(str, row.vault_ref))
     if raw is None:
-        raise HTTPException(status_code=409, detail="connector credential is unavailable")
-    logger.info("connector credential leased", extra={"owner_subject": identity.subject, "provider": provider})
+        raise HTTPException(
+            status_code=409, detail="connector credential is unavailable"
+        )
+    logger.info(
+        "connector credential leased",
+        extra={"owner_subject": identity.subject, "provider": provider},
+    )
     return {
         "credential": json.loads(raw),
         "configuration": row.configuration,
@@ -163,7 +175,9 @@ async def update_credential(
     row = await _record(db, owner, provider)
     if row is None:
         vault_ref = f"connectors/{urllib.parse.quote(owner, safe='')}/{provider}"
-        row = ConnectorCredential(owner_subject=owner, provider=provider, vault_ref=vault_ref)
+        row = ConnectorCredential(
+            owner_subject=owner, provider=provider, vault_ref=vault_ref
+        )
         db.add(row)
     await asyncio.to_thread(
         _vault().put, cast(str, row.vault_ref), json.dumps(body.credential).encode()
@@ -176,5 +190,8 @@ async def update_credential(
         row.configuration = body.configuration  # type: ignore[assignment]
     row.status = "connected"  # type: ignore[assignment]
     await db.commit()
-    logger.info("connector credential updated", extra={"owner_subject": owner, "provider": provider})
+    logger.info(
+        "connector credential updated",
+        extra={"owner_subject": owner, "provider": provider},
+    )
     return {"status": "updated"}

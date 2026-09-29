@@ -9,7 +9,15 @@ from app.routers import connectors
 
 
 def test_provider_ids_cannot_escape_vault_namespace():
-    for invalid in ("../other", "google/gmail", "Google-Gmail", "a--b", "a%2fb", "", "a" * 81):
+    for invalid in (
+        "../other",
+        "google/gmail",
+        "Google-Gmail",
+        "a--b",
+        "a%2fb",
+        "",
+        "a" * 81,
+    ):
         with pytest.raises(HTTPException) as exc:
             connectors._provider(invalid)
         assert exc.value.status_code == 422
@@ -19,9 +27,9 @@ def test_provider_ids_cannot_escape_vault_namespace():
 def test_gmail_routes_precede_generic_routes():
     paths = [route.path for route in connectors.router.routes]
     for method_path in ("", "/credential"):
-        assert paths.index("/api/v1/connectors/google-gmail" + method_path) < paths.index(
-            "/api/v1/connectors/{provider}" + method_path
-        )
+        assert paths.index(
+            "/api/v1/connectors/google-gmail" + method_path
+        ) < paths.index("/api/v1/connectors/{provider}" + method_path)
 
 
 @pytest.mark.asyncio
@@ -49,7 +57,11 @@ async def test_credential_keys_are_scoped_by_owner_and_provider(monkeypatch):
     monkeypatch.setattr(connectors, "_record", record)
     monkeypatch.setattr(connectors, "_vault", lambda: Vault())
     session = Session()
-    for owner, provider in (("person/a", "google-gmail"), ("person/a", "microsoft-outlook"), ("person/b", "google-gmail")):
+    for owner, provider in (
+        ("person/a", "google-gmail"),
+        ("person/a", "microsoft-outlook"),
+        ("person/b", "google-gmail"),
+    ):
         await connectors.update_credential(
             connectors.CredentialUpdate(credential={"token": provider + owner}),
             provider,
