@@ -77,6 +77,7 @@ def _require_secret_key() -> str:
 
 # Pydantic models
 class UserCreate(BaseModel):
+    model_config = {"extra": "forbid"}
     username: str
     email: EmailStr
     password: str

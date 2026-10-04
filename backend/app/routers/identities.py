@@ -1,15 +1,17 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy import func
 
 from app.database import get_db
 from app.models.identity import Identity
 from app.models.user import User
 from app.routers.auth import get_current_user
+from app.utils.pagination import Page, PageInfo
 from app.utils.encryption import decrypt_field, decrypt_json_field, encrypt_field
 from app.utils.logging import get_logger
 
@@ -18,6 +20,7 @@ router = APIRouter()
 
 
 class IdentityCreate(BaseModel):
+    model_config = {"extra": "forbid"}
     name: str
     description: Optional[str] = None
     first_name: str
@@ -195,18 +198,20 @@ async def create_identity(
         )
 
 
-@router.get("/", response_model=List[IdentityListResponse])
+@router.get("/", response_model=Page[IdentityListResponse])
 async def list_identities(
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
     """List all identities for the current user."""
     try:
-        result = await db.execute(
-            select(Identity).where(Identity.user_id == current_user.id)
-        )
+        total = (await db.execute(select(func.count(Identity.id)).where(Identity.user_id == current_user.id))).scalar_one()
+        result = await db.execute(select(Identity).where(Identity.user_id == current_user.id)
+                                  .order_by(Identity.id).offset(offset).limit(limit))
         identities = result.scalars().all()
 
-        return [
+        items = [
             IdentityListResponse(
                 id=identity.id,
                 name=identity.name,
@@ -215,6 +220,8 @@ async def list_identities(
             )
             for identity in identities
         ]
+        return Page(items=items, page=PageInfo(offset=offset, limit=limit, total=total,
+                                                next_offset=offset + limit if offset + limit < total else None))
 
     except Exception as e:
         logger.error(f"Error listing identities: {str(e)}")

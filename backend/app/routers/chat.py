@@ -36,6 +36,7 @@ class ChatResponse(BaseModel):
 
 
 class SignupRequest(BaseModel):
+    model_config = {"extra": "forbid"}
     website_url: str
     identity_id: int
     additional_instructions: Optional[str] = None

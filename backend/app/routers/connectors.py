@@ -68,7 +68,7 @@ async def _record(
 
 
 @router.get("/{provider}", operation_id="get_connector_status")
-@router.get("/google-gmail", operation_id="get_connectors_google_gmail_status")
+@router.get("/google-gmail", operation_id="get_connectors_google_gmail_status", openapi_extra={"x-pagination": "exempt"})
 async def status(
     provider: str = GMAIL,
     identity: Identity = Depends(delegated_auth("connectors:metadata")),

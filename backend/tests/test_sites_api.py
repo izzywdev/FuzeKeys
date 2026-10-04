@@ -32,7 +32,7 @@ class TestListSites:
         response = await client.get(f"{BASE}/")
         assert response.status_code == 200
 
-        data = response.json()
+        data = response.json()["items"]
         assert isinstance(data, list)
         assert data, "the sites listing should not be empty"
         assert KNOWN_SITE_NAMES <= {site["name"] for site in data}
@@ -61,27 +61,28 @@ class TestListSites:
             "anti_bot_techniques",
             "has_captcha",
         }
-        for site in response.json():
+        for site in response.json()["items"]:
             assert required <= set(site), f"missing keys on {site.get('name')}"
 
     @pytest.mark.asyncio
     async def test_pagination_skip_and_limit(self, client: AsyncClient):
-        full = (await client.get(f"{BASE}/")).json()
+        full = (await client.get(f"{BASE}/")).json()["items"]
         assert len(full) >= 3
 
         page = await client.get(f"{BASE}/?skip=0&limit=2")
         assert page.status_code == 200
-        assert len(page.json()) == 2
+        assert len(page.json()["items"]) == 2
+        assert page.json()["page"]["next_offset"] == 2
 
         second = await client.get(f"{BASE}/?skip=2&limit=2")
         assert second.status_code == 200
-        assert second.json() == full[2:4]
+        assert second.json()["items"] == full[2:4]
 
     @pytest.mark.asyncio
     async def test_pagination_does_not_overlap(self, client: AsyncClient):
         """Consecutive pages must not repeat a row -- the classic off-by-one."""
-        first = (await client.get(f"{BASE}/?skip=0&limit=2")).json()
-        second = (await client.get(f"{BASE}/?skip=2&limit=2")).json()
+        first = (await client.get(f"{BASE}/?skip=0&limit=2")).json()["items"]
+        second = (await client.get(f"{BASE}/?skip=2&limit=2")).json()["items"]
 
         first_ids = {site["id"] for site in first}
         second_ids = {site["id"] for site in second}
@@ -91,7 +92,7 @@ class TestListSites:
     async def test_skip_beyond_end_returns_empty(self, client: AsyncClient):
         response = await client.get(f"{BASE}/?skip=10000&limit=10")
         assert response.status_code == 200
-        assert response.json() == []
+        assert response.json()["items"] == []
 
     @pytest.mark.asyncio
     async def test_negative_skip_is_rejected(self, client: AsyncClient):
@@ -118,7 +119,7 @@ class TestFilterSites:
         response = await client.get(f"{BASE}/?category=developer-tools")
         assert response.status_code == 200
 
-        data = response.json()
+        data = response.json()["items"]
         assert data
         assert all(site["category"] == "developer-tools" for site in data)
 
@@ -126,14 +127,14 @@ class TestFilterSites:
     async def test_filter_by_unknown_category_is_empty(self, client: AsyncClient):
         response = await client.get(f"{BASE}/?category=no-such-category")
         assert response.status_code == 200
-        assert response.json() == []
+        assert response.json()["items"] == []
 
     @pytest.mark.asyncio
     async def test_filter_by_priority_min(self, client: AsyncClient):
         response = await client.get(f"{BASE}/?priority_min=90")
         assert response.status_code == 200
 
-        data = response.json()
+        data = response.json()["items"]
         assert data
         assert all(site["priority"] >= 90 for site in data)
 
@@ -149,7 +150,7 @@ class TestFilterSites:
         response = await client.get(f"{BASE}/?difficulty=easy")
         assert response.status_code == 200
 
-        data = response.json()
+        data = response.json()["items"]
         assert data
         for site in data:
             assert "easy" in {
@@ -163,13 +164,13 @@ class TestFilterSites:
         response = await client.get(f"{BASE}/?search=github")
         assert response.status_code == 200
 
-        data = response.json()
+        data = response.json()["items"]
         assert [site["name"] for site in data] == ["github"]
 
     @pytest.mark.asyncio
     async def test_search_is_case_insensitive(self, client: AsyncClient):
-        lower = (await client.get(f"{BASE}/?search=github")).json()
-        upper = (await client.get(f"{BASE}/?search=GITHUB")).json()
+        lower = (await client.get(f"{BASE}/?search=github")).json()["items"]
+        upper = (await client.get(f"{BASE}/?search=GITHUB")).json()["items"]
         assert lower == upper
 
     @pytest.mark.asyncio
@@ -177,13 +178,13 @@ class TestFilterSites:
         """Search covers name, display_name and description."""
         response = await client.get(f"{BASE}/?search=cloud")
         assert response.status_code == 200
-        assert {site["name"] for site in response.json()}
+        assert {site["name"] for site in response.json()["items"]}
 
     @pytest.mark.asyncio
     async def test_search_with_no_match_is_empty(self, client: AsyncClient):
         response = await client.get(f"{BASE}/?search=zzz-no-such-site-zzz")
         assert response.status_code == 200
-        assert response.json() == []
+        assert response.json()["items"] == []
 
 
 class TestSortSites:
@@ -192,7 +193,7 @@ class TestSortSites:
         response = await client.get(f"{BASE}/")
         assert response.status_code == 200
 
-        priorities = [site["priority"] for site in response.json()]
+        priorities = [site["priority"] for site in response.json()["items"]]
         assert priorities == sorted(priorities, reverse=True)
 
     @pytest.mark.asyncio
@@ -200,7 +201,7 @@ class TestSortSites:
         response = await client.get(f"{BASE}/?sort_by=name&sort_order=asc")
         assert response.status_code == 200
 
-        names = [site["name"] for site in response.json()]
+        names = [site["name"] for site in response.json()["items"]]
         assert names == sorted(names)
 
     @pytest.mark.asyncio
@@ -208,7 +209,7 @@ class TestSortSites:
         response = await client.get(f"{BASE}/?sort_by=priority&sort_order=asc")
         assert response.status_code == 200
 
-        priorities = [site["priority"] for site in response.json()]
+        priorities = [site["priority"] for site in response.json()["items"]]
         assert priorities == sorted(priorities)
 
     @pytest.mark.asyncio
@@ -226,7 +227,7 @@ class TestSortSites:
 class TestGetSite:
     @pytest.mark.asyncio
     async def test_get_site_by_id(self, client: AsyncClient):
-        listed = (await client.get(f"{BASE}/")).json()
+        listed = (await client.get(f"{BASE}/")).json()["items"]
         expected = listed[0]
 
         response = await client.get(f"{BASE}/{expected['id']}")

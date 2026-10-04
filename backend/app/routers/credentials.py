@@ -21,6 +21,7 @@ from app.utils.logging import log_security_event
 from ..database import get_db
 from ..models.account import Account
 from ..models.identity import Identity
+from app.utils.pagination import Page, PageInfo
 
 logger = logging.getLogger(__name__)
 
@@ -910,6 +911,7 @@ async def store_account_credentials(
 
 @router.get(
     "/account/{account_id}/credentials",
+    openapi_extra={"x-pagination": "exempt"},
     response_model=AccountCredentialResponse,
     summary="📋 Get Account Credentials (GET)",
     description="""
@@ -949,6 +951,7 @@ async def get_account_credentials(
 
 @router.get(
     "/identity/{identity_id}/accounts",
+    response_model=Page[dict],
     summary="👤 List Identity Accounts",
     description="""
 Get all accounts associated with a specific identity.
@@ -958,6 +961,8 @@ Useful for understanding what accounts an identity has created and their status.
 )
 async def get_identity_accounts(
     identity_id: int = Path(..., description="Identity ID to get accounts for"),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     service_name: str = Depends(verify_api_key),
     db: Session = Depends(get_db),
 ):
@@ -977,7 +982,9 @@ async def get_identity_accounts(
             raise HTTPException(status_code=404, detail="Identity not found")
 
         # Get accounts for this identity
-        accounts = db.query(Account).filter(Account.identity_id == identity_id).all()
+        base_query = db.query(Account).filter(Account.identity_id == identity_id)
+        total = base_query.count()
+        accounts = base_query.order_by(Account.id).offset(offset).limit(limit).all()
 
         account_list = []
         for account in accounts:
@@ -998,12 +1005,8 @@ async def get_identity_accounts(
             }
             account_list.append(account_info)
 
-        return {
-            "identity_id": identity_id,
-            "identity_name": identity.name,
-            "accounts": account_list,
-            "total_accounts": len(account_list),
-        }
+        return Page(items=account_list, page=PageInfo(offset=offset, limit=limit, total=total,
+                                                       next_offset=offset + limit if offset + limit < total else None))
 
     except HTTPException:
         raise
@@ -1100,6 +1103,7 @@ async def validate_credentials(
 
 @router.get(
     "/health",
+    openapi_extra={"x-pagination": "exempt"},
     summary="🏥 Health Check",
     description="Check the health status of the credentials service",
 )

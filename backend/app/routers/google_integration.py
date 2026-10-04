@@ -21,6 +21,7 @@ import logging
 from typing import Any, Dict
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -40,6 +41,13 @@ from app.utils.encryption import encrypt_field
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/google", tags=["Google Integration"])
+
+
+class ManualSignupRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    signup_data: GoogleSignupData
+    config: GoogleSignupConfig | None = None
 
 
 async def _get_owned_identity(
@@ -68,8 +76,7 @@ async def _get_owned_identity(
 # unreachable. Covered by tests/test_google_route_order.py.
 @router.post("/signup/manual")
 async def manual_signup(
-    signup_data: GoogleSignupData,
-    config: GoogleSignupConfig = None,
+    request: ManualSignupRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
@@ -81,10 +88,10 @@ async def manual_signup(
     """
     try:
         # Create signup service
-        signup_service = GoogleSignupService(config or GoogleSignupConfig())
+        signup_service = GoogleSignupService(request.config or GoogleSignupConfig())
 
         # Perform signup
-        result = await signup_service.signup(signup_data)
+        result = await signup_service.signup(request.signup_data)
 
         return {
             "success": result.success,

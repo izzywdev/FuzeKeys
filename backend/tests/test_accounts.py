@@ -49,7 +49,7 @@ class TestAccountsAPI:
     async def test_list_accounts_empty(self, authed_client: AsyncClient):
         response = await authed_client.get(f"{BASE}/")
         assert response.status_code == 200
-        assert response.json() == []
+        assert response.json() == {"items": [], "page": {"offset": 0, "limit": 50, "total": 0, "next_offset": None}}
 
     @pytest.mark.asyncio
     async def test_list_accounts_with_data(
@@ -60,9 +60,10 @@ class TestAccountsAPI:
         assert response.status_code == 200
 
         data = response.json()
-        assert len(data) == 1
+        assert data["page"]["total"] == 1
+        assert len(data["items"]) == 1
 
-        item = data[0]
+        item = data["items"][0]
         assert item["id"] == sample_account.id
         assert item["website_name"] == "Test Site"
         assert item["website_url"] == "https://test-site.com"
@@ -72,6 +73,18 @@ class TestAccountsAPI:
         assert item["signup_completed"] is False
         # sample_account is created directly, so it has no seeded stages.
         assert item["stages"] == []
+
+    @pytest.mark.asyncio
+    async def test_list_accounts_page_boundaries(
+        self, authed_client: AsyncClient, sample_account: Account
+    ):
+        first = await authed_client.get(f"{BASE}/?limit=1&offset=0")
+        assert first.status_code == 200
+        assert first.json()["page"] == {"offset": 0, "limit": 1, "total": 1, "next_offset": None}
+        assert [item["id"] for item in first.json()["items"]] == [sample_account.id]
+        beyond = await authed_client.get(f"{BASE}/?limit=1&offset=1")
+        assert beyond.json()["items"] == []
+        assert (await authed_client.get(f"{BASE}/?limit=101")).status_code == 422
 
     @pytest.mark.asyncio
     async def test_create_account(
@@ -246,7 +259,7 @@ class TestAccountsAPI:
 
         response = await authed_client.get(f"{BASE}/")
         assert response.status_code == 200
-        assert response.json() == []
+        assert response.json()["items"] == []
 
 
 class TestAccountStages:

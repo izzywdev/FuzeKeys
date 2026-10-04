@@ -31,7 +31,7 @@ class GoogleSignupData(BaseModel):
     gender: Optional[str] = Field(None, description="Gender (optional)")
 
     # Additional preferences
-    interests: Optional[list[str]] = Field(
+    interests: list[str] = Field(
         default_factory=list, description="User interests"
     )
     skip_phone_verification: bool = Field(

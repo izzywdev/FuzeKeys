@@ -119,15 +119,16 @@ const SitesDatabase: React.FC = () => {
       if (!response.ok) throw new Error(`Failed to fetch sites: ${response.status} ${response.statusText}`);
 
       const data = await response.json();
+      const pageItems: Site[] = data.items;
 
       if (reset) {
-        setSites(data);
+        setSites(pageItems);
       } else {
-        setSites(prev => [...prev, ...data]);
+        setSites(prev => [...prev, ...pageItems]);
       }
 
       // Check if we have more data
-      setHasMore(data.length === ITEMS_PER_PAGE);
+      setHasMore(data.page.next_offset !== null);
       pageRef.current = currentPage + 1;
       setError(null);
     } catch (err) {
@@ -679,4 +680,4 @@ const SitesDatabase: React.FC = () => {
   );
 };
 
-export default SitesDatabase; 
+export default SitesDatabase;
