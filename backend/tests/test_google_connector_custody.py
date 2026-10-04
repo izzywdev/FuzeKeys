@@ -248,7 +248,7 @@ async def test_google_binding_and_offline_token_required(google_custody):
     with pytest.raises(HTTPException):
         await connectors.update_credential(
             connectors.CredentialUpdate(credential={"access_token": "access"}),
-            connectors.GMAIL,
+            "google-drive",
             identity,
             db,
         )
@@ -257,6 +257,41 @@ async def test_google_binding_and_offline_token_required(google_custody):
             update(connectors.GMAIL, refresh=None), connectors.GMAIL, identity, db
         )
     assert vault.load_root(connectors._canonical_google_ref(identity.subject)) is None
+
+
+@pytest.mark.asyncio
+async def test_old_gmail_runtime_works_until_verified_binding_then_cannot_downgrade(
+    google_custody,
+):
+    db, vault, identity = google_custody
+    old_callback = connectors.CredentialUpdate(
+        credential={"access_token": "old-callback", "refresh_token": "old-refresh"},
+        identity_email="legacy@example.com",
+    )
+    await connectors.update_credential(old_callback, connectors.GMAIL, identity, db)
+    lease = await connectors.lease_credential(connectors.GMAIL, identity, db)
+    assert lease["credential"] == old_callback.credential
+    assert lease["google_identity"] is None
+    # Old runtime refreshes with a complete opaque credential blob.
+    old_refresh = connectors.CredentialUpdate(
+        credential={"access_token": "old-refreshed", "refresh_token": "old-refresh"}
+    )
+    await connectors.update_credential(old_refresh, connectors.GMAIL, identity, db)
+    assert (await connectors.lease_credential(connectors.GMAIL, identity, db))[
+        "credential"
+    ] == old_refresh.credential
+    with pytest.raises(HTTPException) as exc:
+        await connectors.update_credential(old_refresh, "google-drive", identity, db)
+    assert exc.value.status_code == 409
+    await connectors.update_credential(
+        update(connectors.GMAIL), connectors.GMAIL, identity, db
+    )
+    ref = connectors._canonical_google_ref(identity.subject)
+    bound = vault.load_root(ref)
+    with pytest.raises(HTTPException) as exc:
+        await connectors.update_credential(old_callback, connectors.GMAIL, identity, db)
+    assert exc.value.status_code == 409
+    assert vault.load_root(ref) == bound
 
 
 @pytest.mark.asyncio

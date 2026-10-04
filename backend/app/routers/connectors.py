@@ -281,11 +281,6 @@ async def update_credential(
     credential = dict(body.credential)
     payload: Dict[str, Any] = credential
     if google:
-        if body.google_identity is None:
-            raise HTTPException(
-                status_code=409,
-                detail="Google identity verification requires reauthorization",
-            )
         canonical = _canonical_google_ref(owner)
         records = await _google_records(db, owner)
         if any(record.vault_ref != canonical for record in records):
@@ -294,47 +289,72 @@ async def update_credential(
                 detail="Disconnect legacy Google connectors before authorizing one shared account",
             )
         previous, binding = await _load_google(canonical)
-        new_binding = body.google_identity.model_dump()
-        if (
-            binding is None
-            and records
-            and (
-                provider != GMAIL or any(record.provider != GMAIL for record in records)
-            )
-        ):
-            # Even a token granting Gmail scopes proves nothing about the
-            # account behind an existing unbound Gmail credential. Only an
-            # explicit Gmail reconnect may replace a sole legacy Gmail record.
-            raise HTTPException(
-                status_code=409,
-                detail="Reauthorize Gmail before connecting other Google providers, or disconnect legacy Google connectors",
-            )
-        if binding is not None and binding != new_binding:
-            raise HTTPException(
-                status_code=409,
-                detail="Disconnect Google connectors before switching accounts or OAuth clients",
-            )
-        if (
-            not isinstance(credential.get("access_token"), str)
-            or not credential["access_token"]
-        ):
-            raise HTTPException(
-                status_code=422, detail="Google access token is required"
-            )
-        if not credential.get("refresh_token"):
-            if binding == new_binding and previous.get("refresh_token"):
-                credential["refresh_token"] = previous["refresh_token"]
-            else:
+        if body.google_identity is None:
+            # Keep the old deployed Gmail runtime operational during the
+            # Keys-before-Front rollout. This path cannot share or bind an
+            # account and cannot downgrade a verified canonical credential.
+            if (
+                binding is not None
+                or provider != GMAIL
+                or any(record.provider != GMAIL for record in records)
+            ):
                 raise HTTPException(
                     status_code=409,
-                    detail="Google offline consent requires reauthorization",
+                    detail="Google identity verification requires reauthorization",
                 )
-        # An explicit new grant must preserve every still-connected resource.
-        # Do not union old scopes into a token that no longer grants them.
-        _require_google_scopes(
-            credential, {provider, *(record.provider for record in records)}
-        )
-        payload = {"credential": credential, "google_identity": new_binding}
+            if (
+                not isinstance(credential.get("access_token"), str)
+                or not credential["access_token"]
+            ):
+                raise HTTPException(
+                    status_code=422, detail="Google access token is required"
+                )
+            # Preserve the old opaque overwrite behavior. Never borrow an
+            # unverified refresh token or pretend that this establishes identity.
+            payload = credential
+        else:
+            new_binding = body.google_identity.model_dump()
+            if (
+                binding is None
+                and records
+                and (
+                    provider != GMAIL
+                    or any(record.provider != GMAIL for record in records)
+                )
+            ):
+                # Even a token granting Gmail scopes proves nothing about the
+                # account behind an existing unbound Gmail credential. Only an
+                # explicit Gmail reconnect may replace a sole legacy Gmail record.
+                raise HTTPException(
+                    status_code=409,
+                    detail="Reauthorize Gmail before connecting other Google providers, or disconnect legacy Google connectors",
+                )
+            if binding is not None and binding != new_binding:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Disconnect Google connectors before switching accounts or OAuth clients",
+                )
+            if (
+                not isinstance(credential.get("access_token"), str)
+                or not credential["access_token"]
+            ):
+                raise HTTPException(
+                    status_code=422, detail="Google access token is required"
+                )
+            if not credential.get("refresh_token"):
+                if binding == new_binding and previous.get("refresh_token"):
+                    credential["refresh_token"] = previous["refresh_token"]
+                else:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Google offline consent requires reauthorization",
+                    )
+            # An explicit new grant must preserve every still-connected resource.
+            # Do not union old scopes into a token that no longer grants them.
+            _require_google_scopes(
+                credential, {provider, *(record.provider for record in records)}
+            )
+            payload = {"credential": credential, "google_identity": new_binding}
     if row is None:
         vault_ref = (
             _canonical_google_ref(owner)

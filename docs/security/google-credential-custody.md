@@ -8,7 +8,7 @@ Other providers remain isolated by both owner and provider.
 
 ## Trusted service contract
 
-Google credential PUTs require `google_identity: {subject, client_id}` alongside
+Shared Google credential PUTs require `google_identity: {subject, client_id}` alongside
 `credential`. The consuming service must derive `subject` from Google's verified
 HTTPS OpenID userinfo response and `client_id` from the configured OAuth client
 that exchanged the code. These values must never come from a browser request or
@@ -50,7 +50,11 @@ disconnects those legacy providers and authorizes the intended shared account.
 Changing an established Google account or OAuth client similarly requires
 disconnecting the existing Google connectors first.
 
-Deploy the updated FuzeKeys custody contract and FuzeFront Google runtime together.
-An older runtime cannot supply the verified identity envelope and will receive
-HTTP 409 on Google credential updates. No database schema migration is required:
+Deploy FuzeKeys first, then the matching FuzeFront runtime. During that window,
+an older runtime may still read and overwrite a sole unbound Gmail credential
+without an identity envelope. This narrow compatibility path stores the old
+opaque blob, never merges an unverified refresh token, cannot enable another
+Google provider, and rejects writes once a verified canonical binding exists.
+The updated FuzeFront runtime requires verified owner reauthorization before use.
+No database schema migration is required:
 new metadata rows simply reference the shared canonical key.
