@@ -1,0 +1,1 @@
+delegated_auth  # FastAPI dependency verifies workload and delegation tokens, audience, actor binding, and required connector scope
