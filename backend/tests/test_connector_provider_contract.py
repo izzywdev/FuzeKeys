@@ -58,9 +58,9 @@ async def test_credential_keys_are_scoped_by_owner_and_provider(monkeypatch):
     monkeypatch.setattr(connectors, "_vault", lambda: Vault())
     session = Session()
     for owner, provider in (
-        ("person/a", "google-gmail"),
+        ("person/a", "slack"),
         ("person/a", "microsoft-outlook"),
-        ("person/b", "google-gmail"),
+        ("person/b", "slack"),
     ):
         await connectors.update_credential(
             connectors.CredentialUpdate(credential={"token": provider + owner}),
