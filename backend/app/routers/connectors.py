@@ -295,6 +295,20 @@ async def update_credential(
             )
         previous, binding = await _load_google(canonical)
         new_binding = body.google_identity.model_dump()
+        if (
+            binding is None
+            and records
+            and (
+                provider != GMAIL or any(record.provider != GMAIL for record in records)
+            )
+        ):
+            # Even a token granting Gmail scopes proves nothing about the
+            # account behind an existing unbound Gmail credential. Only an
+            # explicit Gmail reconnect may replace a sole legacy Gmail record.
+            raise HTTPException(
+                status_code=409,
+                detail="Reauthorize Gmail before connecting other Google providers, or disconnect legacy Google connectors",
+            )
         if binding is not None and binding != new_binding:
             raise HTTPException(
                 status_code=409,

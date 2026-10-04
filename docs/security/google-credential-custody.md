@@ -37,6 +37,13 @@ before use. A fresh offline-consent refresh token and a verified identity are
 required to bind the existing canonical secret; old unverified refresh tokens are
 never silently retained.
 
+Only an explicit Gmail reconnect can replace a sole unbound legacy Gmail record.
+Connecting another Google provider first returns HTTP 409 even if the incoming
+token grants both providers' scopes: scopes cannot prove continuity with the old
+Google account. Reauthorize Gmail first, or disconnect the legacy connections.
+Multiple unbound Google records must be disconnected before establishing the
+verified shared account.
+
 Separate legacy Google vault keys are not automatically combined: they may belong
 to different accounts or OAuth clients. PUT returns HTTP 409 until the owner
 disconnects those legacy providers and authorizes the intended shared account.

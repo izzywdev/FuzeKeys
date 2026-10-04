@@ -149,6 +149,57 @@ async def test_legacy_gmail_requires_fresh_consent_to_bind(google_custody):
 
 
 @pytest.mark.asyncio
+async def test_new_provider_cannot_replace_unverified_legacy_gmail_account(
+    google_custody,
+):
+    db, vault, identity = google_custody
+    ref = connectors._canonical_google_ref(identity.subject)
+    legacy = b'{"access_token":"legacy-account","refresh_token":"legacy-refresh"}'
+    vault.put(ref, legacy)
+    db.add(
+        ConnectorCredential(
+            owner_subject=identity.subject, provider=connectors.GMAIL, vault_ref=ref
+        )
+    )
+    await db.commit()
+    scopes = [
+        connectors._GOOGLE_SCOPE_ROOT + scope
+        for scope in ("gmail.readonly", "drive.readonly")
+    ]
+    with pytest.raises(HTTPException) as exc:
+        await connectors.update_credential(
+            update("google-drive", subject="different-verified-account", scopes=scopes),
+            "google-drive",
+            identity,
+            db,
+        )
+    assert exc.value.status_code == 409
+    assert vault.load_root(ref) == legacy
+    assert await connectors._record(db, identity.subject, "google-drive") is None
+    # The owner can explicitly reconnect Gmail before enabling Drive.
+    await connectors.update_credential(
+        update(connectors.GMAIL, subject="different-verified-account", scopes=scopes),
+        connectors.GMAIL,
+        identity,
+        db,
+    )
+    await connectors.update_credential(
+        update(
+            "google-drive",
+            subject="different-verified-account",
+            refresh=None,
+            scopes=scopes,
+        ),
+        "google-drive",
+        identity,
+        db,
+    )
+    assert (await connectors.lease_credential("google-drive", identity, db))[
+        "google_identity"
+    ]["subject"] == "different-verified-account"
+
+
+@pytest.mark.asyncio
 async def test_separate_legacy_accounts_are_not_silently_combined(google_custody):
     db, vault, identity = google_custody
     ref = "connectors/owner%2Fa/google-drive"
