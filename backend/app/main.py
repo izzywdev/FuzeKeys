@@ -551,6 +551,8 @@ async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        # A wire-contract capability, not a claim that any user has connected.
+        "connector_credential_protocol": "google-shared-v1",
         "database": db_status,
         "services": {
             "automation": "available",
