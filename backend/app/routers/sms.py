@@ -20,12 +20,13 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.utils.pagination import Page, PageInfo
+
 from ..database import get_db
 from ..models.sms import SmsDevice, SmsOtpReceived, SmsOtpRequest
 from ..models.user import User
 from ..utils.logging import log_security_event
 from ..utils.websocket_manager import ConnectionManager
-from app.utils.pagination import Page, PageInfo
 
 # SECURITY: operator/user-facing endpoints require the application JWT.
 # get_current_user validates the bearer token and resolves the User.
@@ -508,7 +509,13 @@ async def get_devices(
     """
     try:
         total = db.query(SmsDevice).count()
-        devices = db.query(SmsDevice).order_by(SmsDevice.device_id).offset(offset).limit(limit).all()
+        devices = (
+            db.query(SmsDevice)
+            .order_by(SmsDevice.device_id)
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
         items = [
             {
                 "device_id": device.device_id,
@@ -521,8 +528,15 @@ async def get_devices(
             }
             for device in devices
         ]
-        return Page(items=items, page=PageInfo(offset=offset, limit=limit, total=total,
-                                                next_offset=offset + limit if offset + limit < total else None))
+        return Page(
+            items=items,
+            page=PageInfo(
+                offset=offset,
+                limit=limit,
+                total=total,
+                next_offset=offset + limit if offset + limit < total else None,
+            ),
+        )
 
     except Exception as e:
         logger.error(f"Error getting devices: {e}")

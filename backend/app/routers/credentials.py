@@ -17,11 +17,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from app.utils.logging import log_security_event
+from app.utils.pagination import Page, PageInfo
 
 from ..database import get_db
 from ..models.account import Account
 from ..models.identity import Identity
-from app.utils.pagination import Page, PageInfo
 
 logger = logging.getLogger(__name__)
 
@@ -1005,8 +1005,15 @@ async def get_identity_accounts(
             }
             account_list.append(account_info)
 
-        return Page(items=account_list, page=PageInfo(offset=offset, limit=limit, total=total,
-                                                       next_offset=offset + limit if offset + limit < total else None))
+        return Page(
+            items=account_list,
+            page=PageInfo(
+                offset=offset,
+                limit=limit,
+                total=total,
+                next_offset=offset + limit if offset + limit < total else None,
+            ),
+        )
 
     except HTTPException:
         raise

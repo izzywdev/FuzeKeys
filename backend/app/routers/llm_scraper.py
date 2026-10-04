@@ -151,7 +151,9 @@ async def improve_scraper(request: ImproveScraperRequest):
 
 
 @router.get("/scrapers", response_model=Page[dict])
-async def list_scrapers(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0)):
+async def list_scrapers(
+    limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0)
+):
     """List all generated scrapers"""
     try:
         stats = code_generator.get_generation_stats()
@@ -172,8 +174,15 @@ async def list_scrapers(limit: int = Query(50, ge=1, le=100), offset: int = Quer
             )
 
         total = len(keys)
-        return Page(items=scrapers, page=PageInfo(offset=offset, limit=limit, total=total,
-                                                  next_offset=offset + limit if offset + limit < total else None))
+        return Page(
+            items=scrapers,
+            page=PageInfo(
+                offset=offset,
+                limit=limit,
+                total=total,
+                next_offset=offset + limit if offset + limit < total else None,
+            ),
+        )
 
     except Exception as e:
         logger.error(f"Error listing scrapers: {e}")
@@ -216,8 +225,12 @@ async def get_scraper(site_name: str, action_type: str, version: Optional[int] =
 
 
 @router.get("/scrapers/{site_name}/{action_type}/history", response_model=Page[dict])
-async def get_scraper_history(site_name: str, action_type: str,
-                              limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0)):
+async def get_scraper_history(
+    site_name: str,
+    action_type: str,
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
     """Get the full history of a scraper"""
     try:
         history = code_generator.get_scraper_history(site_name, action_type)
@@ -240,8 +253,15 @@ async def get_scraper_history(site_name: str, action_type: str,
             )
 
         total = len(history)
-        return Page(items=history_data, page=PageInfo(offset=offset, limit=limit, total=total,
-                                                       next_offset=offset + limit if offset + limit < total else None))
+        return Page(
+            items=history_data,
+            page=PageInfo(
+                offset=offset,
+                limit=limit,
+                total=total,
+                next_offset=offset + limit if offset + limit < total else None,
+            ),
+        )
 
     except HTTPException:
         raise

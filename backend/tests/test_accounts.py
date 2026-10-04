@@ -49,7 +49,10 @@ class TestAccountsAPI:
     async def test_list_accounts_empty(self, authed_client: AsyncClient):
         response = await authed_client.get(f"{BASE}/")
         assert response.status_code == 200
-        assert response.json() == {"items": [], "page": {"offset": 0, "limit": 50, "total": 0, "next_offset": None}}
+        assert response.json() == {
+            "items": [],
+            "page": {"offset": 0, "limit": 50, "total": 0, "next_offset": None},
+        }
 
     @pytest.mark.asyncio
     async def test_list_accounts_with_data(
@@ -80,7 +83,12 @@ class TestAccountsAPI:
     ):
         first = await authed_client.get(f"{BASE}/?limit=1&offset=0")
         assert first.status_code == 200
-        assert first.json()["page"] == {"offset": 0, "limit": 1, "total": 1, "next_offset": None}
+        assert first.json()["page"] == {
+            "offset": 0,
+            "limit": 1,
+            "total": 1,
+            "next_offset": None,
+        }
         assert [item["id"] for item in first.json()["items"]] == [sample_account.id]
         beyond = await authed_client.get(f"{BASE}/?limit=1&offset=1")
         assert beyond.json()["items"] == []

@@ -21,7 +21,12 @@ class Page(BaseModel, Generic[T]):
 def paginate(items: list[T], offset: int, limit: int) -> Page[T]:
     """Paginate a bounded in-memory catalog; database queries must limit in SQL."""
     total = len(items)
-    return Page(items=items[offset : offset + limit], page=PageInfo(
-        offset=offset, limit=limit, total=total,
-        next_offset=offset + limit if offset + limit < total else None,
-    ))
+    return Page(
+        items=items[offset : offset + limit],
+        page=PageInfo(
+            offset=offset,
+            limit=limit,
+            total=total,
+            next_offset=offset + limit if offset + limit < total else None,
+        ),
+    )

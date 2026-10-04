@@ -72,7 +72,9 @@ class IntegrationResponse(BaseModel):
 
 # Available Sites Endpoints
 @router.get("/sites", response_model=Page[str])
-async def list_available_sites(limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0)):
+async def list_available_sites(
+    limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0)
+):
     """Get a list of all available site integrations."""
     try:
         sites = get_available_sites()
