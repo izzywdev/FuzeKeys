@@ -32,11 +32,14 @@ implement continuous grant synchronization. Other resource families (Site,
 SignupScript, ApiKey, identity cards, connectors and organizations) need their own
 verified ownership migration before the complete Z1 gate can pass.
 
-The canonical backend policy collector namespaces product resources with an
-underscore. The older standalone Security copy uses a dot namespace. Resolve
-that deployment-specific namespace migration and verify the actual policy
-resource types before applying this inventory; never translate or apply it
-silently to an incompatible policy service.
+Runtime registration sends the repository declaration to the backend
+`PUT /api/apps/fuzekeys/policy`, storing it in the application policy record.
+The backend boot and Helm Permit schema job use the canonical underscore
+namespace. Deploy the additive instance-role ingestion contract in FuzeFront
+#1389 before registering these roles. The dormant standalone Security copy uses
+a dot namespace, but it does not establish a migration prerequisite for this
+runtime path. Verify the actual registered policy and exact instance resource
+types through trusted live administration before applying any inventory.
 
 A verified binding records the linking event; it does not prove current tenant
 membership or current authority to grant roles. Every proposed principal needs a
