@@ -21,6 +21,7 @@ from app.routers import (
     identities,
     infrastructure,
     llm_scraper,
+    platform_identity,
     site_integrations,
     sms,
 )
@@ -487,6 +488,9 @@ app.add_middleware(
 
 # Include routers
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
+app.include_router(
+    platform_identity.router, prefix="/api/v1/auth", tags=["Authentication"]
+)
 app.include_router(identities.router, prefix="/api/v1/identities", tags=["Identities"])
 app.include_router(accounts.router, prefix="/api/v1/accounts", tags=["Accounts"])
 app.include_router(automation.router, prefix="/api/v1/automation", tags=["Automation"])

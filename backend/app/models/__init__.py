@@ -10,6 +10,7 @@ from .connector import ConnectorCredential
 from .grant import Grant
 from .identity import Identity
 from .organization import Organization, OrganizationMember
+from .platform_identity import PlatformIdentity
 from .signup_script import SignupScript
 from .site import DifficultyLevel, ImplementationStatus, Site
 from .user import User

@@ -76,6 +76,10 @@ config:
   # for the pre-built image; the real value must be baked at image build.
   apiBaseUrl: "https://api.keys.prod.fuzefront.com"
   fuzefrontSecurityUrl: "http://fuzefront-security.fuzefront.svc.cluster.local:3002"
+  # Canonical organization UUID. Configure only after Security's tenant session
+  # proof and real membership/grant provisioning are deployed. Empty fails closed
+  # for explicit account linking; existing login/connectors remain unaffected.
+  authzTenant: ""
   vaultKvMount: "secret"
   # Prefer a separately managed, auto-unsealed Vault in production. When empty
   # and vault.enabled=true, the chart uses its internal Vault Service.

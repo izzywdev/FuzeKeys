@@ -61,6 +61,8 @@ spec:
             {{- end }}
             - name: FUZEFRONT_SECURITY_URL
               value: {{ .Values.config.fuzefrontSecurityUrl | quote }}
+            - name: FUZEKEYS_AUTHZ_TENANT
+              value: {{ .Values.config.authzTenant | default "" | quote }}
           livenessProbe:
             httpGet:
               path: {{ $comp.probes.path }}
