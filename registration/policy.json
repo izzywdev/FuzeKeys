@@ -9,6 +9,12 @@
         "create": { "name": "Create" },
         "update": { "name": "Update" },
         "delete": { "name": "Delete" }
+      },
+      "roles": {
+        "owner": {
+          "name": "Instance owner",
+          "permissions": ["read", "create", "update", "delete"]
+        }
       }
     },
     {
@@ -19,6 +25,12 @@
         "create": { "name": "Create" },
         "update": { "name": "Update" },
         "delete": { "name": "Delete" }
+      },
+      "roles": {
+        "owner": {
+          "name": "Instance owner",
+          "permissions": ["read", "create", "update", "delete"]
+        }
       }
     },
     {
@@ -30,6 +42,12 @@
         "create": { "name": "Create" },
         "update": { "name": "Update" },
         "delete": { "name": "Delete" }
+      },
+      "roles": {
+        "owner": {
+          "name": "Instance owner",
+          "permissions": ["read", "reveal", "create", "update", "delete"]
+        }
       }
     },
     {
