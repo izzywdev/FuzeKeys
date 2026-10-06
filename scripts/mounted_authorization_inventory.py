@@ -117,13 +117,13 @@ def assess(module, endpoint, method, helpers):
             "device_proof_platform_migration_gap",
             "Device key/callback assignment checks remain; device enrollment, durable verified principal and platform policy are not complete.",
         )
-    if (
-        module == "app.routers.infrastructure"
-        and endpoint == "complete_sms_verification"
-    ):
+    if module == "app.routers.infrastructure" and endpoint in {
+        "complete_sms_verification",
+        "mobile_commands_websocket",
+    }:
         return (
             "device_proof_platform_migration_gap",
-            "Device-key verification and request assignment precede callback mutation; verified device principal/platform policy still need migration.",
+            "Device-key verification precedes socket acceptance or callback mutation, and callbacks require prior assignment; durable verified device principals and platform policy still need migration.",
         )
     if module == "app.routers.sms" and endpoint == "register_device":
         return (
