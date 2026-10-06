@@ -224,6 +224,11 @@ async def list_identities(
         )
         identities = result.scalars().all()
 
+        for identity in identities:
+            await require_owner_permission(
+                db, current_user.id, "Identity", identity.id, "read"
+            )
+
         items = [
             IdentityListResponse(
                 id=identity.id,
@@ -243,6 +248,8 @@ async def list_identities(
             ),
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error listing identities: {str(e)}")
         raise HTTPException(
@@ -271,6 +278,9 @@ async def get_identity(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Identity not found"
             )
 
+        await require_owner_permission(
+            db, current_user.id, "Identity", identity.id, "read"
+        )
         return decrypt_identity_data(identity)
 
     except HTTPException:

@@ -169,6 +169,14 @@ async def list_accounts(
         )
         accounts = result.scalars().all()
 
+        for account in accounts:
+            await require_owner_permission(
+                db, current_user.id, "Account", account.id, "read"
+            )
+            await require_owner_permission(
+                db, current_user.id, "Identity", account.identity_id, "read"
+            )
+
         items = [
             AccountResponse(
                 id=account.id,
@@ -204,6 +212,8 @@ async def list_accounts(
             ),
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error listing accounts: {str(e)}")
         raise HTTPException(

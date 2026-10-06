@@ -110,6 +110,20 @@ principal denial. A stale policy that omits the new signup action stops the run
 without marking that grant verified. No Google authorization claim follows from
 unit testing this prepared application path.
 
+## Existing owned read guards
+
+Identity detail and identity list require exact `fuzekeys_Identity:read` instance
+decisions before decrypting or projecting rows. The account list requires both
+`fuzekeys_Account:read` and `fuzekeys_Identity:read` for each account and the parent
+identity name it includes. Every row in the requested page is checked before any
+response object is constructed; one denial rejects the whole page. SQL owner
+filters and bounded pagination stay in place. Lists retain local owner counts;
+they do not claim to enumerate or count only policy-authorized resources.
+Denied/unlinked requests return 403 and Security outages return 503 without being
+converted to generic 500 errors. Existing verified mappings and exact read grants
+must be provisioned before deployment. Creates and their grant lifecycle remain
+unfinished; these reads do not certify the complete authorization migration.
+
 ## Legacy credential AsyncSession repair
 
 The legacy `/api/credentials` handlers now use the production `AsyncSession`
@@ -128,4 +142,3 @@ before that family's authorization migration can be declared complete. No
 credential-delete endpoint exists in this legacy router; this change introduces
 no delete route or new authority. Production PostgreSQL and actual authenticated
 service requests still need rollout verification.
-
