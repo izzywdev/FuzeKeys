@@ -11,6 +11,13 @@ from app.security.platform_authz import (
 )
 
 
+async def require_permission(*args, **kwargs) -> None:
+    """Require an explicit boolean allow from the platform decision service."""
+    allowed = await check_permission(*args, **kwargs)
+    if allowed is not True:
+        raise HTTPException(403, "Connector permission denied")
+
+
 def connector_tenant(identity):
     tenant = identity.tenant_id
     if (
@@ -51,7 +58,7 @@ async def require_connector_permission(identity, provider, action):
     }:
         raise HTTPException(403, "Invalid connector action")
     try:
-        allow = await check_permission(
+        await require_permission(
             identity.subject,
             tenant,
             "fuzekeys_Connector",
@@ -60,5 +67,3 @@ async def require_connector_permission(identity, provider, action):
         )
     except PlatformAuthorizationUnavailable as exc:
         raise HTTPException(503, "Connector authorization unavailable") from exc
-    if allow is not True:
-        raise HTTPException(403, "Connector permission denied")

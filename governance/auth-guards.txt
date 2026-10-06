@@ -1,1 +1,4 @@
 delegated_auth  # FastAPI dependency verifies workload and delegation tokens, audience, actor binding, and required connector scope
+verify_api_key  # FastAPI dependency compares a non-empty service key in constant time and fails closed when no configured key matches
+require_identity_scope  # Credential routes require the authenticated service key to hold an explicit identity-id scope before SQL access or mutation
+_introspect  # Broker revocation verifies the bearer through FuzeFront Security and then enforces workload token kind plus the FuzeKeys audience before opening SQL

@@ -11,6 +11,13 @@ from app.security.platform_authz import (
 )
 
 
+async def require_permission(*args, **kwargs) -> None:
+    """Require an explicit boolean allow from the platform decision service."""
+    allowed = await check_permission(*args, **kwargs)
+    if allowed is not True:
+        raise HTTPException(403, "Resource permission denied")
+
+
 async def require_owner_permission(
     db: AsyncSession,
     user_id: int,
@@ -39,7 +46,7 @@ async def require_owner_permission(
     if binding is None or binding.verified_at is None:
         raise HTTPException(403, "Verified platform identity required")
     try:
-        allowed = await check_permission(
+        await require_permission(
             binding.subject,
             binding.tenant,
             "fuzekeys_" + resource_type,
@@ -48,5 +55,3 @@ async def require_owner_permission(
         )
     except PlatformAuthorizationUnavailable as exc:
         raise HTTPException(503, "Resource authorization unavailable") from exc
-    if allowed is not True:
-        raise HTTPException(403, "Resource permission denied")
