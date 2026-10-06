@@ -269,8 +269,13 @@ validity. Regression coverage runs in UTC, Jerusalem and Los Angeles.
 
 This is a narrow containment change, not completion of SMS platform authorization.
 The existing request-creation route still creates unassigned requests, so those
-requests are withheld by polling until an explicit authorized assignment exists.
-Enrollment is still public, keys are still process-local, callback auto-assignment
-and WebSocket broadcasts still require migration, and durable owner/tenant
+requests are withheld by polling, are not broadcast, and cannot be completed until
+an explicit authorized assignment exists. OTP callbacks now reject unassigned
+requests instead of binding the first authenticated device. WebSocket clients must
+prove the same device id/key pair before acceptance, and completion notices target
+only that assigned device.
+
+Enrollment is still public, keys and requests are still process-local, and the
+server-side assignment lifecycle, durable verified device principals, owner/tenant
 bindings and instance policies/grants remain unprovisioned. The mounted-route
 inventory therefore continues to classify these paths as authorization gaps.
