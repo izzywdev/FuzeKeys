@@ -549,20 +549,23 @@ class TestOtpDeviceAuthAndBinding:
         assert sms_mod.pending_otp_requests["req-1"]["otp_code"] == "123456"
         assert db.commits >= 1
 
-    def test_unassigned_request_binds_to_first_authenticated_device(self):
-        """An unassigned open request is bound to the first authenticated device
-        that answers; a SECOND different device is then rejected (403)."""
+    def test_unassigned_request_cannot_be_claimed_by_authenticated_device(self):
+        """Knowing an unassigned request id is not assignment authority."""
         sms_mod.registered_device_keys["dev-1"] = "key-1"
-        sms_mod.registered_device_keys["dev-2"] = "key-2"
         sms_mod.pending_otp_requests["req-1"] = {
             "status": "waiting",
             "timeout": self._future_ts(),
             # no assigned_device_id
         }
-        # First device completes it.
+        before = dict(sms_mod.pending_otp_requests["req-1"])
+        db = _FakeDbSession()
         req1 = self._make_request(device_id="dev-1", request_id="req-1")
-        _run(sms_mod.receive_otp(req1, x_device_key="key-1", db=_FakeDbSession()))
-        assert sms_mod.pending_otp_requests["req-1"]["assigned_device_id"] == "dev-1"
+        with pytest.raises(HTTPException) as exc:
+            _run(sms_mod.receive_otp(req1, x_device_key="key-1", db=db))
+        assert exc.value.status_code == 409
+        assert sms_mod.pending_otp_requests["req-1"] == before
+        assert db.added == []
+        assert db.commits == 0
 
     def test_register_device_issues_strong_persisted_key(self, monkeypatch):
         """register_device issues a secrets.token_urlsafe(32) key, persists it in
