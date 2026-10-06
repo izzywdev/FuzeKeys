@@ -81,7 +81,7 @@ def test_revoke_tool(service):
         scope={},
         secret_ref=REF,
     )
-    out = mcp_tools.keys_revoke(service, grant_id=g["grant_id"])
+    out = mcp_tools.keys_revoke(service, caller=B, grant_id=g["grant_id"])
     assert out["status"] == "revoked"
     r = mcp_tools.keys_redeem(service, ctx=_ctx(A), grant_handle=g["grant_handle"])
     assert r["status"] == "denied"

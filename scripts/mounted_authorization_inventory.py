@@ -131,6 +131,11 @@ def assess(module, endpoint, method, helpers):
             "legacy_service_principal_gap",
             "Static service key and identity-scope/SQL owner boundaries remain; no verified workload/tenant mapping or instance platform decision for this family.",
         )
+    if module == "app.routers.broker" and endpoint == "revoke":
+        return (
+            "verified_workload_sql_owner_tenant_policy_gap",
+            "SDK-verified fuze-workload token for service:fuzekeys plus exact SQL grantor principal permits revocation; caller-asserted gateway headers are ignored. Stored grants still lack verified tenant/platform instance policy mapping.",
+        )
     if module == "app.routers.broker":
         return (
             "broker_platform_mapping_gap",

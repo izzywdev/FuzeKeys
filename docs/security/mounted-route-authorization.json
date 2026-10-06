@@ -4,7 +4,7 @@
   "route_method_count": 92,
   "mutating_http_count": 46,
   "assessment_counts": {
-    "broker_platform_mapping_gap": 4,
+    "broker_platform_mapping_gap": 3,
     "device_proof_platform_migration_gap": 3,
     "dual_session_proof_boundary": 1,
     "enrollment_proof_boundary": 2,
@@ -19,7 +19,8 @@
     "public_framework_documentation": 8,
     "public_health_or_static_catalog": 9,
     "public_static_demo": 1,
-    "signup_branch_enforced_general_ai_gap": 1
+    "signup_branch_enforced_general_ai_gap": 1,
+    "verified_workload_sql_owner_tenant_policy_gap": 1
   },
   "not_mounted": [
     "app.routers.background",
@@ -954,8 +955,8 @@
       "include_in_schema": true,
       "dependencies": [],
       "guard_helpers": [],
-      "assessment": "broker_platform_mapping_gap",
-      "reason": "Existing broker service-key/macaroon proof and caveats remain; this is not proof of platform resource-instance policy migration."
+      "assessment": "verified_workload_sql_owner_tenant_policy_gap",
+      "reason": "SDK-verified fuze-workload token for service:fuzekeys plus exact SQL grantor principal permits revocation; caller-asserted gateway headers are ignored. Stored grants still lack verified tenant/platform instance policy mapping."
     },
     {
       "method": "GET",

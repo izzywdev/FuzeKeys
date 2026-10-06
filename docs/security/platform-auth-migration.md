@@ -2,6 +2,33 @@
 
 Status: partial implementation for `gate-platform-auth` Z1. The fail-closed decision client and explicit dual-session linking code are implemented. Linking becomes available only after the database migration, trusted Security tenant proof, and real tenant configuration are deployed. Instance owner policy and dry-run grant inventory are implemented. Identity update/delete and account-stage update now enforce instance decisions after SQL ownership selection. Other route families, grant application and ongoing synchronization remain unfinished; this document grants no access and does not certify production rollout.
 
+## Broker revocation owner boundary
+
+The revocation core and MCP adapter now require an explicit verified transport
+caller and select the Grant through both public grant_id and the persisted
+grantor_identity. A public grant ID alone cannot authorize revocation. Missing
+and foreign grants return the same idempotent no-op shape without disclosing
+which row exists. The HTTP revoke route requires SDK-verified fuze-workload
+Bearer proof with audience service:fuzekeys before opening a database session;
+X-Verified-Repo/SPIFFE/Asserted headers do not establish this authority. The exact
+verified principal is compared without renaming legacy repo/SPIFFE principals.
+Unmapped historical owners cannot be guessed or silently upgraded.
+
+This repairs a concrete grant-owner revocation flaw. Grant records still lack
+verified tenant/platform-resource instance authority, and grant issue/redeem/
+mint routes still require complete workload and owned secret/capability policy
+migration. It is not clearance of the broker platform authorization gate.
+
+SMS/device migration has additional concrete schema blockers: its models declare
+a separate Base outside app Alembic metadata, sync Session handlers receive
+the app AsyncSession, device keys live in process memory, device records and OTP
+requests have no immutable verified tenant/owner mapping, public registration can
+rotate device IDs, polls enumerate unowned pending requests and callbacks bind
+an unassigned request to its first responding device. No static enrollment
+credential or inferred Identity/VaultAsset grant substitutes for fixing those
+boundaries. Required next work is explicit verified enrollment ownership, managed
+schema/durable custody and per-request owner/device binding before platform grants.
+
 ## Actual mounted route inventory
 
 `mounted-route-authorization.json` enumerates the actual `app.main` FastAPI

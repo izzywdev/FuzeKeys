@@ -156,17 +156,17 @@ def test_multi_use_grant_allows_repeat(service):
 # 4 -----------------------------------------------------------------------
 def test_revoked_grant_fails(service):
     g = _grant(service)
-    service.revoke(grant_id=g.grant_id, reason="compromised")
+    service.revoke(caller=AGENT_B, grant_id=g.grant_id, reason="compromised")
     with pytest.raises(BrokerDenied):
         service.redeem(ctx=_ctx(AGENT_A), handle=g.handle)
 
 
 def test_revoke_is_idempotent_and_nondisclosing(service):
     # revoking an unknown grant returns the same success (no oracle)
-    assert service.revoke(grant_id="does-not-exist") is True
+    assert service.revoke(caller=AGENT_B, grant_id="does-not-exist") is True
     g = _grant(service)
-    assert service.revoke(grant_id=g.grant_id) is True
-    assert service.revoke(grant_id=g.grant_id) is True
+    assert service.revoke(caller=AGENT_B, grant_id=g.grant_id) is True
+    assert service.revoke(caller=AGENT_B, grant_id=g.grant_id) is True
 
 
 # 5 -----------------------------------------------------------------------

@@ -18,12 +18,13 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.broker import mcp_tools, runtime
 from app.broker.errors import BrokerConfigError
 from app.broker.identity import TransportIdentity
+from app.security import fuzefront_auth
 
 router = APIRouter(prefix="/api/v1/broker", tags=["Secret Broker"])
 
@@ -116,11 +117,21 @@ def mint_token(body: MintTokenRequest, request: Request):
 
 @router.post("/revoke")
 def revoke(body: RevokeRequest, request: Request):
+    authorization = request.headers.get("authorization", "")
+    if not authorization.lower().startswith("bearer "):
+        raise HTTPException(401, "Verified workload identity required")
+    identity = fuzefront_auth._introspect(authorization.split(" ", 1)[1])
+    if (
+        identity.token_kind != "fuze-workload"
+        or identity.audience != "service:fuzekeys"
+    ):
+        raise HTTPException(403, "Verified workload identity required")
+    caller = TransportIdentity(principal=identity.subject, method="agent-token")
     db = runtime.new_session()
     try:
         service = runtime.build_service(db)
         return mcp_tools.keys_revoke(
-            service, grant_id=body.grant_id, reason=body.reason
+            service, caller=caller, grant_id=body.grant_id, reason=body.reason
         )
     finally:
         db.close()
