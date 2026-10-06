@@ -5,14 +5,14 @@
   "mutating_http_count": 46,
   "assessment_counts": {
     "broker_platform_mapping_gap": 3,
-    "device_proof_platform_migration_gap": 3,
+    "device_proof_platform_migration_gap": 4,
     "dual_session_proof_boundary": 1,
     "enrollment_proof_boundary": 2,
     "instance_enforced": 14,
     "instance_enforced_with_staged_registration": 10,
     "local_session_profile": 1,
     "parent_instance_enforced_child_lifecycle_gap": 2,
-    "platform_policy_design_gap": 30,
+    "platform_policy_design_gap": 29,
     "public_catalog_or_health": 3,
     "public_enrollment_security_gap": 1,
     "public_framework_documentation": 8,
@@ -423,12 +423,12 @@
     {
       "method": "WEBSOCKET",
       "path": "/api/sms/ws/sms-interceptor",
-      "endpoint": "app.routers.sms.websocket_endpoint",
+      "endpoint": "app.routers.sms.sms_interceptor_websocket",
       "include_in_schema": false,
       "dependencies": [],
       "guard_helpers": [],
-      "assessment": "platform_policy_design_gap",
-      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+      "assessment": "device_proof_platform_migration_gap",
+      "reason": "Device key/callback assignment checks remain; device enrollment, durable verified principal and platform policy are not complete."
     },
     {
       "method": "GET",
