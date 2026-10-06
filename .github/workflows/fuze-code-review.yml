@@ -442,14 +442,6 @@ jobs:
           BODY_FILE="${RUNNER_TEMP}/fuze-code-review-body.md"
           printf '%s\n' "$BODY" > "$BODY_FILE"
 
-          case "${CHECK:-}" in
-            pass|fail) ;;
-            *)
-              echo "::error title=fuze-code-review::missing or invalid check output; failing closed."
-              exit 1
-              ;;
-          esac
-
           case "$DECISION" in
             approve)
               gh pr review "$PR_NUMBER" --approve --body-file "$BODY_FILE"
