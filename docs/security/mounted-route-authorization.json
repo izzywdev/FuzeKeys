@@ -5,14 +5,14 @@
   "mutating_http_count": 46,
   "assessment_counts": {
     "broker_platform_mapping_gap": 3,
-    "device_proof_platform_migration_gap": 4,
+    "device_proof_platform_migration_gap": 5,
     "dual_session_proof_boundary": 1,
     "enrollment_proof_boundary": 2,
     "instance_enforced": 14,
     "instance_enforced_with_staged_registration": 10,
     "local_session_profile": 1,
     "parent_instance_enforced_child_lifecycle_gap": 2,
-    "platform_policy_design_gap": 29,
+    "platform_policy_design_gap": 28,
     "public_catalog_or_health": 3,
     "public_enrollment_security_gap": 1,
     "public_framework_documentation": 8,
@@ -476,7 +476,7 @@
       "dependencies": [],
       "guard_helpers": [],
       "assessment": "device_proof_platform_migration_gap",
-      "reason": "Device-key verification and request assignment precede callback mutation; verified device principal/platform policy still need migration."
+      "reason": "Device-key verification precedes socket acceptance or callback mutation, and callbacks require prior assignment; durable verified device principals and platform policy still need migration."
     },
     {
       "method": "POST",
@@ -569,8 +569,8 @@
       "include_in_schema": false,
       "dependencies": [],
       "guard_helpers": [],
-      "assessment": "platform_policy_design_gap",
-      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+      "assessment": "device_proof_platform_migration_gap",
+      "reason": "Device-key verification precedes socket acceptance or callback mutation, and callbacks require prior assignment; durable verified device principals and platform policy still need migration."
     },
     {
       "method": "POST",
