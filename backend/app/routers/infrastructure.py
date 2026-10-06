@@ -2,10 +2,18 @@ import hmac
 import json
 import logging
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    Header,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -24,7 +32,7 @@ from .auth import get_current_user
 # constant-time check. Imported at module top; there is no circular import
 # because sms.py does NOT import infrastructure.py (verified — sms.py only
 # imports from ..database/..models/..utils), so this edge is one-directional.
-from .sms import _verify_device, registered_device_keys
+from .sms import _verify_device
 
 logger = logging.getLogger(__name__)
 
@@ -76,11 +84,10 @@ async def request_sms_verification(
 ):
     """Request SMS verification from mobile device for scraper use.
 
-    SECURITY: Operator/app-facing — this initiates a verification job and
-    broadcasts it to mobile devices. Requires the application JWT so arbitrary
-    callers cannot push fake jobs to devices or exhaust resources. The
-    request->device binding is established later, when a device authenticates
-    and submits the code via /sms/complete-verification.
+    SECURITY: Operator/app-facing — this initiates a verification job. Requires
+    the application JWT so arbitrary callers cannot push fake jobs or exhaust
+    resources. The request remains withheld until a separate authorized
+    assignment lifecycle binds it to one verified device.
     """
     try:
         request_id = str(uuid.uuid4())
@@ -91,23 +98,13 @@ async def request_sms_verification(
             "site": request.site,
             "phone_number": request.phone_number,
             "status": "pending",
-            "created_at": datetime.utcnow(),
-            "timeout_at": datetime.utcnow()
+            "created_at": datetime.now(timezone.utc),
+            "timeout_at": datetime.now(timezone.utc)
             + timedelta(seconds=request.timeout_seconds),
         }
 
-        # Send request to mobile device via WebSocket
-        await sms_manager.broadcast(
-            json.dumps(
-                {
-                    "type": "verification_request",
-                    "request_id": request_id,
-                    "site": request.site,
-                    "phone_number": request.phone_number,
-                    "timeout": request.timeout_seconds,
-                }
-            )
-        )
+        # Do not broadcast an unassigned request. The request contains a phone
+        # number and request id and must not become first-device-claims-work.
 
         logger.info(
             f"SMS verification requested for {request.site}, request_id: {request_id}"
@@ -116,7 +113,7 @@ async def request_sms_verification(
         return {
             "request_id": request_id,
             "status": "pending",
-            "message": f"SMS verification request sent for {request.site}",
+            "message": f"SMS verification request created for {request.site}",
         }
 
     except Exception as e:
@@ -147,7 +144,10 @@ async def get_sms_verification(
         request_data = verification_requests[request_id]
 
         # Check if timeout exceeded
-        if datetime.utcnow() > request_data["timeout_at"]:
+        timeout_at = request_data["timeout_at"]
+        if timeout_at.tzinfo is None:
+            timeout_at = timeout_at.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) > timeout_at:
             request_data["status"] = "timeout"
 
         return VerificationResponse(
@@ -183,14 +183,9 @@ async def complete_sms_verification(
        ``_verify_device``. Unknown/unauthenticated devices are rejected 401.
        This closes the hole where ANY unauthenticated caller could complete a
        verification with an attacker-controlled code.
-    2) BINDING — the request is bound to a specific device. infrastructure.py
-       owns its own request store (``verification_requests``), and that store
-       had no device assignment at request time, so (mirroring sms.py's /otp)
-       we bind on first authenticated completion: the first authenticated
-       device to answer becomes the assigned device, and a DIFFERENT device
-       attempting to complete the same request is rejected 403. This prevents
-       a second (even authenticated) device from overwriting another device's
-       in-flight verification.
+    2) BINDING — the request must already be assigned to this device by the
+       server-side authorization lifecycle. An authenticated device may not
+       claim unassigned work merely by learning a request id.
     """
     try:
         # 1) Authenticate the device against the supplied device_id.
@@ -216,12 +211,18 @@ async def complete_sms_verification(
 
         request_data = verification_requests[request_id]
 
-        # 2) Bind request_id <-> device. Assign on first authenticated answer,
-        #    reject mismatches thereafter.
+        # 2) Require an existing authorized request <-> device assignment.
         assigned_device = request_data.get("assigned_device_id")
-        if assigned_device is None:
-            request_data["assigned_device_id"] = device_id
-        elif not hmac.compare_digest(str(assigned_device), str(device_id)):
+        if not isinstance(assigned_device, str) or not assigned_device:
+            log_security_event(
+                "infra_sms_complete_unassigned",
+                details={"device_id": device_id, "request_id": request_id},
+            )
+            raise HTTPException(
+                status_code=409,
+                detail="Verification request has no authorized device assignment",
+            )
+        if not hmac.compare_digest(assigned_device, device_id):
             log_security_event(
                 "infra_sms_complete_device_mismatch",
                 details={
@@ -235,12 +236,29 @@ async def complete_sms_verification(
                 detail="Device is not assigned to this request",
             )
 
+        if request_data.get("status") != "pending":
+            raise HTTPException(
+                status_code=409,
+                detail="Verification request is not pending",
+            )
+
+        timeout_at = request_data.get("timeout_at")
+        if isinstance(timeout_at, datetime) and timeout_at.tzinfo is None:
+            timeout_at = timeout_at.replace(tzinfo=timezone.utc)
+        if isinstance(timeout_at, datetime) and datetime.now(timezone.utc) > timeout_at:
+            request_data["status"] = "timeout"
+            raise HTTPException(status_code=410, detail="Verification request expired")
+
+        normalized_code = (code or "").strip()
+        if not normalized_code.isdigit() or not 4 <= len(normalized_code) <= 10:
+            raise HTTPException(status_code=400, detail="Invalid verification code")
+
         request_data.update(
             {
                 "status": "completed",
-                "code": code,
+                "code": normalized_code,
                 "device_id": device_id,
-                "completed_at": datetime.utcnow(),
+                "completed_at": datetime.now(timezone.utc),
             }
         )
 
@@ -464,17 +482,24 @@ async def report_scraper_success(
 
 # WebSocket endpoints for real-time communication
 @router.websocket("/ws/mobile-commands")
-async def mobile_commands_websocket(websocket):
+async def mobile_commands_websocket(websocket: WebSocket):
     """WebSocket endpoint for mobile device command communication.
 
-    SECURITY NOTE: Currently unauthenticated. RESIDUAL HARDENING (documented
-    follow-up, consistent with sms.py's websocket): require the device to send
-    its X-Device-Key as the first frame and verify it via _verify_device before
-    joining the mobile_manager broadcast group. Left as a tracked follow-up
-    because a full WS auth handshake exceeds this scoped HTTP-auth fix; flagged
-    rather than silently ignored.
+    The public device id is supplied as a query parameter and its issued secret
+    as ``X-Device-Key`` during the handshake. Invalid clients are closed before
+    acceptance so they cannot receive commands or inject results.
     """
-    await mobile_manager.connect(websocket)
+    device_id = websocket.query_params.get("device_id", "")
+    device_key = websocket.headers.get("x-device-key")
+    if not _verify_device(device_id, device_key):
+        log_security_event(
+            "infra_mobile_websocket_auth_failure",
+            details={"device_id": device_id or "missing"},
+        )
+        await websocket.close(code=1008, reason="Device authentication failed")
+        return
+
+    await mobile_manager.connect(websocket, device_id)
     try:
         while True:
             data = await websocket.receive_text()
@@ -482,12 +507,15 @@ async def mobile_commands_websocket(websocket):
 
             # Handle responses from mobile device
             if message.get("type") == "command_result":
-                logger.info(f"Mobile command result received: {message}")
+                # Do not log arbitrary device-controlled result payloads.
+                logger.info("Mobile command result received from %s", device_id)
                 # TODO: Store command result for retrieval
 
+    except WebSocketDisconnect:
+        mobile_manager.disconnect(websocket, device_id)
     except Exception as e:
         logger.error(f"Mobile WebSocket error: {e}")
-        mobile_manager.disconnect(websocket)
+        mobile_manager.disconnect(websocket, device_id)
 
 
 # Utility functions for scrapers
