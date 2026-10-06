@@ -240,14 +240,23 @@ async def receive_otp(
             raise HTTPException(status_code=410, detail="Request has expired")
 
         # 3c) Verify the submitting device is the one assigned to this request.
-        #     A request may be assigned to a device at creation time; if it was
-        #     never assigned (legacy/unassigned), we bind it to the first
-        #     authenticated device that answers and record the assignment so a
-        #     different device cannot also complete it.
+        #     Never let a device claim an unassigned request merely by knowing its
+        #     id. Assignment is an authorization decision owned by the server-side
+        #     orchestration lifecycle; polling already withholds unassigned work.
         assigned_device = pending_request.get("assigned_device_id")
-        if assigned_device is None:
-            pending_request["assigned_device_id"] = request.device_id
-        elif not hmac.compare_digest(str(assigned_device), str(request.device_id)):
+        if not isinstance(assigned_device, str) or not assigned_device:
+            log_security_event(
+                "sms_otp_request_unassigned",
+                details={
+                    "device_id": request.device_id,
+                    "request_id": request_id,
+                },
+            )
+            raise HTTPException(
+                status_code=409,
+                detail="Request has no authorized device assignment",
+            )
+        if not hmac.compare_digest(assigned_device, request.device_id):
             log_security_event(
                 "sms_otp_device_mismatch",
                 details={
@@ -286,8 +295,9 @@ async def receive_otp(
             details={"device_id": request.device_id, "request_id": request_id},
         )
 
-        # Notify any waiting WebSocket connections.
-        await sms_manager.broadcast(
+        # Notify only the assigned device. Other authenticated devices must not
+        # learn that this request exists or whether it completed.
+        await sms_manager.send_to_device(
             json.dumps(
                 {
                     "type": "otp_received",
@@ -295,7 +305,8 @@ async def receive_otp(
                     "device_id": request.device_id,
                     # NOTE: the OTP itself is intentionally NOT broadcast.
                 }
-            )
+            ),
+            request.device_id,
         )
 
         # Update device last seen.
@@ -416,17 +427,9 @@ async def request_otp(
             "timeout": timeout_timestamp,
         }
 
-        # Notify connected mobile devices
-        await sms_manager.broadcast(
-            json.dumps(
-                {
-                    "type": "otp_request",
-                    "request_id": request_id,
-                    "service": service,
-                    "timeout": timeout_timestamp,
-                }
-            )
-        )
+        # Do not broadcast an unassigned request. Assignment is intentionally a
+        # separate, unfinished authorization lifecycle; exposing this id to every
+        # connected device would let a device race to claim work it does not own.
 
         logger.info(f"OTP requested for service {service}, request_id: {request_id}")
 
@@ -547,19 +550,25 @@ async def get_devices(
 
 
 @router.websocket("/ws/sms-interceptor")
-async def websocket_endpoint(websocket: WebSocket):
+async def sms_interceptor_websocket(websocket: WebSocket):
     """WebSocket endpoint for real-time communication with mobile apps.
 
-    SECURITY NOTE: This socket broadcasts OTP *request* notifications (service +
-    request_id + timeout) but never the OTP value itself (see /otp, which
-    intentionally omits the code from broadcasts). It is currently
-    unauthenticated. RESIDUAL HARDENING (left as a documented follow-up, since a
-    full WS auth handshake is a larger change than this scoped auth fix):
-    require the device to send its X-Device-Key as the first frame and call
-    _verify_device before joining the broadcast group, mirroring the device-key
-    model used by the HTTP callbacks. Tracked rather than silently ignored.
+    The native mobile client supplies its public ``device_id`` as a query
+    parameter and the issued secret in ``X-Device-Key`` during the WebSocket
+    handshake. The key never enters the URL. Invalid clients are closed before
+    they join the manager, so they cannot observe request identifiers or status.
     """
-    await sms_manager.connect(websocket)
+    device_id = websocket.query_params.get("device_id", "")
+    device_key = websocket.headers.get("x-device-key")
+    if not _verify_device(device_id, device_key):
+        log_security_event(
+            "sms_websocket_auth_failure",
+            details={"device_id": device_id or "missing"},
+        )
+        await websocket.close(code=1008, reason="Device authentication failed")
+        return
+
+    await sms_manager.connect(websocket, device_id)
     try:
         while True:
             # Keep the connection alive and handle incoming messages
@@ -570,14 +579,14 @@ async def websocket_endpoint(websocket: WebSocket):
             if message.get("type") == "ping":
                 await websocket.send_text(json.dumps({"type": "pong"}))
             elif message.get("type") == "device_status":
-                # Handle device status updates
-                logger.info(f"Device status update: {message}")
+                # Do not log arbitrary device-supplied payloads.
+                logger.info("Device status update from %s", device_id)
 
     except WebSocketDisconnect:
-        sms_manager.disconnect(websocket)
+        sms_manager.disconnect(websocket, device_id)
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
-        sms_manager.disconnect(websocket)
+        sms_manager.disconnect(websocket, device_id)
 
 
 @router.get("/health", openapi_extra={"x-pagination": "exempt"})
