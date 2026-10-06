@@ -279,3 +279,11 @@ Enrollment is still public, keys and requests are still process-local, and the
 server-side assignment lifecycle, durable verified device principals, owner/tenant
 bindings and instance policies/grants remain unprovisioned. The mounted-route
 inventory therefore continues to classify these paths as authorization gaps.
+
+The parallel infrastructure verification callback now has the same containment:
+unassigned requests are not broadcast and cannot be claimed on completion, expired
+or already-completed requests fail closed, and the mobile-command WebSocket proves
+the device id/key pair before acceptance. Verification timestamps are UTC-aware.
+Mobile commands still lack an owner-authorized target-device resource contract, so
+the operator command route remains a platform-policy design gap rather than being
+treated as production-complete authorization.
