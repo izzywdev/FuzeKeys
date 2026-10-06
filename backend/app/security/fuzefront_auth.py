@@ -15,6 +15,7 @@ class Identity:
     audience: Optional[str] = None
     actor: Optional[dict] = None
     token_kind: Optional[str] = None
+    tenant_id: Optional[str] = None
 
 
 @lru_cache(maxsize=1)
@@ -38,6 +39,7 @@ def _introspect(token: str) -> Identity:
         audience=verified.audience,
         actor=verified.actor,
         token_kind=verified.token_kind,
+        tenant_id=verified.tenant_id,
     )
 
 
