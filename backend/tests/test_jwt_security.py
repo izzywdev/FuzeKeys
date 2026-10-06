@@ -1,4 +1,5 @@
 """JWT library migration preserves verification and rejects forged claims."""
+import hashlib
 from datetime import timedelta
 from unittest.mock import AsyncMock, Mock
 
@@ -9,7 +10,8 @@ from fastapi.security import HTTPAuthorizationCredentials
 
 from app.routers import auth
 
-KEY = "jwt-regression-key-with-at-least-32-bytes"
+# Deterministic test-only material, generated at runtime rather than stored as a key.
+KEY = hashlib.sha256(b"fuzekeys-local-jwt-test").hexdigest()
 
 
 @pytest.mark.asyncio
