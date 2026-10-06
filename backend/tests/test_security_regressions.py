@@ -445,9 +445,12 @@ class TestOtpDeviceAuthAndBinding:
 
     @staticmethod
     def _future_ts():
-        from datetime import datetime, timedelta
+        from datetime import datetime, timedelta, timezone
 
-        return (datetime.utcnow() + timedelta(seconds=300)).timestamp()
+        # Epochs are absolute instants. A naive utcnow().timestamp() is treated
+        # as host-local time, which makes these requests already expired on a
+        # UTC+ runner and masked the production timezone regression.
+        return (datetime.now(timezone.utc) + timedelta(seconds=300)).timestamp()
 
     def test_unknown_device_rejected_401(self):
         """No X-Device-Key / device not registered -> 401 (device auth fails)."""
