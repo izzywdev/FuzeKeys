@@ -4,7 +4,7 @@ import logging
 import re
 import secrets
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
 from fastapi import (
@@ -231,7 +231,7 @@ async def receive_otp(
 
         # 3b) The request must not have expired.
         timeout_ts = pending_request.get("timeout", 0)
-        if timeout_ts and timeout_ts < datetime.utcnow().timestamp():
+        if timeout_ts and timeout_ts < datetime.now(timezone.utc).timestamp():
             pending_request["status"] = "timeout"
             log_security_event(
                 "sms_otp_request_expired",
@@ -351,7 +351,10 @@ async def get_otp_requests(
         for request_id, request_data in pending_otp_requests.items():
             if (
                 request_data.get("status") == "waiting"
-                and request_data.get("timeout", 0) > datetime.utcnow().timestamp()
+                and request_data.get("timeout", 0)
+                > datetime.now(timezone.utc).timestamp()
+                and isinstance(request_data.get("assigned_device_id"), str)
+                and hmac.compare_digest(request_data["assigned_device_id"], device_id)
             ):
                 device_requests.append(
                     {
@@ -391,7 +394,7 @@ async def request_otp(
     try:
         request_id = str(uuid.uuid4())
         timeout_timestamp = (
-            datetime.utcnow() + timedelta(seconds=timeout_seconds)
+            datetime.now(timezone.utc) + timedelta(seconds=timeout_seconds)
         ).timestamp()
 
         # Store the OTP request
@@ -409,7 +412,7 @@ async def request_otp(
         pending_otp_requests[request_id] = {
             "service": service,
             "status": "waiting",
-            "created_at": datetime.utcnow().timestamp(),
+            "created_at": datetime.now(timezone.utc).timestamp(),
             "timeout": timeout_timestamp,
         }
 

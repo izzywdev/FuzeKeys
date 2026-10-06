@@ -257,3 +257,20 @@ families and are not implicitly granted. No credential-delete endpoint exists.
 Existing workload callers must be upgraded to the dual-token contract, and real
 tenant mappings, exact grants, PostgreSQL transactions and authenticated service
 canaries remain deployment prerequisites.
+
+### SMS polling follow-up (2026-10-06)
+
+Device polling now returns only waiting, unexpired requests explicitly assigned
+by `assigned_device_id` to the authenticated device. Foreign, malformed and
+unassigned legacy requests are withheld without changing their assignment.
+Expiry comparisons and newly created request epochs use timezone-aware UTC;
+naive `utcnow().timestamp()` depended on the host timezone and could extend OTP
+validity. Regression coverage runs in UTC, Jerusalem and Los Angeles.
+
+This is a narrow containment change, not completion of SMS platform authorization.
+The existing request-creation route still creates unassigned requests, so those
+requests are withheld by polling until an explicit authorized assignment exists.
+Enrollment is still public, keys are still process-local, callback auto-assignment
+and WebSocket broadcasts still require migration, and durable owner/tenant
+bindings and instance policies/grants remain unprovisioned. The mounted-route
+inventory therefore continues to classify these paths as authorization gaps.
