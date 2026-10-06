@@ -36,6 +36,7 @@ ENVIRONMENT CONSTRAINT (documented, not ours to fix):
 import asyncio
 
 import pytest
+import pytest_asyncio
 from fastapi import HTTPException
 
 # Importing these specific modules is cv2-free (verified). Importing app.main is NOT.
@@ -170,7 +171,7 @@ class TestVerifyApiKeyFailsClosed:
 # Ownership chain: Account.identity_id -> Identity.id, Identity.user_id -> User.id.
 #
 # We exercise the REAL endpoint handlers (request_account_credentials /
-# store_account_credentials) against a real (in-memory SQLite) synchronous
+# store_account_credentials) against a real (in-memory SQLite) asynchronous
 # SQLAlchemy session, seeding two identities owned by different users, each with
 # its own account. We stub verify_api_key out by passing service_name directly
 # (the handlers take service_name as a plain arg), so this isolates the
@@ -179,6 +180,7 @@ class TestVerifyApiKeyFailsClosed:
 # Reversion this would catch: removing the `Account.identity_id == identity_id`
 # filter (i.e. looking up by account_id alone), which is the IDOR.
 # ===========================================================================
+@pytest.mark.asyncio
 class TestIdorOwnershipScoping:
     @pytest.fixture(autouse=True)
     def _grant_full_identity_scope(self):
@@ -193,36 +195,29 @@ class TestIdorOwnershipScoping:
         yield
         credentials_mod.SERVICE_IDENTITY_SCOPES = original
 
-    @pytest.fixture
-    def db_session(self):
-        """A synchronous in-memory SQLite session with the User/Identity/Account
+    @pytest_asyncio.fixture
+    async def db_session(self):
+        """An asynchronous in-memory SQLite session with the User/Identity/Account
         tables created. Uses the app's real ORM models so the scoping query the
         endpoint runs is exercised verbatim."""
-        from sqlalchemy import create_engine
-        from sqlalchemy.orm import sessionmaker
+        from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-        # Import the models AND database.Base. account/identity/user all bind to
-        # app.database.Base; importing the modules registers their tables on it.
         from app.database import Base
-        from app.models.account import Account  # noqa: F401  (registers table)
+        from app.models.account import Account
         from app.models.identity import Identity
         from app.models.user import User
 
-        engine = create_engine("sqlite:///:memory:")
-        # Create only the tables defined on app.database.Base (not the separate
-        # sms Base). create_all is safe/idempotent for the registered tables.
-        Base.metadata.create_all(engine)
-
-        Session = sessionmaker(bind=engine)
-        session = Session()
+        engine = create_async_engine("sqlite+aiosqlite://")
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
         try:
-            yield session, User, Identity, Account
+            async with AsyncSession(engine, expire_on_commit=False) as session:
+                yield session, User, Identity, Account
         finally:
-            session.close()
-            engine.dispose()
+            await engine.dispose()
 
     @staticmethod
-    def _seed_two_tenants(session, User, Identity, Account):
+    async def _seed_two_tenants(session, User, Identity, Account):
         """Create two users, each with one identity owning one account."""
         user_a = User(
             email="<EMAIL_a>",
@@ -237,12 +232,12 @@ class TestIdorOwnershipScoping:
             master_key_hash="m",
         )
         session.add_all([user_a, user_b])
-        session.flush()
+        await session.flush()
 
         identity_a = Identity(user_id=user_a.id, name="Identity A")
         identity_b = Identity(user_id=user_b.id, name="Identity B")
         session.add_all([identity_a, identity_b])
-        session.flush()
+        await session.flush()
 
         account_a = Account(
             identity_id=identity_a.id,
@@ -257,14 +252,14 @@ class TestIdorOwnershipScoping:
             encrypted_credentials=None,
         )
         session.add_all([account_a, account_b])
-        session.commit()
+        await session.commit()
         return identity_a, identity_b, account_a, account_b
 
-    def test_retrieve_with_wrong_owning_identity_yields_404(self, db_session):
+    async def test_retrieve_with_wrong_owning_identity_yields_404(self, db_session):
         """IDOR core: account_b belongs to identity_b. A request for account_b
         that names identity_a (a different owner) must 404 — no cross-tenant data."""
         session, User, Identity, Account = db_session
-        identity_a, identity_b, account_a, account_b = self._seed_two_tenants(
+        identity_a, identity_b, account_a, account_b = await self._seed_two_tenants(
             session, User, Identity, Account
         )
 
@@ -274,19 +269,17 @@ class TestIdorOwnershipScoping:
             credential_types=[],
         )
         with pytest.raises(HTTPException) as exc:
-            _run(
-                credentials_mod.request_account_credentials(
-                    req, "scraper-service", session
-                )
+            await credentials_mod.request_account_credentials(
+                req, "scraper-service", session
             )
         assert exc.value.status_code == 404
 
-    def test_retrieve_with_correct_owner_succeeds(self, db_session):
+    async def test_retrieve_with_correct_owner_succeeds(self, db_session):
         """The legitimate path: correct (identity, account) pair returns the
         account (200), proving the 404 above is the scoping check, not a blanket deny.
         """
         session, User, Identity, Account = db_session
-        identity_a, identity_b, account_a, account_b = self._seed_two_tenants(
+        identity_a, identity_b, account_a, account_b = await self._seed_two_tenants(
             session, User, Identity, Account
         )
 
@@ -295,19 +288,19 @@ class TestIdorOwnershipScoping:
             account_id=account_b.id,
             credential_types=[],
         )
-        resp = _run(
-            credentials_mod.request_account_credentials(req, "scraper-service", session)
+        resp = await credentials_mod.request_account_credentials(
+            req, "scraper-service", session
         )
         assert resp.account_id == account_b.id
         assert resp.site_name == "SiteB"
 
-    def test_store_with_wrong_owning_identity_yields_404_and_no_mutation(
+    async def test_store_with_wrong_owning_identity_yields_404_and_no_mutation(
         self, db_session, monkeypatch
     ):
         """Store path enforces the same scoping AND does not mutate the victim's
         account when the wrong owner is named."""
         session, User, Identity, Account = db_session
-        identity_a, identity_b, account_a, account_b = self._seed_two_tenants(
+        identity_a, identity_b, account_a, account_b = await self._seed_two_tenants(
             session, User, Identity, Account
         )
         # Provide a working cipher so a (hypothetically-passing) store wouldn't 503
@@ -326,24 +319,22 @@ class TestIdorOwnershipScoping:
             metadata=None,
         )
         with pytest.raises(HTTPException) as exc:
-            _run(
-                credentials_mod.store_account_credentials(
-                    req, "scraper-service", session
-                )
+            await credentials_mod.store_account_credentials(
+                req, "scraper-service", session
             )
         assert exc.value.status_code == 404
 
-        session.expire_all()
-        refreshed = session.get(Account, account_b.id)
+        await session.refresh(account_b)
+        refreshed = account_b
         assert (
             refreshed.encrypted_credentials == before
         ), "victim account must not be mutated"
         assert refreshed.encrypted_credentials is None
 
-    def test_store_with_correct_owner_succeeds(self, db_session, monkeypatch):
+    async def test_store_with_correct_owner_succeeds(self, db_session, monkeypatch):
         """Legitimate store with the correct owner persists encrypted credentials."""
         session, User, Identity, Account = db_session
-        identity_a, identity_b, account_a, account_b = self._seed_two_tenants(
+        identity_a, identity_b, account_a, account_b = await self._seed_two_tenants(
             session, User, Identity, Account
         )
         from cryptography.fernet import Fernet
@@ -357,12 +348,12 @@ class TestIdorOwnershipScoping:
             credentials={"password": "legit"},
             metadata=None,
         )
-        result = _run(
-            credentials_mod.store_account_credentials(req, "scraper-service", session)
+        result = await credentials_mod.store_account_credentials(
+            req, "scraper-service", session
         )
         assert result["success"] is True
-        session.expire_all()
-        refreshed = session.get(Account, account_b.id)
+        await session.refresh(account_b)
+        refreshed = account_b
         assert refreshed.encrypted_credentials is not None
 
 

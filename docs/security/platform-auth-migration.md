@@ -109,3 +109,23 @@ for every Identity grant, in addition to read/update/delete and the unassigned
 principal denial. A stale policy that omits the new signup action stops the run
 without marking that grant verified. No Google authorization claim follows from
 unit testing this prepared application path.
+
+## Legacy credential AsyncSession repair
+
+The legacy `/api/credentials` handlers now use the production `AsyncSession`
+contract: awaited SQL selects/scalars/counts, awaited commits and rollback on
+credential write/access transaction failure. Identity/account predicates and
+static service-key identity scopes remain required before SQL or cryptography.
+The GET credential alias uses the same checked read handler. Identity account
+lists retain sorted bounded pagination and their existing response envelope.
+Google OAuth connector records and VaultAsset inventory are separate storage
+families and are not implicitly granted by this repair.
+
+This repair restores functioning database operations; it does not establish
+platform authorization for static service API keys. Those callers still need
+verified workload principals, tenant mapping and explicit resource/action grants
+before that family's authorization migration can be declared complete. No
+credential-delete endpoint exists in this legacy router; this change introduces
+no delete route or new authority. Production PostgreSQL and actual authenticated
+service requests still need rollout verification.
+

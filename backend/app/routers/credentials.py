@@ -14,7 +14,8 @@ from typing import Any, Dict, List, Optional
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.utils.logging import log_security_event
 from app.utils.pagination import Page, PageInfo
@@ -619,7 +620,7 @@ and the target website's requirements. Perfect for automated signup processes.
 async def request_identity_credentials(
     request: CredentialRequest,
     service_name: str = Depends(verify_api_key),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Request credentials for an identity to sign up for a specific site"""
 
@@ -630,7 +631,9 @@ async def request_identity_credentials(
         require_identity_scope(service_name, request.identity_id)
 
         # Get identity
-        identity = db.query(Identity).filter(Identity.id == request.identity_id).first()
+        identity = (
+            await db.execute(select(Identity).where(Identity.id == request.identity_id))
+        ).scalar_one_or_none()
         if not identity:
             raise HTTPException(status_code=404, detail="Identity not found")
 
@@ -702,7 +705,7 @@ stored after successful signup.
 async def request_account_credentials(
     request: AccountCredentialRequest,
     service_name: str = Depends(verify_api_key),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Request stored credentials for an existing account"""
 
@@ -726,14 +729,15 @@ async def request_account_credentials(
         require_identity_scope(service_name, request.identity_id)
 
         account = (
-            db.query(Account)
-            .join(Identity, Account.identity_id == Identity.id)
-            .filter(
-                (Account.id == request.account_id)
-                & (Account.identity_id == request.identity_id)
+            await db.execute(
+                select(Account)
+                .join(Identity, Account.identity_id == Identity.id)
+                .where(
+                    (Account.id == request.account_id)
+                    & (Account.identity_id == request.identity_id)
+                )
             )
-            .first()
-        )
+        ).scalar_one_or_none()
         if not account:
             log_security_event(
                 "credential_access_denied",
@@ -788,7 +792,7 @@ async def request_account_credentials(
 
         # Update last accessed
         account.last_accessed = datetime.utcnow()
-        db.commit()
+        await db.commit()
 
         return AccountCredentialResponse(
             account_id=request.account_id,
@@ -800,6 +804,7 @@ async def request_account_credentials(
     except HTTPException:
         raise
     except Exception as e:
+        await db.rollback()
         logger.error(f"Error requesting account credentials: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve credentials")
 
@@ -830,7 +835,7 @@ creation process. All credentials are encrypted before storage.
 async def store_account_credentials(
     request: CredentialUpdate,
     service_name: str = Depends(verify_api_key),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Store/update credentials for an account after successful signup"""
 
@@ -844,14 +849,15 @@ async def store_account_credentials(
         # identity. 404 (not 403) here avoids leaking the existence of accounts
         # owned by a different identity within the key's allowed scope.
         account = (
-            db.query(Account)
-            .join(Identity, Account.identity_id == Identity.id)
-            .filter(
-                (Account.id == request.account_id)
-                & (Account.identity_id == request.identity_id)
+            await db.execute(
+                select(Account)
+                .join(Identity, Account.identity_id == Identity.id)
+                .where(
+                    (Account.id == request.account_id)
+                    & (Account.identity_id == request.identity_id)
+                )
             )
-            .first()
-        )
+        ).scalar_one_or_none()
         if not account:
             log_security_event(
                 "credential_store_denied",
@@ -894,7 +900,7 @@ async def store_account_credentials(
         account.is_active = True
         account.last_accessed = datetime.utcnow()
 
-        db.commit()
+        await db.commit()
 
         return {
             "success": True,
@@ -905,6 +911,7 @@ async def store_account_credentials(
     except HTTPException:
         raise
     except Exception as e:
+        await db.rollback()
         logger.error(f"Error storing credentials: {e}")
         raise HTTPException(status_code=500, detail="Failed to store credentials")
 
@@ -929,7 +936,7 @@ async def get_account_credentials(
         None, description="Comma-separated list of credential types to retrieve"
     ),
     service_name: str = Depends(verify_api_key),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get stored credentials for a specific account.
 
@@ -964,7 +971,7 @@ async def get_identity_accounts(
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     service_name: str = Depends(verify_api_key),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get all accounts for an identity"""
 
@@ -977,14 +984,31 @@ async def get_identity_accounts(
         require_identity_scope(service_name, identity_id)
 
         # Get identity
-        identity = db.query(Identity).filter(Identity.id == identity_id).first()
+        identity = (
+            await db.execute(select(Identity).where(Identity.id == identity_id))
+        ).scalar_one_or_none()
         if not identity:
             raise HTTPException(status_code=404, detail="Identity not found")
 
         # Get accounts for this identity
-        base_query = db.query(Account).filter(Account.identity_id == identity_id)
-        total = base_query.count()
-        accounts = base_query.order_by(Account.id).offset(offset).limit(limit).all()
+        total = (
+            await db.execute(
+                select(func.count(Account.id)).where(Account.identity_id == identity_id)
+            )
+        ).scalar_one()
+        accounts = (
+            (
+                await db.execute(
+                    select(Account)
+                    .where(Account.identity_id == identity_id)
+                    .order_by(Account.id)
+                    .offset(offset)
+                    .limit(limit)
+                )
+            )
+            .scalars()
+            .all()
+        )
 
         account_list = []
         for account in accounts:
