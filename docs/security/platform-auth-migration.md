@@ -1,6 +1,6 @@
 # FuzeKeys platform authorization migration
 
-Status: partial implementation for `gate-platform-auth` Z1. The fail-closed decision client and explicit dual-session linking code are implemented. Linking becomes available only after the database migration, trusted Security tenant proof, and real tenant configuration are deployed. Resource policy, owner-grant backfill, and enforced route decisions remain unfinished; this document grants no access and does not certify production rollout.
+Status: partial implementation for `gate-platform-auth` Z1. The fail-closed decision client and explicit dual-session linking code are implemented. Linking becomes available only after the database migration, trusted Security tenant proof, and real tenant configuration are deployed. Instance owner policy and dry-run grant inventory are implemented. Identity update/delete and account-stage update now enforce instance decisions after SQL ownership selection. Other route families, grant application and ongoing synchronization remain unfinished; this document grants no access and does not certify production rollout.
 
 ## Current boundary
 
@@ -57,3 +57,23 @@ The additive `b2026link01` migration creates `platform_identities`: one binding 
 Set Helm `config.authzTenant` to the real canonical organization UUID only after deploying Security's tenant-proof support and provisioning membership. Empty defaults fail closed for this optional linking endpoint. Existing login, connector custody, and health protocols remain usable before the linking dependency is deployed; this is not a deployment prerequisite for them.
 
 Like direct credential routes, this interactive session boundary uses `include_in_schema=False` so the generated OpenAPI/MCP gateway never turns session submission into an agent tool. The route and response contract are documented here, and source authorization gates still inspect it. Linking neither creates grants nor enables route-policy enforcement: Z1 remains unfinished until the grant backfill and route-family rollout above are complete.
+
+
+## First existing-instance mutation guards
+
+`PUT /api/v1/identities/{id}`, `DELETE /api/v1/identities/{id}` and
+`PATCH /api/v1/accounts/{account_id}/stages/{stage_id}` require the persisted
+`PlatformIdentity` binding and an explicit Security allow decision before changing
+any fields or committing. Local SQL ownership predicates remain in place.
+The instance query matches the inventory exactly: `fuzekeys_Identity` with
+`identity:<id>` or `fuzekeys_Account` with `account:<id>`. Stage authority uses
+the persisted parent account ID. Missing/unverified binding or denied permission
+returns 403; unavailable configuration, tenant mismatch or Security outage returns
+503. No rollout flag disables these guards.
+
+**Deployment prerequisite:** apply and verify the instance schema, immutable
+user mappings and scoped owner grants before deploying this head. Existing owners
+without that rollout will be denied on these three operations. This stacked work
+is not independently production ready. Creation and its transactional grant
+lifecycle, reads and all other mutating families still need implementation; the
+platform authorization gate is not evidence of complete enforcement.

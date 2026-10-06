@@ -11,6 +11,7 @@ from app.database import get_db
 from app.models.identity import Identity
 from app.models.user import User
 from app.routers.auth import get_current_user
+from app.security.owner_authz import require_owner_permission
 from app.utils.encryption import decrypt_field, decrypt_json_field, encrypt_field
 from app.utils.logging import get_logger
 from app.utils.pagination import Page, PageInfo
@@ -303,6 +304,10 @@ async def update_identity(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Identity not found"
             )
 
+        await require_owner_permission(
+            db, current_user.id, "Identity", identity.id, "update"
+        )
+
         # Update fields
         if identity_data.name is not None:
             identity.name = identity_data.name
@@ -387,6 +392,10 @@ async def delete_identity(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Identity not found"
             )
+
+        await require_owner_permission(
+            db, current_user.id, "Identity", identity.id, "delete"
+        )
 
         await db.delete(identity)
         await db.commit()

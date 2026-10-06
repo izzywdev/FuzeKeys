@@ -21,6 +21,8 @@ from app.models.account import Account, AccountStage, StageStatus
 from app.models.identity import Identity
 from app.models.user import User
 
+pytestmark = pytest.mark.usefixtures("verified_owner_permissions")
+
 BASE = "/api/v1/accounts"
 
 # create_account always seeds these four; a handful of sites get extras.

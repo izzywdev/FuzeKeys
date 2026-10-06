@@ -20,6 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.identity import Identity
 from app.models.user import User
 
+pytestmark = pytest.mark.usefixtures("verified_owner_permissions")
+
 BASE = "/api/v1/identities"
 
 NEW_IDENTITY = {

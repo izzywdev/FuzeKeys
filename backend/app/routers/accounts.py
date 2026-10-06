@@ -13,6 +13,7 @@ from app.models.account import Account, AccountStage, StageStatus, StageType
 from app.models.identity import Identity
 from app.models.user import User
 from app.routers.auth import get_current_user
+from app.security.owner_authz import require_owner_permission
 from app.utils.encryption import decrypt_field, encrypt_field
 from app.utils.logging import get_logger
 from app.utils.pagination import Page, PageInfo
@@ -347,6 +348,10 @@ async def update_account_stage(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Stage not found or not owned by user",
             )
+
+        await require_owner_permission(
+            db, current_user.id, "Account", stage.account_id, "update"
+        )
 
         # Update stage
         stage.status = StageStatus(stage_update.status)
