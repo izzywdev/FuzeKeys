@@ -19,17 +19,9 @@ passlib[bcrypt]==1.7.4
 # (5.x today) makes every hash_password() call raise. Pin until passlib is
 # replaced.
 bcrypt==4.0.1
-# 3.5.0 clears CVE-2024-33663 (CRITICAL, JWT algorithm confusion),
-# CVE-2024-33664 and PYSEC-2025-185, and -- unlike 3.4.0 -- does it without
-# dragging in a vulnerable pyasn1. 3.4.0 capped pyasn1<0.5.0, which resolves to
-# 0.4.8 and its own 6 advisories; 3.5.0 relaxed that to pyasn1>=0.5.0, so the
-# resolver takes a clean 0.6.4. Measured with pip-audit:
-#     3.3.0 -> 5 jose advisories, pyasn1 0.6.4 clean   (6 total)
-#     3.4.0 -> 0 jose advisories, pyasn1 0.4.8 with 6  (7 total)
-#     3.5.0 -> 0 jose advisories, pyasn1 0.6.4 clean   (1 total)
-# The one remaining is ecdsa PYSEC-2026-1325, a transitive dep of python-jose at
-# every version, with no fix released. Do not pin below 3.5.0.
-python-jose[cryptography]==3.5.0
+# Replace unpatched python-jose (CVE-2026-85394) with maintained PyJWT.
+# Keep algorithm allowlists explicit in every verifier.
+PyJWT[crypto]==2.15.1
 # Secret-broker: attenuable capability handles (macaroons) for A2A delegation.
 pymacaroons==0.13.0
 # Published Python verifier shared with FuzeFront service-auth SDK. The release

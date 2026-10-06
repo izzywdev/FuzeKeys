@@ -483,7 +483,7 @@ def test_rest_and_mcp_paths_agree_on_success(service):
 # 8. mint_token (RFC 8693)
 # ======================================================================
 def test_mint_token_is_bound_to_authenticated_identity(service):
-    from jose import jwt
+    import jwt
 
     tok = service.mint_token(ctx=_ctx(A), audience="FuzeBI", scope="read:reports")
     claims = jwt.decode(
@@ -497,7 +497,7 @@ def test_mint_token_is_bound_to_authenticated_identity(service):
 
 def test_mint_token_cannot_impersonate_via_assertion(service):
     """Authenticated A asserting it is EVIL still mints a token bound to A, never EVIL."""
-    from jose import jwt
+    import jwt
 
     tok = service.mint_token(
         ctx=_ctx(A, asserted=EVIL.principal), audience="X", scope="s"
