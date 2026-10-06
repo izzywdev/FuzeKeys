@@ -41,7 +41,7 @@ LLM.
 - **Envelope encryption / KMS wrap-unwrap** (`cryptography`) — AES-256-GCM data key
   wrapped RSA-OAEP to the recipient's published JWK, so a secret can transit an
   untrusted relay decryptable only by the recipient. `envelope.py`.
-- **Dynamic/derived secrets** + **RFC 8693 token exchange** (`python-jose`) — the
+- **Dynamic/derived secrets** + **RFC 8693 token exchange** (`PyJWT`) — the
   root stays in the vault; redemption mints a scoped, short-TTL derived cred / a
   downstream exchanged token. `derived.py`.
 

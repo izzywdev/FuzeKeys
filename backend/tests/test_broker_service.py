@@ -305,7 +305,7 @@ def test_operation_grant_returns_scoped_token_not_secret(service):
 
 # 10 (RFC 8693) -----------------------------------------------------------
 def test_mint_token_exchange_binds_authenticated_identity(service):
-    from jose import jwt
+    import jwt
 
     token = service.mint_token(
         ctx=_ctx(AGENT_A), audience="FuzeBI", scope="read:reports"
