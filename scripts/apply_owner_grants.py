@@ -13,12 +13,13 @@ import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from owner_grant_inventory import read_inventory
+from owner_grant_inventory import read_connector_inventory, read_inventory
 
 RESOURCE_PREFIXES = {
     "fuzekeys_Identity": "identity",
     "fuzekeys_Account": "account",
     "fuzekeys_VaultAsset": "api-credential",
+    "fuzekeys_Connector": "connector",
 }
 
 
@@ -43,13 +44,19 @@ def validate_inventory(inventory, checksum, tenant):
         raise ProvisioningRejected("Malformed grant inventory")
     seen = set()
     for grant in grants:
-        if not isinstance(grant, dict) or set(grant) != {
+        expected_fields = {
             "subject",
             "tenant",
             "resource_type",
             "resource_key",
             "role",
-        }:
+        }
+        if (
+            isinstance(grant, dict)
+            and grant.get("resource_type") == "fuzekeys_Connector"
+        ):
+            expected_fields.add("connector_provider")
+        if not isinstance(grant, dict) or set(grant) != expected_fields:
             raise ProvisioningRejected("Malformed grant tuple")
         prefix = RESOURCE_PREFIXES.get(grant["resource_type"])
         subject = grant["subject"]
@@ -57,7 +64,9 @@ def validate_inventory(inventory, checksum, tenant):
             not prefix
             or not isinstance(grant["resource_key"], str)
             or not re.fullmatch(
-                re.escape(prefix) + r":[1-9][0-9]*", grant["resource_key"]
+                re.escape(prefix)
+                + (r":[0-9a-f]{64}" if prefix == "connector" else r":[1-9][0-9]*"),
+                grant["resource_key"],
             )
             or grant["role"] != "owner"
             or grant["tenant"] != tenant
@@ -70,6 +79,28 @@ def validate_inventory(inventory, checksum, tenant):
         if key in seen:
             raise ProvisioningRejected("Duplicate resource tuple")
         seen.add(key)
+        if prefix == "connector":
+            provider = grant["connector_provider"]
+            if (
+                not isinstance(provider, str)
+                or len(provider) > 80
+                or not re.fullmatch(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*", provider)
+            ):
+                raise ProvisioningRejected("Connector provider is invalid")
+            expected_key = (
+                "connector:"
+                + hashlib.sha256(
+                    json.dumps(
+                        [tenant, subject, provider],
+                        separators=(",", ":"),
+                        ensure_ascii=False,
+                    ).encode()
+                ).hexdigest()
+            )
+            if grant["resource_key"] != expected_key:
+                raise ProvisioningRejected(
+                    "Connector instance key differs from verified owner tuple"
+                )
     payload = {"grants": grants, "rejected": []}
     computed = hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
@@ -109,12 +140,15 @@ def security_origin(raw):
 
 
 def tuple_payload(grant):
-    return {
+    payload = {
         "subject": grant["subject"],
         "tenant": grant["tenant"],
         "role": "owner",
         "resource": {"type": grant["resource_type"], "key": grant["resource_key"]},
     }
+    if grant["resource_type"] == "fuzekeys_Connector":
+        payload["connectorProvider"] = grant["connector_provider"]
+    return payload
 
 
 async def require_membership(client, grant):
@@ -139,9 +173,19 @@ async def require_membership(client, grant):
 async def verify_decisions(client, grant):
     payload = tuple_payload(grant)
     payload.pop("role")
+    payload.pop("connectorProvider", None)
     actions = ("read", "update", "delete")
     if grant["resource_type"] == "fuzekeys_Identity":
         actions += ("use",)
+    elif grant["resource_type"] == "fuzekeys_Connector":
+        actions = (
+            "read",
+            "create",
+            "configure",
+            "disconnect",
+            "reveal",
+            "write_credential",
+        )
     for action in actions:
         response = await client.post(
             "/api/v1/security/authz/check", json={**payload, "action": action}
@@ -155,7 +199,9 @@ async def verify_decisions(client, grant):
         json={
             **payload,
             "subject": "fuzekeys-owner-canary-unassigned",
-            "action": "update",
+            "action": "configure"
+            if grant["resource_type"] == "fuzekeys_Connector"
+            else "update",
         },
     )
     response.raise_for_status()
@@ -208,7 +254,11 @@ async def run(args):
         )
 
     async def verify_snapshot():
-        current = await read_inventory(url)
+        current = await (
+            read_connector_inventory(url, args.tenant)
+            if args.connectors
+            else read_inventory(url)
+        )
         if current != inventory:
             raise ProvisioningRejected("SQL ownership changed; review a new inventory")
 
@@ -259,6 +309,7 @@ def main():
     ):
         parser.add_argument("--" + argument, required=True)
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--connectors", action="store_true")
     args = parser.parse_args()
     try:
         asyncio.run(run(args))

@@ -107,9 +107,91 @@ async def read_inventory(url):
         await engine.dispose()
 
 
+def build_connector_inventory(rows):
+    """Authoritative secret-free staged custody rows; unbound legacy is rejected."""
+    grants, rejected, seen = [], [], set()
+    for row in rows:
+        tenant, subject, provider = (
+            row["tenant_id"],
+            row["owner_subject"],
+            row["provider"],
+        )
+        if not all(
+            isinstance(v, str) and v and v.strip() == v
+            for v in (tenant, subject, provider)
+        ):
+            rejected.append(
+                {
+                    "resource_type": "Connector",
+                    "resource_key": "unbound-row:" + str(row["id"]),
+                    "reason": "legacy_tenant_quarantine",
+                }
+            )
+            continue
+        framed = json.dumps(
+            [tenant, subject, provider], separators=(",", ":"), ensure_ascii=False
+        )
+        key = "connector:" + hashlib.sha256(framed.encode()).hexdigest()
+        if key != row["resource_key"] or row["desired_state"] != "present":
+            raise ValueError("Connector owner intent does not match custody row")
+        if (tenant, key) in seen:
+            raise ValueError("Duplicate connector owner intent")
+        seen.add((tenant, key))
+        grants.append(
+            {
+                "subject": subject,
+                "tenant": tenant,
+                "resource_type": "fuzekeys_Connector",
+                "connector_provider": provider,
+                "resource_key": key,
+                "role": "owner",
+            }
+        )
+    grants.sort(key=lambda grant: (grant["tenant"], grant["resource_key"]))
+    rejected.sort(key=lambda row: row["resource_key"])
+    payload = {"grants": grants, "rejected": rejected}
+    return {
+        "mode": "dry-run",
+        "ready": not rejected,
+        **payload,
+        "checksum_sha256": hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest(),
+        "resource_count": len(grants) + len(rejected),
+        "verified_resource_count": len(grants),
+        "rejected_count": len(rejected),
+        "requires_current_membership_verification": True,
+    }
+
+
+async def read_connector_inventory(url, tenant):
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    # NULL tenant rows are excluded deliberately, never assigned to this tenant.
+    # Orphan/stale intents cannot approve a resource. Deleted-row revoke intents
+    # remain for separate reviewed operator reconciliation, not owner granting.
+    query = """SELECT c.id, c.tenant_id, c.owner_subject, c.provider,
+      i.resource_key, i.desired_state FROM connector_credentials c
+      LEFT JOIN connector_grant_intents i ON i.tenant_id=c.tenant_id
+       AND i.owner_subject=c.owner_subject AND i.provider=c.provider
+      WHERE c.tenant_id = :tenant ORDER BY c.tenant_id, c.id"""
+    engine = create_async_engine(url, echo=False)
+    try:
+        async with engine.connect() as connection:
+            async with connection.begin():
+                await connection.execute(text("SET TRANSACTION READ ONLY"))
+                result = await connection.execute(text(query), {"tenant": tenant})
+                return build_connector_inventory(result.mappings())
+    finally:
+        await engine.dispose()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--connectors", action="store_true")
+    parser.add_argument("--tenant")
     args = parser.parse_args()
     url = os.environ.get("DATABASE_URL_ASYNC") or os.environ.get("DATABASE_URL")
     if not url:
@@ -118,7 +200,13 @@ def main():
         url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
     if not url.startswith("postgresql+asyncpg://"):
         parser.error("Only PostgreSQL asyncpg URLs are supported")
-    inventory = asyncio.run(read_inventory(url))
+    if args.connectors and (not args.tenant or args.tenant.strip() != args.tenant):
+        parser.error("--tenant is required for connector inventory")
+    inventory = asyncio.run(
+        read_connector_inventory(url, args.tenant)
+        if args.connectors
+        else read_inventory(url)
+    )
     # Inventory contains subject identifiers; create private file and refuse overwrite.
     descriptor = os.open(Path(args.output), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(descriptor, "w") as target:

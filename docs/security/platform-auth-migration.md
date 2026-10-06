@@ -110,6 +110,57 @@ principal denial. A stale policy that omits the new signup action stops the run
 without marking that grant verified. No Google authorization claim follows from
 unit testing this prepared application path.
 
+## Tenant-isolated delegated connector custody
+
+Connector custody is a separate `fuzekeys_Connector` resource. The instance key
+is `connector:` plus lowercase SHA256 of UTF-8 compact JSON
+`[verified_tenant, verified_subject, canonical_provider]` (non-ASCII preserved).
+The same tuple is persisted in SQL, recomputed by read-only inventory and checked
+by the operator client. Instance owner permissions are read, create, configure,
+disconnect, reveal and write_credential; no tenant role receives these actions.
+The SDK verified tenant is mandatory. No local User ID, email, body tenant or
+VaultAsset policy can establish connector authority.
+
+Migration `c2026conn01` adds nullable tenant IDs, replaces owner/provider
+uniqueness with tenant/owner/provider uniqueness and creates a non-secret grant
+intent outbox. Existing NULL tenant rows and their vault paths are left untouched
+and cannot be queried by tenant-bound handlers. Reconnect with verified tenant
+proof is required; no guessed tenant backfill runs. Downgrade refuses tenant-bound
+custody rather than discarding isolation. Old pods must be retired before changing
+the owner/provider uniqueness contract; mixed-version writes are not safe.
+
+First credential PUT with a trusted delegation creates only scoped owned
+metadata and an owner intent in one SQL transaction, then returns HTTP 202
+`{status:"authorization_pending",provider,resource_key,retry_after_authorization:true}`.
+It stores no submitted credential, email, scopes or configuration and does not
+call the vault. This is registration, not an authorization allow or a connected
+integration. After reviewed operator provisioning, an explicit repeated PUT
+requires create and write_credential instance decisions before vault custody.
+Existing connected writes require write_credential. Read/configure/disconnect/
+lease require their exact instance decisions before response or vault work.
+Pending credential leases fail 409; missing/denied permissions fail 403 and
+unavailable Security fails 503. The runtime only checks permissions using its
+projected workload identity; it cannot call grant administration.
+
+Vault paths, Google advisory locks, shared-account reads and deletion reference
+counts include verified tenant and owner. Legacy unbound credentials are never
+borrowed. A disconnect transaction records desired_state=absent in the outbox;
+this is a reconciliation request, not evidence of provider grant revocation.
+Deleting the custody row prevents reads even while an old policy grant remains.
+Reconnection records desired_state=present for the same deterministic tuple.
+
+Use `owner_grant_inventory.py --connectors --tenant <verified-tenant> --output <private-snapshot>` and
+`apply_owner_grants.py --connectors` with the existing reviewed checksum, actual
+tenant, fresh SQL connection and operator token requirements. NULL legacy rows
+are excluded from tenant provisioning, never inferred. Intent/custody tuple
+disagreement aborts; orphan/deleted intents cannot grant. The provisioner
+recomputes provider hashes, sends connectorProvider metadata to Security's
+dedicated owner-grant boundary, checks fresh canonical membership and verifies all
+six owner actions plus foreign-principal denial. Revocation intents require
+separate reviewed operator reconciliation; the existing provider grant IDs are
+not safe automatic revoke handles. Production registration, live mappings,
+policy ingestion and positive/cross-tenant canaries remain required before rollout.
+
 ## Existing owned read guards
 
 Identity detail and identity list require exact `fuzekeys_Identity:read` instance

@@ -2,6 +2,7 @@
 
 import json
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
@@ -10,8 +11,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.broker.vault import InMemoryVault
-from app.models.connector import ConnectorCredential
+from app.models.connector import ConnectorCredential, ConnectorGrantIntent
 from app.routers import connectors
+from app.security import connector_authz
 
 
 @pytest_asyncio.fixture
@@ -19,10 +21,23 @@ async def google_custody(monkeypatch):
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
         await conn.run_sync(ConnectorCredential.__table__.create)
+        await conn.run_sync(ConnectorGrantIntent.__table__.create)
+    monkeypatch.setattr(
+        connector_authz, "check_permission", AsyncMock(return_value=True)
+    )
+    original_update = connectors.update_credential
+
+    async def provisioned_update(*args, **kwargs):
+        result = await original_update(*args, **kwargs)
+        if getattr(result, "status_code", None) == 202:
+            return await original_update(*args, **kwargs)
+        return result
+
+    monkeypatch.setattr(connectors, "update_credential", provisioned_update)
     vault = InMemoryVault()
     monkeypatch.setattr(connectors, "_vault", lambda: vault)
     async with AsyncSession(engine, expire_on_commit=False) as db:
-        yield db, vault, SimpleNamespace(subject="owner/a")
+        yield db, vault, SimpleNamespace(subject="owner/a", tenant_id="tenant-1")
     await engine.dispose()
 
 
@@ -83,10 +98,18 @@ async def test_shared_secret_preserves_refresh_and_independent_configuration(
     }
     await connectors.disconnect(connectors.GMAIL, identity, db)
     assert (
-        vault.load_root(connectors._canonical_google_ref(identity.subject)) is not None
+        vault.load_root(
+            connectors._canonical_google_ref(identity.tenant_id, identity.subject)
+        )
+        is not None
     )
     await connectors.disconnect("google-drive", identity, db)
-    assert vault.load_root(connectors._canonical_google_ref(identity.subject)) is None
+    assert (
+        vault.load_root(
+            connectors._canonical_google_ref(identity.tenant_id, identity.subject)
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio
@@ -105,7 +128,7 @@ async def test_mismatch_or_lost_grants_do_not_replace_existing_secret(
     await connectors.update_credential(
         update(connectors.GMAIL), connectors.GMAIL, identity, db
     )
-    ref = connectors._canonical_google_ref(identity.subject)
+    ref = connectors._canonical_google_ref(identity.tenant_id, identity.subject)
     before = vault.load_root(ref)
     with pytest.raises(HTTPException) as exc:
         await connectors.update_credential(
@@ -118,7 +141,7 @@ async def test_mismatch_or_lost_grants_do_not_replace_existing_secret(
 @pytest.mark.asyncio
 async def test_legacy_gmail_requires_fresh_consent_to_bind(google_custody):
     db, vault, identity = google_custody
-    ref = connectors._canonical_google_ref(identity.subject)
+    ref = connectors._canonical_google_ref(identity.tenant_id, identity.subject)
     vault.put(
         ref,
         json.dumps(
@@ -127,7 +150,10 @@ async def test_legacy_gmail_requires_fresh_consent_to_bind(google_custody):
     )
     db.add(
         ConnectorCredential(
-            owner_subject=identity.subject, provider=connectors.GMAIL, vault_ref=ref
+            tenant_id=identity.tenant_id,
+            owner_subject=identity.subject,
+            provider=connectors.GMAIL,
+            vault_ref=ref,
         )
     )
     await db.commit()
@@ -153,12 +179,15 @@ async def test_new_provider_cannot_replace_unverified_legacy_gmail_account(
     google_custody,
 ):
     db, vault, identity = google_custody
-    ref = connectors._canonical_google_ref(identity.subject)
+    ref = connectors._canonical_google_ref(identity.tenant_id, identity.subject)
     legacy = b'{"access_token":"legacy-account","refresh_token":"legacy-refresh"}'
     vault.put(ref, legacy)
     db.add(
         ConnectorCredential(
-            owner_subject=identity.subject, provider=connectors.GMAIL, vault_ref=ref
+            tenant_id=identity.tenant_id,
+            owner_subject=identity.subject,
+            provider=connectors.GMAIL,
+            vault_ref=ref,
         )
     )
     await db.commit()
@@ -175,7 +204,11 @@ async def test_new_provider_cannot_replace_unverified_legacy_gmail_account(
         )
     assert exc.value.status_code == 409
     assert vault.load_root(ref) == legacy
-    assert await connectors._record(db, identity.subject, "google-drive") is None
+    assert (
+        await connectors._record(
+            db, identity.tenant_id, identity.subject, "google-drive"
+        )
+    ).status == "authorization_pending"
     # The owner can explicitly reconnect Gmail before enabling Drive.
     await connectors.update_credential(
         update(connectors.GMAIL, subject="different-verified-account", scopes=scopes),
@@ -205,7 +238,10 @@ async def test_separate_legacy_accounts_are_not_silently_combined(google_custody
     ref = "connectors/owner%2Fa/google-drive"
     db.add(
         ConnectorCredential(
-            owner_subject=identity.subject, provider="google-drive", vault_ref=ref
+            tenant_id=identity.tenant_id,
+            owner_subject=identity.subject,
+            provider="google-drive",
+            vault_ref=ref,
         )
     )
     vault.put(ref, b'{"access_token":"legacy"}')
@@ -216,7 +252,12 @@ async def test_separate_legacy_accounts_are_not_silently_combined(google_custody
         )
     assert exc.value.status_code == 409
     assert vault.load_root(ref) == b'{"access_token":"legacy"}'
-    assert vault.load_root(connectors._canonical_google_ref(identity.subject)) is None
+    assert (
+        vault.load_root(
+            connectors._canonical_google_ref(identity.tenant_id, identity.subject)
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio
@@ -227,13 +268,18 @@ async def test_owner_and_required_scope_boundaries(google_custody):
     )
     with pytest.raises(HTTPException) as exc:
         await connectors.lease_credential(
-            connectors.GMAIL, SimpleNamespace(subject="other-owner"), db
+            connectors.GMAIL,
+            SimpleNamespace(subject="other-owner", tenant_id=identity.tenant_id),
+            db,
         )
     assert exc.value.status_code == 404
-    ref = connectors._canonical_google_ref(identity.subject)
+    ref = connectors._canonical_google_ref(identity.tenant_id, identity.subject)
     db.add(
         ConnectorCredential(
-            owner_subject=identity.subject, provider="google-drive", vault_ref=ref
+            tenant_id=identity.tenant_id,
+            owner_subject=identity.subject,
+            provider="google-drive",
+            vault_ref=ref,
         )
     )
     await db.commit()
@@ -256,7 +302,12 @@ async def test_google_binding_and_offline_token_required(google_custody):
         await connectors.update_credential(
             update(connectors.GMAIL, refresh=None), connectors.GMAIL, identity, db
         )
-    assert vault.load_root(connectors._canonical_google_ref(identity.subject)) is None
+    assert (
+        vault.load_root(
+            connectors._canonical_google_ref(identity.tenant_id, identity.subject)
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio
@@ -286,7 +337,7 @@ async def test_old_gmail_runtime_works_until_verified_binding_then_cannot_downgr
     await connectors.update_credential(
         update(connectors.GMAIL), connectors.GMAIL, identity, db
     )
-    ref = connectors._canonical_google_ref(identity.subject)
+    ref = connectors._canonical_google_ref(identity.tenant_id, identity.subject)
     bound = vault.load_root(ref)
     with pytest.raises(HTTPException) as exc:
         await connectors.update_credential(old_callback, connectors.GMAIL, identity, db)
@@ -306,9 +357,9 @@ async def test_postgres_group_lock_is_bound_and_stable():
             calls.append((str(query), params))
 
     db = Database()
-    await connectors._lock_google(db, "owner/a")
-    await connectors._lock_google(db, "owner/a")
-    await connectors._lock_google(db, "owner/b")
+    await connectors._lock_google(db, "tenant-1", "owner/a")
+    await connectors._lock_google(db, "tenant-1", "owner/a")
+    await connectors._lock_google(db, "tenant-1", "owner/b")
     assert calls[0] == calls[1]
     assert calls[0][1] != calls[2][1]
     assert calls[0][0] == "SELECT pg_advisory_xact_lock(:key)"
