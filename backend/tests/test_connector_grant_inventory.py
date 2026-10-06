@@ -2,9 +2,14 @@
 
 import hashlib
 import json
+import sys
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+
 from apply_owner_grants import (
     ProvisioningRejected,
     tuple_payload,

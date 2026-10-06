@@ -245,6 +245,10 @@ async def create_account(
                 detail="Identity not found or not owned by user",
             )
 
+        await require_owner_permission(
+            db, current_user.id, "Identity", identity.id, "use"
+        )
+
         # Extract domain from URL
         domain = account_data.website_domain
         if not domain and account_data.website_url:

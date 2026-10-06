@@ -2,6 +2,37 @@
 
 Status: partial implementation for `gate-platform-auth` Z1. The fail-closed decision client and explicit dual-session linking code are implemented. Linking becomes available only after the database migration, trusted Security tenant proof, and real tenant configuration are deployed. Instance owner policy and dry-run grant inventory are implemented. Identity update/delete and account-stage update now enforce instance decisions after SQL ownership selection. Other route families, grant application and ongoing synchronization remain unfinished; this document grants no access and does not certify production rollout.
 
+## Actual mounted route inventory
+
+`mounted-route-authorization.json` enumerates the actual `app.main` FastAPI
+mounts, including schema-hidden credential/link routes, compatibility aliases,
+WebSockets and framework documentation endpoints. It contains 92 route/method
+entries, of which 46 are POST/PUT/PATCH/DELETE and two are WebSockets. Source
+startup hooks and production were not executed. The historical textual gate
+count is not the mounted surface: `routers/background.py` and the real database
+CRUD/import `routers/sites.py` are not mounted. The app mounts four static site
+catalog GET handlers and a public canned demo-chat POST with no provider/database
+side effects. These facts do not waive any required gate.
+
+Generate with `PYTHONPATH=backend python scripts/mounted_authorization_inventory.py
+--output docs/security/mounted-route-authorization.json`; the regression compares
+all actual mounted endpoints with this reviewed inventory. Each entry records
+dependency proofs, direct/transitive resource guard helpers and a concrete
+assessment. New unknown routes become explicit policy-design gaps, not automatic
+exceptions. The inventory flags public SMS device bootstrap key-rotation risk,
+unmapped legacy service and broker principals, device/callback federation gaps,
+manual signup/integration calls with no persisted owned instance, Identity
+creation/grant lifecycle, shared automation/scraper/infrastructure policy and
+general AI chat/cost authority. It is not production authorization evidence.
+
+Chat explicit signup and the natural-language signup branch now select the
+Identity through SQL ownership and require Identity:use before logging or
+projecting the selected identity. 403/503 decisions propagate through chat
+wrappers instead of being converted to successful fallback responses. Account
+creation requires the same exact owned Identity:use parent permission before
+any account/stage write. Its child Account instance grant lifecycle is still
+unfinished; a parent use allow does not assert a created Account read grant.
+
 ## Current boundary
 
 The initial gate inventory reported 61 state-changing textual route matches and no platform permission decision call. Its AST inventory found 55 decorated POST, PUT, PATCH, and DELETE routes in `backend/app` (including compatibility aliases and login/OTP endpoints), before the new linking route. The counts differ because the gate also reads route-shaped text outside decorators. Authentication and authorization are mixed today:
