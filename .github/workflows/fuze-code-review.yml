@@ -1,4 +1,4 @@
-# fuze:managed template=fuze-code-review.yml baseline=v1 digest=sha256:554ed00a59af9b34a8e39ef04c04b87dba29fb8bdab0fcc2a6fb691a239acc90
+# fuze:managed template=fuze-code-review.yml baseline=v1 digest=sha256:f09913a7aaf01b4eab9b5bfb28a2b81152784e8c0848fc4503d0d827426a0290
 name: Fuze Code Review
 
 # THE CANONICAL LLM CODE REVIEW + APPROVAL GATE — now a MANDATORY approve-or-fail check.
@@ -410,7 +410,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
-      - name: Decide verdict (approve / request_changes / comment / outage / abstain / skip)
+      - name: Decide verdict (approve / request_changes / comment / outage / abstain / skip / superseded)
         id: verdict
         env:
           FUZE_ACTION_CONCLUSION: ${{ needs.review.outputs.conclusion }}
@@ -420,10 +420,17 @@ jobs:
           FUZE_ACTION_VENDOR: ${{ needs.review.outputs.vendor }}
           FUZE_ACTION_AVAILABILITY: ${{ needs.review.outputs.availability }}
           FUZE_REVIEW_READY: ${{ needs.review.outputs.ready }}
+          # The review JOB's own result, which GitHub sets and a cancelled job cannot fail
+          # to report — unlike `ready`, an OUTPUT the job never reaches when the concurrency
+          # group cancels it mid-review. That is the whole reason this is here: without it a
+          # cancelled run arrives as ready='' and abstains, posting a "NOT an approval"
+          # comment and failing the required check on a run whose only sin was being
+          # overtaken by the author's own next push.
+          FUZE_REVIEW_JOB_RESULT: ${{ needs.review.result }}
           FUZE_SENSITIVE_FILES: ${{ needs.review.outputs.sensitive_files }}
         run: python3 scripts/fuze_code_review_verdict.py
 
-      - name: Submit GitHub review (approve-or-fail; outage/skip pass, non-approve fails)
+      - name: Submit GitHub review (approve-or-fail; outage/skip/superseded pass, non-approve fails)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -450,6 +457,15 @@ jobs:
               ;;
             skip)
               echo "::notice title=fuze-code-review::not reviewed this run (see the review job) -- passing, this is environmental."
+              ;;
+            superseded)
+              # POSTS NOTHING, deliberately. The review job was cancelled because a newer
+              # commit landed, so a newer run is already reviewing that commit. Anything
+              # posted here would be a comment about a SHA nobody is merging, and the
+              # abstain text it used to emit ("NOT an approval") reads as a provider
+              # failure. Passing is safe: GitHub evaluates required checks against the
+              # head SHA, so a superseded run's verdict can never be the one a merge relies on.
+              echo "::notice title=fuze-code-review::superseded by a newer commit -- a newer run is reviewing that SHA. Passing and posting nothing."
               ;;
             abstain)
               gh pr comment "$PR_NUMBER" --body-file "$BODY_FILE"
