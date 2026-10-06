@@ -12,12 +12,15 @@ from fastapi import (
     Depends,
     Header,
     HTTPException,
+    Query,
     WebSocket,
     WebSocketDisconnect,
 )
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+
+from app.utils.pagination import Page, PageInfo
 
 from ..database import get_db
 from ..models.sms import SmsDevice, SmsOtpReceived, SmsOtpRequest
@@ -82,6 +85,7 @@ class OtpRequest(BaseModel):
 
 
 class DeviceRegistrationRequest(BaseModel):
+    model_config = {"extra": "forbid"}
     device_id: str
     device_name: str
     os_version: str
@@ -489,8 +493,10 @@ async def get_request_status(
         raise HTTPException(status_code=500, detail="Failed to get request status")
 
 
-@router.get("/devices")
+@router.get("/devices", response_model=Page[dict])
 async def get_devices(
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -502,8 +508,15 @@ async def get_devices(
     the application JWT. Not a device callback, so device-key auth does not fit.
     """
     try:
-        devices = db.query(SmsDevice).all()
-        return [
+        total = db.query(SmsDevice).count()
+        devices = (
+            db.query(SmsDevice)
+            .order_by(SmsDevice.device_id)
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+        items = [
             {
                 "device_id": device.device_id,
                 "device_name": device.device_name,
@@ -515,6 +528,15 @@ async def get_devices(
             }
             for device in devices
         ]
+        return Page(
+            items=items,
+            page=PageInfo(
+                offset=offset,
+                limit=limit,
+                total=total,
+                next_offset=offset + limit if offset + limit < total else None,
+            ),
+        )
 
     except Exception as e:
         logger.error(f"Error getting devices: {e}")
@@ -555,7 +577,7 @@ async def websocket_endpoint(websocket: WebSocket):
         sms_manager.disconnect(websocket)
 
 
-@router.get("/health")
+@router.get("/health", openapi_extra={"x-pagination": "exempt"})
 async def health_check():
     """Health check endpoint.
 

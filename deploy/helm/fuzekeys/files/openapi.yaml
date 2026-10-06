@@ -97,36 +97,20 @@ paths:
             application/json:
               schema: {}
   /api/v1/identities/:
-    get:
-      tags:
-      - Identities
-      summary: List Identities
-      description: List all identities for the current user.
-      operationId: get_identities
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema:
-                items:
-                  $ref: '#/components/schemas/IdentityListResponse'
-                type: array
-                title: Response List Identities Api V1 Identities  Get
-      security:
-      - HTTPBearer: []
     post:
       tags:
       - Identities
       summary: Create Identity
       description: Create a new identity.
       operationId: post_identities
+      security:
+      - HTTPBearer: []
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/IdentityCreate'
-        required: true
       responses:
         '200':
           description: Successful Response
@@ -140,8 +124,45 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Identities
+      summary: List Identities
+      description: List all identities for the current user.
+      operationId: get_identities
       security:
       - HTTPBearer: []
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_IdentityListResponse_'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/identities/{identity_id}:
     get:
       tags:
@@ -239,30 +260,53 @@ paths:
       summary: List Accounts
       description: List all accounts for the current user with stage information.
       operationId: get_accounts
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                items:
-                  $ref: '#/components/schemas/AccountResponse'
-                type: array
-                title: Response List Accounts Api V1 Accounts  Get
-      security:
-      - HTTPBearer: []
+                $ref: '#/components/schemas/Page_AccountResponse_'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
     post:
       tags:
       - Accounts
       summary: Create Account
       description: Create a new account with stages.
       operationId: post_accounts
+      security:
+      - HTTPBearer: []
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/AccountCreate'
-        required: true
       responses:
         '200':
           description: Successful Response
@@ -276,8 +320,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - HTTPBearer: []
   /api/v1/accounts/{account_id}/stages/{stage_id}:
     patch:
       tags:
@@ -653,14 +695,39 @@ paths:
 
         the application JWT. Not a device callback, so device-key auth does not fit.'
       operationId: get_sms_devices
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
-              schema: {}
-      security:
-      - HTTPBearer: []
+              schema:
+                $ref: '#/components/schemas/Page_dict_'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/sms/health:
     get:
       tags:
@@ -686,6 +753,7 @@ paths:
           content:
             application/json:
               schema: {}
+      x-pagination: exempt
   /api/infrastructure/sms/request-verification:
     post:
       tags:
@@ -1136,15 +1204,39 @@ paths:
       summary: List Scrapers
       description: List all generated scrapers
       operationId: get_llm_scraper_scrapers
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ScraperListResponse'
-      security:
-      - HTTPBearer: []
+                $ref: '#/components/schemas/Page_dict_'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/llm-scraper/scrapers/{site_name}/{action_type}:
     get:
       tags:
@@ -1246,12 +1338,30 @@ paths:
         schema:
           type: string
           title: Action Type
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/Page_dict_'
         '422':
           description: Validation Error
           content:
@@ -1274,6 +1384,7 @@ paths:
               schema: {}
       security:
       - HTTPBearer: []
+      x-pagination: exempt
   /api/llm-scraper/debug:
     post:
       tags:
@@ -1558,6 +1669,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      x-pagination: exempt
   /api/credentials/identity/{identity_id}/accounts:
     get:
       tags:
@@ -1578,6 +1690,23 @@ paths:
           description: Identity ID to get accounts for
           title: Identity Id
         description: Identity ID to get accounts for
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
       - name: x-api-key
         in: header
         required: true
@@ -1591,7 +1720,8 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema: {}
+              schema:
+                $ref: '#/components/schemas/Page_dict_'
         '422':
           description: Validation Error
           content:
@@ -1664,6 +1794,7 @@ paths:
           content:
             application/json:
               schema: {}
+      x-pagination: exempt
   /api/google/signup/manual:
     post:
       tags:
@@ -1681,7 +1812,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Body_manual_signup_api_google_signup_manual_post'
+              $ref: '#/components/schemas/ManualSignupRequest'
         required: true
       responses:
         '200':
@@ -1851,13 +1982,37 @@ paths:
       summary: List Available Sites
       description: Get a list of all available site integrations.
       operationId: get_integrations_sites
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AvailableSitesResponse'
+                $ref: '#/components/schemas/Page_str_'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/integrations/sites/{site_name}/capabilities:
     get:
       tags:
@@ -1885,6 +2040,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      x-pagination: exempt
   /api/v1/integrations/signup:
     post:
       tags:
@@ -2020,6 +2176,7 @@ paths:
           content:
             application/json:
               schema: {}
+      x-pagination: exempt
   /api/v1/broker/grant:
     post:
       tags:
@@ -2121,65 +2278,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/v1/connectors/google-gmail/oauth/start:
-    post:
-      tags:
-      - Connectors
-      - Connectors
-      summary: Oauth Start
-      operationId: post_connectors_google_gmail_oauth_start
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/OAuthStartRequest'
-        required: true
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - HTTPBearer: []
-  /api/v1/connectors/google-gmail/oauth/callback:
-    get:
-      tags:
-      - Connectors
-      - Connectors
-      summary: Oauth Callback
-      operationId: get_connectors_google_gmail_oauth_callback
-      parameters:
-      - name: code
-        in: query
-        required: true
-        schema:
-          type: string
-          title: Code
-      - name: state
-        in: query
-        required: true
-        schema:
-          type: string
-          title: State
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/connectors/google-gmail:
     get:
       tags:
@@ -2187,40 +2285,26 @@ paths:
       - Connectors
       summary: Status
       operationId: get_connectors_google_gmail
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - HTTPBearer: []
-    delete:
-      tags:
-      - Connectors
-      - Connectors
-      summary: Disconnect
-      operationId: delete_connectors_google_gmail
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-      security:
-      - HTTPBearer: []
-    patch:
-      tags:
-      - Connectors
-      - Connectors
-      summary: Configure
-      operationId: patch_connectors_google_gmail
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ConnectorConfiguration'
+      parameters:
+      - name: provider
+        in: query
+        required: false
+        schema:
+          type: string
+          default: google-gmail
+          title: Provider
+      - name: authorization
+        in: header
         required: true
+        schema:
+          type: string
+          title: Authorization
+      - name: x-fuze-delegation
+        in: header
+        required: true
+        schema:
+          type: string
+          title: X-Fuze-Delegation
       responses:
         '200':
           description: Successful Response
@@ -2233,27 +2317,190 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-      security:
-      - HTTPBearer: []
-  /api/v1/connectors/google-gmail/messages/recent:
+      x-pagination: exempt
+    patch:
+      tags:
+      - Connectors
+      - Connectors
+      summary: Configure Gmail
+      operationId: patch_connectors_google_gmail
+      parameters:
+      - name: authorization
+        in: header
+        required: true
+        schema:
+          type: string
+          title: Authorization
+      - name: x-fuze-delegation
+        in: header
+        required: true
+        schema:
+          type: string
+          title: X-Fuze-Delegation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectorConfiguration'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Connectors
+      - Connectors
+      summary: Disconnect
+      operationId: delete_connectors_google_gmail
+      parameters:
+      - name: provider
+        in: query
+        required: false
+        schema:
+          type: string
+          default: google-gmail
+          title: Provider
+      - name: authorization
+        in: header
+        required: true
+        schema:
+          type: string
+          title: Authorization
+      - name: x-fuze-delegation
+        in: header
+        required: true
+        schema:
+          type: string
+          title: X-Fuze-Delegation
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/connectors/{provider}:
     get:
       tags:
       - Connectors
       - Connectors
-      summary: Recent Messages
-      operationId: get_connectors_google_gmail_messages_recent
-      security:
-      - HTTPBearer: []
+      summary: Status
+      operationId: get_connectors_by_provider
       parameters:
-      - name: limit
-        in: query
-        required: false
+      - name: provider
+        in: path
+        required: true
         schema:
-          type: integer
-          maximum: 20
-          minimum: 1
-          default: 5
-          title: Limit
+          type: string
+          title: Provider
+      - name: authorization
+        in: header
+        required: true
+        schema:
+          type: string
+          title: Authorization
+      - name: x-fuze-delegation
+        in: header
+        required: true
+        schema:
+          type: string
+          title: X-Fuze-Delegation
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    patch:
+      tags:
+      - Connectors
+      - Connectors
+      summary: Configure
+      operationId: patch_connectors_by_provider
+      parameters:
+      - name: provider
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Provider
+      - name: authorization
+        in: header
+        required: true
+        schema:
+          type: string
+          title: Authorization
+      - name: x-fuze-delegation
+        in: header
+        required: true
+        schema:
+          type: string
+          title: X-Fuze-Delegation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              title: Body
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Connectors
+      - Connectors
+      summary: Disconnect
+      operationId: delete_connectors_by_provider
+      parameters:
+      - name: provider
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Provider
+      - name: authorization
+        in: header
+        required: true
+        schema:
+          type: string
+          title: Authorization
+      - name: x-fuze-delegation
+        in: header
+        required: true
+        schema:
+          type: string
+          title: X-Fuze-Delegation
       responses:
         '200':
           description: Successful Response
@@ -2280,6 +2527,7 @@ paths:
           content:
             application/json:
               schema: {}
+      x-pagination: exempt
   /api/v1/sites/stats/overview:
     get:
       tags:
@@ -2294,6 +2542,7 @@ paths:
           content:
             application/json:
               schema: {}
+      x-pagination: exempt
   /api/v1/sites/:
     get:
       tags:
@@ -2307,19 +2556,30 @@ paths:
         in: query
         required: false
         schema:
-          type: integer
-          minimum: 0
-          default: 0
+          anyOf:
+          - type: integer
+            minimum: 0
+          - type: 'null'
+          deprecated: true
           title: Skip
+        deprecated: true
       - name: limit
         in: query
         required: false
         schema:
           type: integer
-          maximum: 1000
+          maximum: 100
           minimum: 1
-          default: 100
+          default: 50
           title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
       - name: category
         in: query
         required: false
@@ -2384,10 +2644,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/SiteResponse'
-                title: Response List Sites Api V1 Sites  Get
+                $ref: '#/components/schemas/Page_SiteResponse_'
         '422':
           description: Validation Error
           content:
@@ -2468,6 +2725,7 @@ paths:
           content:
             application/json:
               schema: {}
+      x-pagination: exempt
   /api/v1/demo/accounts:
     get:
       tags:
@@ -2481,6 +2739,7 @@ paths:
           content:
             application/json:
               schema: {}
+      x-pagination: exempt
   /api/v1/demo/chat:
     post:
       tags:
@@ -2545,6 +2804,7 @@ components:
             type: array
           - type: 'null'
           title: Stages
+      additionalProperties: false
       type: object
       required:
       - website_name
@@ -2736,37 +2996,13 @@ components:
           type: boolean
           title: Headless
           default: true
+      additionalProperties: false
       type: object
       required:
       - site
       - email
       - password
       title: ApiKeyRequest
-    AvailableSitesResponse:
-      properties:
-        sites:
-          items:
-            type: string
-          type: array
-          title: Sites
-        count:
-          type: integer
-          title: Count
-      type: object
-      required:
-      - sites
-      - count
-      title: AvailableSitesResponse
-    Body_manual_signup_api_google_signup_manual_post:
-      properties:
-        signup_data:
-          $ref: '#/components/schemas/GoogleSignupData'
-        config:
-          $ref: '#/components/schemas/GoogleSignupConfig'
-      type: object
-      required:
-      - signup_data
-      title: Body_manual_signup_api_google_signup_manual_post
     ChatMessage:
       properties:
         message:
@@ -2960,6 +3196,7 @@ components:
         app_version:
           type: string
           title: App Version
+      additionalProperties: false
       type: object
       required:
       - device_id
@@ -3115,11 +3352,9 @@ components:
           title: Gender
           description: Gender (optional)
         interests:
-          anyOf:
-          - items:
-              type: string
-            type: array
-          - type: 'null'
+          items:
+            type: string
+          type: array
           title: Interests
           description: User interests
         skip_phone_verification:
@@ -3268,6 +3503,7 @@ components:
           - type: string
           - type: 'null'
           title: Preferred Username Pattern
+      additionalProperties: false
       type: object
       required:
       - name
@@ -3563,6 +3799,19 @@ components:
       - message
       - site
       title: IntegrationResponse
+    ManualSignupRequest:
+      properties:
+        signup_data:
+          $ref: '#/components/schemas/GoogleSignupData'
+        config:
+          anyOf:
+          - $ref: '#/components/schemas/GoogleSignupConfig'
+          - type: 'null'
+      additionalProperties: false
+      type: object
+      required:
+      - signup_data
+      title: ManualSignupRequest
     MintTokenRequest:
       properties:
         audience:
@@ -3599,15 +3848,6 @@ components:
       - command_type
       - parameters
       title: MobileCommandRequest
-    OAuthStartRequest:
-      properties:
-        return_to:
-          type: string
-          maxLength: 1000
-          title: Return To
-          default: /connectors
-      type: object
-      title: OAuthStartRequest
     OtpRequest:
       properties:
         otp:
@@ -3642,6 +3882,100 @@ components:
       - device_id
       - request_id
       title: OtpRequest
+    PageInfo:
+      properties:
+        offset:
+          type: integer
+          title: Offset
+        limit:
+          type: integer
+          title: Limit
+        total:
+          type: integer
+          title: Total
+        next_offset:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Next Offset
+      type: object
+      required:
+      - offset
+      - limit
+      - total
+      - next_offset
+      title: PageInfo
+    Page_AccountResponse_:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AccountResponse'
+          type: array
+          title: Items
+        page:
+          $ref: '#/components/schemas/PageInfo'
+      type: object
+      required:
+      - items
+      - page
+      title: Page[AccountResponse]
+    Page_IdentityListResponse_:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/IdentityListResponse'
+          type: array
+          title: Items
+        page:
+          $ref: '#/components/schemas/PageInfo'
+      type: object
+      required:
+      - items
+      - page
+      title: Page[IdentityListResponse]
+    Page_SiteResponse_:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/SiteResponse'
+          type: array
+          title: Items
+        page:
+          $ref: '#/components/schemas/PageInfo'
+      type: object
+      required:
+      - items
+      - page
+      title: Page[SiteResponse]
+    Page_dict_:
+      properties:
+        items:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+          title: Items
+        page:
+          $ref: '#/components/schemas/PageInfo'
+      type: object
+      required:
+      - items
+      - page
+      title: Page[dict]
+    Page_str_:
+      properties:
+        items:
+          items:
+            type: string
+          type: array
+          title: Items
+        page:
+          $ref: '#/components/schemas/PageInfo'
+      type: object
+      required:
+      - items
+      - page
+      title: Page[str]
     RedeemRequest:
       properties:
         grant_handle:
@@ -3664,22 +3998,6 @@ components:
       required:
       - grant_id
       title: RevokeRequest
-    ScraperListResponse:
-      properties:
-        scrapers:
-          items:
-            additionalProperties: true
-            type: object
-          type: array
-          title: Scrapers
-        total_count:
-          type: integer
-          title: Total Count
-      type: object
-      required:
-      - scrapers
-      - total_count
-      title: ScraperListResponse
     ScraperResponse:
       properties:
         success:
@@ -3976,6 +4294,7 @@ components:
           - type: string
           - type: 'null'
           title: Last Name
+      additionalProperties: false
       type: object
       required:
       - username
@@ -4058,11 +4377,6 @@ components:
         type:
           type: string
           title: Error Type
-        input:
-          title: Input
-        ctx:
-          type: object
-          title: Context
       type: object
       required:
       - loc
@@ -4172,6 +4486,7 @@ components:
           - type: string
           - type: 'null'
           title: Additional Instructions
+      additionalProperties: false
       type: object
       required:
       - website_url
@@ -4214,6 +4529,7 @@ components:
           type: boolean
           title: Headless
           default: true
+      additionalProperties: false
       type: object
       required:
       - site

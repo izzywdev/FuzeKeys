@@ -1,12 +1,16 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
+@import "tailwindcss";
+@config "../tailwind.config.js";
+
 @layer base {
+  :root {
+    --fk-toast-background: theme('colors.secondary.800');
+    --fk-toast-foreground: theme('colors.secondary.50');
+  }
+
   html {
-    font-family: 'Inter', system-ui, sans-serif;
+    @apply font-sans;
   }
   
   body {
@@ -60,4 +64,4 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
-} 
+}

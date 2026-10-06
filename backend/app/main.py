@@ -21,6 +21,7 @@ from app.routers import (
     identities,
     infrastructure,
     llm_scraper,
+    platform_identity,
     site_integrations,
     sms,
 )
@@ -28,6 +29,7 @@ from app.routers import (
 # Temporarily use mock sites router
 # from app.routers import sites
 from app.utils.logging import setup_logging
+from app.utils.pagination import Page, paginate
 
 # Setup logging
 setup_logging()
@@ -318,22 +320,23 @@ MOCK_STATS = {
 }
 
 
-@sites_router.get("/categories")
+@sites_router.get("/categories", openapi_extra={"x-pagination": "exempt"})
 async def list_categories():
     """Get list of all categories."""
     return MOCK_CATEGORIES
 
 
-@sites_router.get("/stats/overview")
+@sites_router.get("/stats/overview", openapi_extra={"x-pagination": "exempt"})
 async def get_sites_overview():
     """Get overview statistics of sites."""
     return MOCK_STATS
 
 
-@sites_router.get("/", response_model=List[SiteResponse])
+@sites_router.get("/", response_model=Page[SiteResponse])
 async def list_sites(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
+    skip: int | None = Query(None, ge=0, deprecated=True),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     category: Optional[str] = Query(None),
     difficulty: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
@@ -385,11 +388,7 @@ async def list_sites(
         filtered_sites.sort(key=lambda x: x["name"], reverse=(sort_order == "desc"))
 
     # Apply pagination
-    start_idx = skip
-    end_idx = skip + limit
-    paginated_sites = filtered_sites[start_idx:end_idx]
-
-    return paginated_sites
+    return paginate(filtered_sites, skip if skip is not None else offset, limit)
 
 
 @sites_router.get("/{site_id}", response_model=SiteResponse)
@@ -489,6 +488,9 @@ app.add_middleware(
 
 # Include routers
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
+app.include_router(
+    platform_identity.router, prefix="/api/v1/auth", tags=["Authentication"]
+)
 app.include_router(identities.router, prefix="/api/v1/identities", tags=["Identities"])
 app.include_router(accounts.router, prefix="/api/v1/accounts", tags=["Accounts"])
 app.include_router(automation.router, prefix="/api/v1/automation", tags=["Automation"])
@@ -553,6 +555,8 @@ async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        # A wire-contract capability, not a claim that any user has connected.
+        "connector_credential_protocol": "google-shared-v1",
         "database": db_status,
         "services": {
             "automation": "available",
@@ -586,6 +590,7 @@ async def api_info():
 # Demo endpoints (kept for backward compatibility)
 @app.get(
     "/api/v1/demo/identities",
+    openapi_extra={"x-pagination": "exempt"},  # Exactly two in-source demo fixtures.
     tags=["Demo"],
     summary="Demo Identities",
     description="Sample identity data for testing and demonstration",
@@ -610,6 +615,7 @@ async def demo_identities():
 
 @app.get(
     "/api/v1/demo/accounts",
+    openapi_extra={"x-pagination": "exempt"},  # Exactly two in-source demo fixtures.
     tags=["Demo"],
     summary="Demo Accounts",
     description="Sample account data for testing and demonstration",

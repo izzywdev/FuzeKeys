@@ -8,7 +8,7 @@ including signup, signin, and API key creation for various platforms.
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, EmailStr
 
 from app.integrations.site import (
@@ -20,6 +20,7 @@ from app.integrations.site.permit_io import PermitIOIntegration
 from app.integrations.site.permit_io.models import PermitIOCredentials, PermitIOResult
 from app.models.user import User
 from app.routers.auth import get_current_user
+from app.utils.pagination import Page, paginate
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ router = APIRouter(prefix="/api/v1/integrations", tags=["Site Integrations"])
 
 # Request/Response Models
 class SignupRequest(BaseModel):
+    model_config = {"extra": "forbid"}
     site: str
     email: EmailStr
     password: str
@@ -47,6 +49,7 @@ class SigninRequest(BaseModel):
 
 
 class ApiKeyRequest(BaseModel):
+    model_config = {"extra": "forbid"}
     site: str
     email: EmailStr
     password: str
@@ -68,12 +71,14 @@ class IntegrationResponse(BaseModel):
 
 
 # Available Sites Endpoints
-@router.get("/sites", response_model=AvailableSitesResponse)
-async def list_available_sites():
+@router.get("/sites", response_model=Page[str])
+async def list_available_sites(
+    limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0)
+):
     """Get a list of all available site integrations."""
     try:
         sites = get_available_sites()
-        return {"sites": sites, "count": len(sites)}
+        return paginate(sorted(sites), offset, limit)
     except Exception as e:
         logger.error(f"Failed to list sites: {str(e)}")
         raise HTTPException(
@@ -81,7 +86,7 @@ async def list_available_sites():
         )
 
 
-@router.get("/sites/{site_name}/capabilities")
+@router.get("/sites/{site_name}/capabilities", openapi_extra={"x-pagination": "exempt"})
 async def get_site_capabilities_endpoint(site_name: str):
     """Get the capabilities of a specific site integration."""
     try:
@@ -276,7 +281,7 @@ async def handle_permit_io_apikey(request: ApiKeyRequest) -> IntegrationResponse
 
 
 # Health check for integrations
-@router.get("/health")
+@router.get("/health", openapi_extra={"x-pagination": "exempt"})
 async def integration_health_check():
     """Health check endpoint for site integrations."""
     try:

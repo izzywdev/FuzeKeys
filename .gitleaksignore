@@ -1,0 +1,4 @@
+# Historical deterministic JWT regression fixture; never a provider credential.
+# The fixture now derives its test key at runtime. Ignore only its introducing commit,
+# file, rule and line; every future finding and all other paths remain enforced.
+13e31489ce22d2928cd637bfd0d882e1b77ff016:backend/tests/test_jwt_security.py:generic-api-key:12

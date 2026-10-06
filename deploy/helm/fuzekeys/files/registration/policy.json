@@ -8,7 +8,14 @@
         "read": { "name": "Read" },
         "create": { "name": "Create" },
         "update": { "name": "Update" },
-        "delete": { "name": "Delete" }
+        "delete": { "name": "Delete" },
+        "use": { "name": "Use identity for account signup" }
+      },
+      "roles": {
+        "owner": {
+          "name": "Instance owner",
+          "permissions": ["read", "create", "update", "delete", "use"]
+        }
       }
     },
     {
@@ -19,6 +26,12 @@
         "create": { "name": "Create" },
         "update": { "name": "Update" },
         "delete": { "name": "Delete" }
+      },
+      "roles": {
+        "owner": {
+          "name": "Instance owner",
+          "permissions": ["read", "create", "update", "delete"]
+        }
       }
     },
     {
@@ -30,6 +43,30 @@
         "create": { "name": "Create" },
         "update": { "name": "Update" },
         "delete": { "name": "Delete" }
+      },
+      "roles": {
+        "owner": {
+          "name": "Instance owner",
+          "permissions": ["read", "reveal", "create", "update", "delete"]
+        }
+      }
+    },
+    {
+      "key": "Connector",
+      "name": "Provider connector custody",
+      "actions": {
+        "read": { "name": "Read metadata" },
+        "create": { "name": "Activate registered instance" },
+        "configure": { "name": "Configure" },
+        "disconnect": { "name": "Disconnect" },
+        "reveal": { "name": "Lease credential" },
+        "write_credential": { "name": "Write credential" }
+      },
+      "roles": {
+        "owner": {
+          "name": "Instance owner",
+          "permissions": ["read", "create", "configure", "disconnect", "reveal", "write_credential"]
+        }
       }
     },
     {
@@ -98,3 +135,4 @@
     }
   ]
 }
+

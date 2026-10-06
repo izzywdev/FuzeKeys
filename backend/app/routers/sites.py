@@ -119,7 +119,7 @@ class ImportResult(BaseModel):
 
 
 # CRUD Operations
-@router.get("/categories")
+@router.get("/categories", openapi_extra={"x-pagination": "exempt"})
 async def list_categories(db: AsyncSession = Depends(get_async_session)):
     """Get list of all categories."""
     # Return mock data for now to test frontend
@@ -134,7 +134,7 @@ async def list_categories(db: AsyncSession = Depends(get_async_session)):
 
 
 # Statistics and analytics
-@router.get("/stats/overview")
+@router.get("/stats/overview", openapi_extra={"x-pagination": "exempt"})
 async def get_sites_overview(db: AsyncSession = Depends(get_async_session)):
     """Get overview statistics of sites."""
     # Return mock data for now to test frontend

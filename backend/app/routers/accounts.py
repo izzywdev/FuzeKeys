@@ -1,8 +1,9 @@
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
@@ -12,8 +13,10 @@ from app.models.account import Account, AccountStage, StageStatus, StageType
 from app.models.identity import Identity
 from app.models.user import User
 from app.routers.auth import get_current_user
+from app.security.owner_authz import require_owner_permission
 from app.utils.encryption import decrypt_field, encrypt_field
 from app.utils.logging import get_logger
+from app.utils.pagination import Page, PageInfo
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -42,6 +45,7 @@ class AccountResponse(BaseModel):
 
 
 class AccountCreate(BaseModel):
+    model_config = {"extra": "forbid"}
     website_name: str
     website_url: str
     identity_id: int
@@ -137,22 +141,43 @@ def get_default_stages_for_site(website_name: str) -> List[Dict]:
     return result
 
 
-@router.get("/", response_model=List[AccountResponse])
+@router.get("/", response_model=Page[AccountResponse])
 async def list_accounts(
-    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """List all accounts for the current user with stage information."""
     try:
         # Query accounts with stages and identity information
+        total = (
+            await db.execute(
+                select(func.count(Account.id))
+                .join(Identity)
+                .where(Identity.user_id == current_user.id)
+            )
+        ).scalar_one()
         result = await db.execute(
             select(Account)
             .options(selectinload(Account.stages), selectinload(Account.identity))
             .join(Identity)
             .where(Identity.user_id == current_user.id)
+            .order_by(Account.id)
+            .offset(offset)
+            .limit(limit)
         )
         accounts = result.scalars().all()
 
-        return [
+        for account in accounts:
+            await require_owner_permission(
+                db, current_user.id, "Account", account.id, "read"
+            )
+            await require_owner_permission(
+                db, current_user.id, "Identity", account.identity_id, "read"
+            )
+
+        items = [
             AccountResponse(
                 id=account.id,
                 website_name=account.website_name,
@@ -177,7 +202,18 @@ async def list_accounts(
             )
             for account in accounts
         ]
+        return Page(
+            items=items,
+            page=PageInfo(
+                offset=offset,
+                limit=limit,
+                total=total,
+                next_offset=offset + limit if offset + limit < total else None,
+            ),
+        )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error listing accounts: {str(e)}")
         raise HTTPException(
@@ -208,6 +244,10 @@ async def create_account(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Identity not found or not owned by user",
             )
+
+        await require_owner_permission(
+            db, current_user.id, "Identity", identity.id, "use"
+        )
 
         # Extract domain from URL
         domain = account_data.website_domain
@@ -322,6 +362,10 @@ async def update_account_stage(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Stage not found or not owned by user",
             )
+
+        await require_owner_permission(
+            db, current_user.id, "Account", stage.account_id, "update"
+        )
 
         # Update stage
         stage.status = StageStatus(stage_update.status)

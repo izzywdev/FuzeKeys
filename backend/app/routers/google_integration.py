@@ -21,6 +21,7 @@ import logging
 from typing import Any, Dict
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -35,11 +36,19 @@ from app.models.account import Account
 from app.models.identity import Identity
 from app.models.user import User
 from app.routers.auth import get_current_user
-from app.utils.encryption import encrypt_field
+from app.security.owner_authz import require_owner_permission
+from app.utils.encryption import decrypt_field, decrypt_json_field, encrypt_field
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/google", tags=["Google Integration"])
+
+
+class ManualSignupRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    signup_data: GoogleSignupData
+    config: GoogleSignupConfig | None = None
 
 
 async def _get_owned_identity(
@@ -68,8 +77,7 @@ async def _get_owned_identity(
 # unreachable. Covered by tests/test_google_route_order.py.
 @router.post("/signup/manual")
 async def manual_signup(
-    signup_data: GoogleSignupData,
-    config: GoogleSignupConfig = None,
+    request: ManualSignupRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> Dict[str, Any]:
@@ -81,10 +89,10 @@ async def manual_signup(
     """
     try:
         # Create signup service
-        signup_service = GoogleSignupService(config or GoogleSignupConfig())
+        signup_service = GoogleSignupService(request.config or GoogleSignupConfig())
 
         # Perform signup
-        result = await signup_service.signup(signup_data)
+        result = await signup_service.signup(request.signup_data)
 
         return {
             "success": result.success,
@@ -121,6 +129,9 @@ async def signup_with_identity(
     try:
         # Ownership-scoped lookup (404 if not owned / not found).
         identity = await _get_owned_identity(identity_id, current_user, db)
+        await require_owner_permission(
+            db, current_user.id, "Identity", identity_id, "use"
+        )
 
         # Create signup service
         signup_service = GoogleSignupService(config or GoogleSignupConfig())
@@ -132,18 +143,25 @@ async def signup_with_identity(
         if result.success and result.account_email:
             account = Account(
                 identity_id=identity_id,
-                platform="google",
-                email=result.account_email,
+                website_name="Google",
+                website_url="https://accounts.google.com",
+                website_domain="google.com",
+                encrypted_email=encrypt_field(result.account_email),
                 encrypted_username=encrypt_field(result.account_email.split("@")[0]),
                 encrypted_password=encrypt_field(
                     ""
                 ),  # Password stored separately for security
-                status="active" if result.success else "verification_required",
-                metadata={
-                    "account_id": result.account_id,
-                    "verification_type": result.verification_type,
-                    "additional_data": result.additional_data,
-                },
+                is_active=True,
+                is_verified=not result.verification_required,
+                signup_completed=not result.verification_required,
+                signup_method="automated",
+                encrypted_notes=encrypt_field(
+                    {
+                        "account_id": result.account_id,
+                        "verification_type": result.verification_type,
+                        "additional_data": result.additional_data,
+                    }
+                ),
             )
             db.add(account)
             await db.commit()
@@ -202,6 +220,9 @@ async def test_identity_conversion(
     try:
         # Ownership-scoped lookup (404 if not owned / not found).
         identity = await _get_owned_identity(identity_id, current_user, db)
+        await require_owner_permission(
+            db, current_user.id, "Identity", identity_id, "read"
+        )
 
         # Create signup service
         signup_service = GoogleSignupService()
@@ -249,24 +270,38 @@ async def get_google_accounts(
     try:
         # Ownership-scoped identity lookup first (404 if not owned / not found).
         await _get_owned_identity(identity_id, current_user, db)
+        await require_owner_permission(
+            db, current_user.id, "Identity", identity_id, "read"
+        )
 
         # Get Google accounts for this (now confirmed owned) identity.
         result = await db.execute(
             select(Account).where(
-                (Account.identity_id == identity_id) & (Account.platform == "google")
+                (Account.identity_id == identity_id)
+                & (Account.website_domain == "google.com")
             )
         )
         accounts = result.scalars().all()
+        # Every returned row is separately scoped; no PII is decrypted until
+        # the complete response has owner allow decisions.
+        for account in accounts:
+            await require_owner_permission(
+                db, current_user.id, "Account", account.id, "read"
+            )
 
         return {
             "success": True,
             "accounts": [
                 {
                     "id": account.id,
-                    "email": account.email,
-                    "status": account.status,
+                    "email": decrypt_field(account.encrypted_email),
+                    "status": "inactive"
+                    if not account.is_active
+                    else "active"
+                    if account.signup_completed
+                    else "verification_required",
                     "created_at": account.created_at.isoformat(),
-                    "metadata": account.metadata,
+                    "metadata": decrypt_json_field(account.encrypted_notes) or {},
                 }
                 for account in accounts
             ],

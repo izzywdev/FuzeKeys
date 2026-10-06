@@ -203,6 +203,40 @@ class AuthzRules(unittest.TestCase):
         _, out = run(d, "--authz")
         self.assertIn("Z3", out)
 
+    def test_permit_site_automation_is_not_an_authz_sdk_call(self):
+        d = make_repo({"src/account.py": """\
+SITE = 'permit.io'
+from app.integrations.site.permit_io import signup
+result = await signup.create_account(credentials)
+""", "package.json": CLEAN_PKG})
+        _, out = run(d, "--authz")
+        self.assertNotIn("Z3", out)
+
+    def test_gate_source_examples_are_not_product_imports(self):
+        d = make_repo({"scripts/gate_platform_auth.py": """\
+EXAMPLE = "import { verify } from '@fuzefront/auth'"
+RULE = 'DECISION_UNAVAILABLE may never allow'
+""", "package.json": json.dumps({"name": "sample"})})
+        _, out = run(d, "--declared", "--authz")
+        self.assertNotIn("D1", out)
+        self.assertNotIn("Z2", out)
+
+
+class PythonPlatformPackage(unittest.TestCase):
+    def test_pinned_python_package_and_import_count_as_adoption(self):
+        d = make_repo({
+            "backend/requirements.txt": "fuzefront-service-auth @ https://example.test/fuzefront_service_auth-1.0.0-py3-none-any.whl\n",
+            "backend/app/auth.py": "from fuzefront_service_auth import MachineTokenVerifier\napp.get('/health', h)\n",
+        })
+        _, out = run(d, "--adoption", "--declared")
+        self.assertNotIn("A1", out)
+        self.assertNotIn("D1", out)
+
+    def test_undeclared_python_import_is_detected(self):
+        d = make_repo({"backend/app/auth.py": "from fuzefront_service_auth import MachineTokenVerifier\n"})
+        _, out = run(d, "--declared")
+        self.assertIn("D1", out)
+
     def test_fail_open_on_decision_unavailable_is_flagged(self):
         d = make_repo({"src/a.ts": CLEAN_SERVER + """
 if (result.reason === 'DECISION_UNAVAILABLE') {

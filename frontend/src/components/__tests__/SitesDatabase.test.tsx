@@ -10,6 +10,7 @@
  */
 
 import React from 'react';
+import { vi as jest } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import '@testing-library/jest-dom';
@@ -17,7 +18,7 @@ import SitesDatabase from '../SitesDatabase';
 
 // Mock fetch globally
 const mockFetch = jest.fn();
-global.fetch = mockFetch;
+globalThis.fetch = mockFetch;
 
 // Test data
 const mockSitesData = [
@@ -85,6 +86,11 @@ const mockSitesData = [
   }
 ];
 
+const mockSitesPage = {
+  items: mockSitesData,
+  page: { offset: 0, limit: 20, total: mockSitesData.length, next_offset: null },
+};
+
 const mockStatsData = {
   total_sites: 199,
   categories: [
@@ -147,7 +153,7 @@ describe('SitesDatabase Component', () => {
       expect(screen.getByText('Loading sites...')).toBeInTheDocument();
       
       // Clean up by resolving the promises
-      resolveSites!({ ok: true, json: async () => [] });
+      resolveSites!({ ok: true, json: async () => ({ items: [], page: { offset: 0, limit: 20, total: 0, next_offset: null } }) });
       resolveStats!({ ok: true, json: async () => mockStatsData });
     });
 
@@ -156,7 +162,7 @@ describe('SitesDatabase Component', () => {
       mockFetch
         .mockResolvedValueOnce({
           ok: true,
-          json: async () => mockSitesData
+          json: async () => mockSitesPage
         })
         .mockResolvedValueOnce({
           ok: true,
@@ -209,7 +215,7 @@ describe('SitesDatabase Component', () => {
       mockFetch
         .mockResolvedValueOnce({
           ok: true,
-          json: async () => mockSitesData
+          json: async () => mockSitesPage
         })
         .mockResolvedValueOnce({
           ok: true,
@@ -243,7 +249,7 @@ describe('SitesDatabase Component', () => {
       mockFetch
         .mockResolvedValueOnce({
           ok: true,
-          json: async () => mockSitesData
+          json: async () => mockSitesPage
         })
         .mockResolvedValueOnce({
           ok: true,
@@ -271,7 +277,7 @@ describe('SitesDatabase Component', () => {
       mockFetch
         .mockResolvedValueOnce({
           ok: true,
-          json: async () => mockSitesData
+          json: async () => mockSitesPage
         })
         .mockResolvedValueOnce({
           ok: true,
@@ -300,7 +306,7 @@ describe('SitesDatabase Component', () => {
         Promise.resolve({
           ok: true,
           json: async () =>
-            url.includes('/stats/overview') ? mockStatsData : mockSitesData,
+            url.includes('/stats/overview') ? mockStatsData : mockSitesPage,
         })
       );
 
@@ -322,7 +328,7 @@ describe('SitesDatabase Component', () => {
         Promise.resolve({
           ok: true,
           json: async () =>
-            url.includes('/stats/overview') ? mockStatsData : mockSitesData,
+            url.includes('/stats/overview') ? mockStatsData : mockSitesPage,
         })
       );
 
@@ -348,4 +354,4 @@ describe('SitesDatabase Component', () => {
       }, { timeout: 1000 });
     });
   });
-}); 
+});

@@ -2,9 +2,10 @@ import os
 from datetime import datetime, timedelta
 from typing import Optional
 
+import jwt
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
+from jwt import InvalidTokenError
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -77,6 +78,7 @@ def _require_secret_key() -> str:
 
 # Pydantic models
 class UserCreate(BaseModel):
+    model_config = {"extra": "forbid"}
     username: str
     email: EmailStr
     password: str
@@ -137,7 +139,7 @@ async def get_current_user(
         user_id: int = payload.get("sub")
         if user_id is None:
             raise credentials_exception
-    except JWTError:
+    except InvalidTokenError:
         raise credentials_exception
 
     result = await db.execute(select(User).where(User.id == user_id))

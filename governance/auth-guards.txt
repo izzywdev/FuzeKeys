@@ -1,0 +1,2 @@
+delegated_auth  # FastAPI dependency verifies workload and delegation tokens, audience, actor binding, and required connector scope
+_introspect  # Broker revocation verifies the bearer through FuzeFront Security and then enforces workload token kind plus the FuzeKeys audience before opening SQL
