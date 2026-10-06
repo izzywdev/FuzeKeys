@@ -1,4 +1,4 @@
-"""Existing-row mutation guards; run without the full application fixture stack."""
+"""Existing-row mutation guards through handlers, HTTP and persisted SQL state."""
 
 from datetime import datetime
 from types import SimpleNamespace
@@ -34,7 +34,7 @@ async def invoke(case, db):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("case", CASES)
 @pytest.mark.parametrize(
-    "decision", [True, False, "outage", "unlinked", "unverified", "foreign"]
+    "decision", [True, False, "truthy", "outage", "unlinked", "unverified", "foreign"]
 )
 async def test_mutations_require_sql_owner_and_verified_instance_allow(
     monkeypatch, case, decision
@@ -63,7 +63,8 @@ async def test_mutations_require_sql_owner_and_verified_instance_allow(
         refresh=AsyncMock(),
         delete=AsyncMock(),
     )
-    check = AsyncMock(return_value=decision is True)
+    # An integer one is truthy but is not an explicit boolean allow decision.
+    check = AsyncMock(return_value=1 if decision == "truthy" else decision is True)
     if decision == "outage":
         check.side_effect = PlatformAuthorizationUnavailable()
     monkeypatch.setattr(owner_authz, "check_permission", check)
