@@ -88,7 +88,7 @@ All names below are **proposed** policy schema entries; none should be treated a
 | `/api/google/signup/*`, `/api/v1/chat/signup`, `/api/v1/site-integrations/*` | `FuzeKeysAccount:{account_id}` `signup/signin/create_key`; `FuzeKeysIdentity:{identity_id}` `use` | Account or identity owner grant plus existing `get_current_user` and owner lookup. Never authorize from a submitted email alone. |
 | `/api/v1/sites` POST, PUT, DELETE, import | `FuzeKeysSite:{site_id}` `create/update/delete/import` | Explicit `site-admin` or `site-editor` role; define whether sites are shared across the tenant before grants. List/read routes need a separate decision plan. |
 | `/api/v1/background/*`, `/api/infrastructure/*`, `/api/sms/request-otp`, `/api/v1/automation/analyze`, `/api/v1/llm-scraper/*`, `/api/v1/chat/message` | `FuzeKeysJob:{job_id}` `create/cancel`; `FuzeKeysInfrastructure:{target_id}` `operate`; `FuzeKeysScraper:{site_name}` `generate/improve/delete/debug`; `FuzeKeysMessage:{conversation_id}` `create` | Mapped user `owner` for personal jobs and messages; explicit operator grant for global start/stop, infrastructure commands, and shared scraper deletion. Bound output and cost separately. |
-| `/api/credentials/*` | `FuzeKeysCredential:{identity_id or account_id}` `request/store/validate` | Existing service API key must map to a FuzeFront workload subject; require that subject's credential action grant **and** `require_identity_scope`. No raw owner ID from the request can establish authority. |
+| `/api/credentials/*` | Existing `fuzekeys_Identity` / `fuzekeys_Account` instances; validation has no stored resource | Require FuzeFront workload plus user delegation tokens, the exact read/write scope, immutable subject/tenant binding and the appropriate Identity `use/read` or Account `read/update` decision. No raw owner ID or static service key can establish authority. |
 | `/api/v1/broker/*` | `FuzeKeysSecret:{secret_id}` `grant/redeem/mint/revoke` | Workload subject plus existing macaroon audience/caveat checks; tenant and secret owner determined from the broker record. Never replace caveat enforcement with a broad role. |
 | `/api/v1/connectors/{provider}` PATCH/DELETE and credential PUT | `FuzeKeysConnector:{delegated_subject}:{provider}` `configure/disconnect/write_credential` | Existing `delegated_auth` scope and actor binding remain required. Add provider-scoped policy grants only after the caller workload, delegated subject, and FuzeFront tenant are mapped. |
 | `/api/v1/auth/register`, `/api/v1/auth/login`, `/api/sms/register-device`, `/api/sms/otp` | Enrollment/callback boundary, not a pre-existing user resource | Retain bounded enrollment, password/device/OTP proof, rate limits, and callback validation. Do not call a user policy check before the user is known. Document these as deliberate public or proof-based routes in route governance. |
@@ -233,21 +233,27 @@ converted to generic 500 errors. Existing verified mappings and exact read grant
 must be provisioned before deployment. Creates and their grant lifecycle remain
 unfinished; these reads do not certify the complete authorization migration.
 
-## Legacy credential AsyncSession repair
+## Delegated legacy credential boundary
 
 The legacy `/api/credentials` handlers now use the production `AsyncSession`
-contract: awaited SQL selects/scalars/counts, awaited commits and rollback on
-credential write/access transaction failure. Identity/account predicates and
-static service-key identity scopes remain required before SQL or cryptography.
-The GET credential alias uses the same checked read handler. Identity account
-lists retain sorted bounded pagination and their existing response envelope.
-Google OAuth connector records and VaultAsset inventory are separate storage
-families and are not implicitly granted by this repair.
+contract and requires FuzeFront's workload token plus the user delegation token.
+Read routes require `connectors:credentials:read`; generation, storage and
+validation require `connectors:credentials:write`. The delegation audience must
+be `service:fuzekeys`, its actor must match the verified workload subject, and
+the delegated subject/tenant must exactly match the immutable local
+`PlatformIdentity` binding. A static API key alone has no mounted credential
+authority.
 
-This repair restores functioning database operations; it does not establish
-platform authorization for static service API keys. Those callers still need
-verified workload principals, tenant mapping and explicit resource/action grants
-before that family's authorization migration can be declared complete. No
-credential-delete endpoint exists in this legacy router; this change introduces
-no delete route or new authority. Production PostgreSQL and actual authenticated
-service requests still need rollout verification.
+Identity credential generation requires exact `fuzekeys_Identity:use`.
+Account secret reads and writes require exact `fuzekeys_Account:read` or
+`fuzekeys_Account:update`; account-list metadata requires Identity read and every
+Account read before any row is projected. SQL identity/account predicates remain
+in place and cryptography is not reached on denial. The GET credential alias uses
+the same checked read handler. Format validation has no persisted resource but
+still requires the verified credential-write delegation scope.
+
+Google OAuth connector records and VaultAsset inventory are separate storage
+families and are not implicitly granted. No credential-delete endpoint exists.
+Existing workload callers must be upgraded to the dual-token contract, and real
+tenant mappings, exact grants, PostgreSQL transactions and authenticated service
+canaries remain deployment prerequisites.

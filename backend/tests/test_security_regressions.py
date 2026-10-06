@@ -34,6 +34,7 @@ ENVIRONMENT CONSTRAINT (documented, not ours to fix):
 """
 
 import asyncio
+from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
@@ -42,6 +43,16 @@ from fastapi import HTTPException
 # Importing these specific modules is cv2-free (verified). Importing app.main is NOT.
 import app.routers.credentials as credentials_mod
 import app.routers.sms as sms_mod
+from app.security.fuzefront_auth import Identity as DelegatedIdentity
+
+DELEGATED = DelegatedIdentity(
+    subject="owner",
+    tenant_id="tenant-1",
+    scopes=frozenset({"connectors:credentials:read", "connectors:credentials:write"}),
+    audience="service:fuzekeys",
+    actor={"sub": "service:scraper"},
+    token_kind="fuze-delegation",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -183,17 +194,11 @@ class TestVerifyApiKeyFailsClosed:
 @pytest.mark.asyncio
 class TestIdorOwnershipScoping:
     @pytest.fixture(autouse=True)
-    def _grant_full_identity_scope(self):
-        """These tests isolate the per-IDENTITY IDOR layer (Account.identity_id
-        scoping). The newer per-KEY scope gate (HIGH-2, require_identity_scope)
-        sits in FRONT of it, so we grant the calling service a wildcard scope here
-        and restore it afterwards; otherwise the request would 403 on key-scope
-        before ever reaching the IDOR check under test. The key-scope behaviour is
-        covered independently in TestServiceKeyIdentityScoping."""
-        original = credentials_mod.SERVICE_IDENTITY_SCOPES
-        credentials_mod.SERVICE_IDENTITY_SCOPES = {"scraper-service": "*"}
-        yield
-        credentials_mod.SERVICE_IDENTITY_SCOPES = original
+    def _allow_platform_decision(self, monkeypatch):
+        """Isolate the SQL identity/account predicate from platform decisions."""
+        monkeypatch.setattr(
+            credentials_mod, "require_delegated_owner_permission", AsyncMock()
+        )
 
     @pytest_asyncio.fixture
     async def db_session(self):
@@ -269,9 +274,7 @@ class TestIdorOwnershipScoping:
             credential_types=[],
         )
         with pytest.raises(HTTPException) as exc:
-            await credentials_mod.request_account_credentials(
-                req, "scraper-service", session
-            )
+            await credentials_mod.request_account_credentials(req, DELEGATED, session)
         assert exc.value.status_code == 404
 
     async def test_retrieve_with_correct_owner_succeeds(self, db_session):
@@ -289,7 +292,7 @@ class TestIdorOwnershipScoping:
             credential_types=[],
         )
         resp = await credentials_mod.request_account_credentials(
-            req, "scraper-service", session
+            req, DELEGATED, session
         )
         assert resp.account_id == account_b.id
         assert resp.site_name == "SiteB"
@@ -319,9 +322,7 @@ class TestIdorOwnershipScoping:
             metadata=None,
         )
         with pytest.raises(HTTPException) as exc:
-            await credentials_mod.store_account_credentials(
-                req, "scraper-service", session
-            )
+            await credentials_mod.store_account_credentials(req, DELEGATED, session)
         assert exc.value.status_code == 404
 
         await session.refresh(account_b)
@@ -349,7 +350,7 @@ class TestIdorOwnershipScoping:
             metadata=None,
         )
         result = await credentials_mod.store_account_credentials(
-            req, "scraper-service", session
+            req, DELEGATED, session
         )
         assert result["success"] is True
         await session.refresh(account_b)
@@ -665,51 +666,18 @@ class TestServiceKeyIdentityScoping:
         assert loaded["scraper-service"] == "*"
         assert loaded["mobile-service"] == {1, 2, 3}
 
-    # --- get_identity_accounts enforces the scope BEFORE any DB lookup --------
-    def test_get_identity_accounts_out_of_scope_denied_403(self):
-        """The endpoint must 403 an out-of-scope identity WITHOUT touching the DB
-        (so a bad db would not even be queried). Closes the enumeration BOLA."""
-        credentials_mod.SERVICE_IDENTITY_SCOPES = {"scraper-service": {1}}
-
-        class _ExplodingDb:
-            def query(self, *a, **k):
-                raise AssertionError(
-                    "DB must not be queried for an out-of-scope identity"
-                )
-
-        with pytest.raises(HTTPException) as exc:
-            _run(
-                credentials_mod.get_identity_accounts(
-                    identity_id=99,  # not in {1}
-                    service_name="scraper-service",
-                    db=_ExplodingDb(),
-                )
-            )
-        assert exc.value.status_code == 403
-
-    def test_request_account_credentials_out_of_scope_denied_403(self):
-        """The IDOR-hardened retrieval path now ALSO fails closed on key scope:
-        an out-of-scope identity is rejected 403 before any account lookup."""
-        credentials_mod.SERVICE_IDENTITY_SCOPES = {"scraper-service": {1}}
-
-        class _ExplodingDb:
-            def query(self, *a, **k):
-                raise AssertionError(
-                    "DB must not be queried for an out-of-scope identity"
-                )
-
-        req = credentials_mod.AccountCredentialRequest(
-            identity_id=99,
-            account_id=5,
-            credential_types=[],
-        )
-        with pytest.raises(HTTPException) as exc:
-            _run(
-                credentials_mod.request_account_credentials(
-                    req, "scraper-service", _ExplodingDb()
-                )
-            )
-        assert exc.value.status_code == 403
+    # The parser/constant-time unit contract remains for compatibility, but the
+    # mounted credential routes deliberately no longer accept this legacy proof.
+    def test_static_service_key_is_not_a_mounted_credential_dependency(self):
+        for route in credentials_mod.router.routes:
+            if route.path == "/api/credentials/health":
+                continue
+            calls = {
+                dependency.call
+                for dependency in route.dependant.dependencies
+                if dependency.call is not None
+            }
+            assert credentials_mod.verify_api_key not in calls
 
 
 import app.routers.llm_scraper as llm_mod  # cv2-free

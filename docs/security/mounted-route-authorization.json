@@ -8,18 +8,19 @@
     "device_proof_platform_migration_gap": 3,
     "dual_session_proof_boundary": 1,
     "enrollment_proof_boundary": 2,
-    "instance_enforced": 9,
+    "instance_enforced": 14,
     "instance_enforced_with_staged_registration": 10,
-    "legacy_service_principal_gap": 7,
     "local_session_profile": 1,
     "parent_instance_enforced_child_lifecycle_gap": 2,
     "platform_policy_design_gap": 30,
     "public_catalog_or_health": 3,
     "public_enrollment_security_gap": 1,
     "public_framework_documentation": 8,
+    "public_health": 1,
     "public_health_or_static_catalog": 9,
     "public_static_demo": 1,
     "signup_branch_enforced_general_ai_gap": 1,
+    "verified_delegated_input_validation": 1,
     "verified_workload_sql_owner_tenant_policy_gap": 1
   },
   "not_mounted": [
@@ -690,11 +691,13 @@
       "include_in_schema": true,
       "dependencies": [
         "app.database.get_async_session",
-        "app.routers.credentials.verify_api_key"
+        "app.security.fuzefront_auth.dependency"
       ],
-      "guard_helpers": [],
-      "assessment": "legacy_service_principal_gap",
-      "reason": "Static service key and identity-scope/SQL owner boundaries remain; no verified workload/tenant mapping or instance platform decision for this family."
+      "guard_helpers": [
+        "require_delegated_owner_permission"
+      ],
+      "assessment": "instance_enforced",
+      "reason": "SQL ownership and immutable verified mapping plus exact instance allow precede response, decryption or mutation. Live mappings/grants remain required."
     },
     {
       "method": "POST",
@@ -703,11 +706,13 @@
       "include_in_schema": true,
       "dependencies": [
         "app.database.get_async_session",
-        "app.routers.credentials.verify_api_key"
+        "app.security.fuzefront_auth.dependency"
       ],
-      "guard_helpers": [],
-      "assessment": "legacy_service_principal_gap",
-      "reason": "Static service key and identity-scope/SQL owner boundaries remain; no verified workload/tenant mapping or instance platform decision for this family."
+      "guard_helpers": [
+        "require_delegated_owner_permission"
+      ],
+      "assessment": "instance_enforced",
+      "reason": "SQL ownership and immutable verified mapping plus exact instance allow precede response, decryption or mutation. Live mappings/grants remain required."
     },
     {
       "method": "POST",
@@ -716,11 +721,13 @@
       "include_in_schema": true,
       "dependencies": [
         "app.database.get_async_session",
-        "app.routers.credentials.verify_api_key"
+        "app.security.fuzefront_auth.dependency"
       ],
-      "guard_helpers": [],
-      "assessment": "legacy_service_principal_gap",
-      "reason": "Static service key and identity-scope/SQL owner boundaries remain; no verified workload/tenant mapping or instance platform decision for this family."
+      "guard_helpers": [
+        "require_delegated_owner_permission"
+      ],
+      "assessment": "instance_enforced",
+      "reason": "SQL ownership and immutable verified mapping plus exact instance allow precede response, decryption or mutation. Live mappings/grants remain required."
     },
     {
       "method": "GET",
@@ -729,11 +736,13 @@
       "include_in_schema": true,
       "dependencies": [
         "app.database.get_async_session",
-        "app.routers.credentials.verify_api_key"
+        "app.security.fuzefront_auth.dependency"
       ],
-      "guard_helpers": [],
-      "assessment": "legacy_service_principal_gap",
-      "reason": "Static service key and identity-scope/SQL owner boundaries remain; no verified workload/tenant mapping or instance platform decision for this family."
+      "guard_helpers": [
+        "require_delegated_owner_permission"
+      ],
+      "assessment": "instance_enforced",
+      "reason": "SQL ownership and immutable verified mapping plus exact instance allow precede response, decryption or mutation. Live mappings/grants remain required."
     },
     {
       "method": "GET",
@@ -742,11 +751,13 @@
       "include_in_schema": true,
       "dependencies": [
         "app.database.get_async_session",
-        "app.routers.credentials.verify_api_key"
+        "app.security.fuzefront_auth.dependency"
       ],
-      "guard_helpers": [],
-      "assessment": "legacy_service_principal_gap",
-      "reason": "Static service key and identity-scope/SQL owner boundaries remain; no verified workload/tenant mapping or instance platform decision for this family."
+      "guard_helpers": [
+        "require_delegated_owner_permission"
+      ],
+      "assessment": "instance_enforced",
+      "reason": "SQL ownership and immutable verified mapping plus exact instance allow precede response, decryption or mutation. Live mappings/grants remain required."
     },
     {
       "method": "POST",
@@ -754,11 +765,11 @@
       "endpoint": "app.routers.credentials.validate_credentials",
       "include_in_schema": true,
       "dependencies": [
-        "app.routers.credentials.verify_api_key"
+        "app.security.fuzefront_auth.dependency"
       ],
       "guard_helpers": [],
-      "assessment": "legacy_service_principal_gap",
-      "reason": "Static service key and identity-scope/SQL owner boundaries remain; no verified workload/tenant mapping or instance platform decision for this family."
+      "assessment": "verified_delegated_input_validation",
+      "reason": "Verified workload/delegation tokens, audience, actor binding and credential-write scope precede in-memory format validation; no stored resource is read or changed."
     },
     {
       "method": "GET",
@@ -767,8 +778,8 @@
       "include_in_schema": true,
       "dependencies": [],
       "guard_helpers": [],
-      "assessment": "legacy_service_principal_gap",
-      "reason": "Static service key and identity-scope/SQL owner boundaries remain; no verified workload/tenant mapping or instance platform decision for this family."
+      "assessment": "public_health",
+      "reason": "Health response exposes no credential values or persisted owner resource."
     },
     {
       "method": "POST",

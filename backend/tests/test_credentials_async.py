@@ -14,6 +14,16 @@ from app.models.account import Account
 from app.models.identity import Identity
 from app.models.user import User
 from app.routers import credentials
+from app.security.fuzefront_auth import Identity as DelegatedIdentity
+
+DELEGATED = DelegatedIdentity(
+    subject="owner",
+    tenant_id="tenant-1",
+    scopes=frozenset({"connectors:credentials:read", "connectors:credentials:write"}),
+    audience="service:fuzekeys",
+    actor={"sub": "service:scraper"},
+    token_kind="fuze-delegation",
+)
 
 
 @pytest.mark.asyncio
@@ -21,9 +31,7 @@ async def test_async_store_retrieve_generation_and_bounded_list(monkeypatch):
     engine = create_async_engine("sqlite+aiosqlite://")
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
-    monkeypatch.setattr(
-        credentials, "SERVICE_IDENTITY_SCOPES", {"scraper-service": {11}}
-    )
+    monkeypatch.setattr(credentials, "require_delegated_owner_permission", AsyncMock())
     monkeypatch.setattr(credentials, "ENCRYPTION_KEY", Fernet.generate_key().decode())
     try:
         async with AsyncSession(engine, expire_on_commit=False) as db:
@@ -65,7 +73,7 @@ async def test_async_store_retrieve_generation_and_bounded_list(monkeypatch):
                     credentials.CredentialUpdate(
                         identity_id=11, account_id=21, credentials={"password": value}
                     ),
-                    "scraper-service",
+                    DELEGATED,
                     db,
                 )
                 assert result["success"] is True
@@ -82,7 +90,7 @@ async def test_async_store_retrieve_generation_and_bounded_list(monkeypatch):
                 credentials.AccountCredentialRequest(
                     identity_id=11, account_id=21, credential_types=["password"]
                 ),
-                "scraper-service",
+                DELEGATED,
                 db,
             )
             assert read.credentials == {"password": "updated-value"}
@@ -93,7 +101,7 @@ async def test_async_store_retrieve_generation_and_bounded_list(monkeypatch):
                 account_id=21,
                 identity_id=11,
                 credential_types="password",
-                service_name="scraper-service",
+                delegated_identity=DELEGATED,
                 db=db,
             )
             assert alias.credentials == read.credentials
@@ -104,7 +112,7 @@ async def test_async_store_retrieve_generation_and_bounded_list(monkeypatch):
                     action_type="signup",
                     credential_types=["password"],
                 ),
-                "scraper-service",
+                DELEGATED,
                 db,
             )
             assert set(generated.credentials) == {"password"}
@@ -113,7 +121,7 @@ async def test_async_store_retrieve_generation_and_bounded_list(monkeypatch):
                 identity_id=11,
                 limit=1,
                 offset=1,
-                service_name="scraper-service",
+                delegated_identity=DELEGATED,
                 db=db,
             )
             assert listed.page.total == 2
@@ -126,7 +134,7 @@ async def test_async_store_retrieve_generation_and_bounded_list(monkeypatch):
                         account_id=23,
                         credentials={"password": "must-not-write"},
                     ),
-                    "scraper-service",
+                    DELEGATED,
                     db,
                 )
             assert mismatch.value.status_code == 404
@@ -139,9 +147,7 @@ async def test_async_store_retrieve_generation_and_bounded_list(monkeypatch):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("operation", ["store", "retrieve"])
 async def test_commit_failure_rolls_back_and_reports_failure(monkeypatch, operation):
-    monkeypatch.setattr(
-        credentials, "SERVICE_IDENTITY_SCOPES", {"scraper-service": {11}}
-    )
+    monkeypatch.setattr(credentials, "require_delegated_owner_permission", AsyncMock())
     monkeypatch.setattr(credentials, "ENCRYPTION_KEY", Fernet.generate_key().decode())
     row = SimpleNamespace(
         id=21,
@@ -152,8 +158,14 @@ async def test_commit_failure_rolls_back_and_reports_failure(monkeypatch, operat
         is_active=True,
         signup_completed=False,
     )
+    owner = SimpleNamespace(id=11, user_id=7)
     db = SimpleNamespace(
-        execute=AsyncMock(return_value=SimpleNamespace(scalar_one_or_none=lambda: row)),
+        execute=AsyncMock(
+            side_effect=[
+                SimpleNamespace(scalar_one_or_none=lambda: owner),
+                SimpleNamespace(scalar_one_or_none=lambda: row),
+            ]
+        ),
         commit=AsyncMock(side_effect=RuntimeError("transaction failed")),
         rollback=AsyncMock(),
     )
@@ -163,7 +175,7 @@ async def test_commit_failure_rolls_back_and_reports_failure(monkeypatch, operat
                 credentials.CredentialUpdate(
                     identity_id=11, account_id=21, credentials={"password": "value"}
                 ),
-                "scraper-service",
+                DELEGATED,
                 db,
             )
         else:
@@ -171,7 +183,7 @@ async def test_commit_failure_rolls_back_and_reports_failure(monkeypatch, operat
                 credentials.AccountCredentialRequest(
                     identity_id=11, account_id=21, credential_types=[]
                 ),
-                "scraper-service",
+                DELEGATED,
                 db,
             )
     assert failed.value.status_code == 500
@@ -181,10 +193,15 @@ async def test_commit_failure_rolls_back_and_reports_failure(monkeypatch, operat
 
 @pytest.mark.asyncio
 async def test_out_of_scope_denies_before_sql_or_crypto(monkeypatch):
-    monkeypatch.setattr(
-        credentials, "SERVICE_IDENTITY_SCOPES", {"scraper-service": {11}}
+    guard = AsyncMock(side_effect=HTTPException(403, "denied"))
+    monkeypatch.setattr(credentials, "require_delegated_owner_permission", guard)
+    owner = SimpleNamespace(id=12, user_id=7)
+    db = SimpleNamespace(
+        execute=AsyncMock(
+            return_value=SimpleNamespace(scalar_one_or_none=lambda: owner)
+        ),
+        commit=AsyncMock(),
     )
-    db = SimpleNamespace(execute=AsyncMock(), commit=AsyncMock())
     decrypt = Mock(side_effect=AssertionError("must not decrypt"))
     encrypt = Mock(side_effect=AssertionError("must not encrypt"))
     monkeypatch.setattr(credentials, "decrypt_credential", decrypt)
@@ -196,7 +213,7 @@ async def test_out_of_scope_denies_before_sql_or_crypto(monkeypatch):
                     credentials.CredentialUpdate(
                         identity_id=12, account_id=23, credentials={"password": "value"}
                     ),
-                    "scraper-service",
+                    DELEGATED,
                     db,
                 )
             else:
@@ -204,11 +221,11 @@ async def test_out_of_scope_denies_before_sql_or_crypto(monkeypatch):
                     credentials.AccountCredentialRequest(
                         identity_id=12, account_id=23, credential_types=[]
                     ),
-                    "scraper-service",
+                    DELEGATED,
                     db,
                 )
         assert denied.value.status_code == 403
-    db.execute.assert_not_awaited()
+    assert db.execute.await_count == 2
     db.commit.assert_not_awaited()
     decrypt.assert_not_called()
     encrypt.assert_not_called()
@@ -222,9 +239,7 @@ async def test_real_session_transaction_failure_leaves_persisted_values_unchange
     engine = create_async_engine("sqlite+aiosqlite://")
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
-    monkeypatch.setattr(
-        credentials, "SERVICE_IDENTITY_SCOPES", {"scraper-service": {11}}
-    )
+    monkeypatch.setattr(credentials, "require_delegated_owner_permission", AsyncMock())
     monkeypatch.setattr(credentials, "ENCRYPTION_KEY", Fernet.generate_key().decode())
     try:
         async with AsyncSession(engine, expire_on_commit=False) as db:
@@ -259,7 +274,7 @@ async def test_real_session_transaction_failure_leaves_persisted_values_unchange
                             account_id=21,
                             credentials={"password": "must-not-persist"},
                         ),
-                        "scraper-service",
+                        DELEGATED,
                         db,
                     )
                 else:
@@ -267,7 +282,7 @@ async def test_real_session_transaction_failure_leaves_persisted_values_unchange
                         credentials.AccountCredentialRequest(
                             identity_id=11, account_id=21, credential_types=[]
                         ),
-                        "scraper-service",
+                        DELEGATED,
                         db,
                     )
             assert failed.value.status_code == 500

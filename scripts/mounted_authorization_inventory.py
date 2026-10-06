@@ -45,7 +45,11 @@ def guard_helpers(endpoint):
             if not isinstance(call, ast.Call) or not isinstance(call.func, ast.Name):
                 continue
             callee = call.func.id
-            if callee in {"require_owner_permission", "require_connector_permission"}:
+            if callee in {
+                "require_owner_permission",
+                "require_delegated_owner_permission",
+                "require_connector_permission",
+            }:
                 guards.add(callee)
             visit(callee)
 
@@ -126,10 +130,15 @@ def assess(module, endpoint, method, helpers):
             "public_enrollment_security_gap",
             "Public bootstrap can rotate an existing device key; production enrollment attestation/token and durable key custody are unresolved. Do not treat this as an approved public-policy exception.",
         )
-    if module == "app.routers.credentials":
+    if module == "app.routers.credentials" and endpoint == "validate_credentials":
         return (
-            "legacy_service_principal_gap",
-            "Static service key and identity-scope/SQL owner boundaries remain; no verified workload/tenant mapping or instance platform decision for this family.",
+            "verified_delegated_input_validation",
+            "Verified workload/delegation tokens, audience, actor binding and credential-write scope precede in-memory format validation; no stored resource is read or changed.",
+        )
+    if module == "app.routers.credentials" and endpoint == "health_check":
+        return (
+            "public_health",
+            "Health response exposes no credential values or persisted owner resource.",
         )
     if module == "app.routers.broker" and endpoint == "revoke":
         return (
