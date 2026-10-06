@@ -139,7 +139,10 @@ async def require_membership(client, grant):
 async def verify_decisions(client, grant):
     payload = tuple_payload(grant)
     payload.pop("role")
-    for action in ("read", "update", "delete"):
+    actions = ("read", "update", "delete")
+    if grant["resource_type"] == "fuzekeys_Identity":
+        actions += ("use",)
+    for action in actions:
         response = await client.post(
             "/api/v1/security/authz/check", json={**payload, "action": action}
         )

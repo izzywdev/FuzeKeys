@@ -103,3 +103,9 @@ keeps the existing email/status/metadata response keys without plaintext databas
 storage. New account grants still require the verified inventory/provisioning
 lifecycle before reads can succeed. The Google OAuth connector custody path is
 separate from these browser signup automation routes.
+
+The owner provisioning client also verifies an explicit Identity:use allow canary
+for every Identity grant, in addition to read/update/delete and the unassigned
+principal denial. A stale policy that omits the new signup action stops the run
+without marking that grant verified. No Google authorization claim follows from
+unit testing this prepared application path.

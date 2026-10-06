@@ -145,6 +145,7 @@ class ApplyFlowTests(unittest.IsolatedAsyncioTestCase):
             Response({"allow": True}),
             Response({"allow": True}),
             Response({"allow": True}),
+            Response({"allow": True}),
             Response({"allow": False}),
         ]
         self.assertEqual(await self.apply(), 1)
@@ -157,6 +158,13 @@ class ApplyFlowTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(self.client.get.await_count, 2)
         self.assertEqual(self.snapshot.await_count, 2)
+        self.assertEqual(
+            [
+                call.kwargs["json"]["action"]
+                for call in self.client.post.await_args_list[1:]
+            ],
+            ["read", "update", "delete", "use", "update"],
+        )
 
     async def test_indeterminate_write_has_intent_and_never_revoke(self):
         self.client.post.side_effect = RuntimeError("lost response")
@@ -169,6 +177,21 @@ class ApplyFlowTests(unittest.IsolatedAsyncioTestCase):
         self.client.post.side_effect = [
             Response(module.tuple_payload(self.grants[0])),
             Response({"allow": 1}),
+        ]
+        with self.assertRaises(module.ProvisioningRejected):
+            await self.apply()
+        self.assertEqual(
+            [e["event"] for e in self.events], ["grant-requested", "grant-acknowledged"]
+        )
+        self.client.delete.assert_not_awaited()
+
+    async def test_missing_identity_use_stops_before_success_journal(self):
+        self.client.post.side_effect = [
+            Response(module.tuple_payload(self.grants[0])),
+            Response({"allow": True}),
+            Response({"allow": True}),
+            Response({"allow": True}),
+            Response({"allow": False}),
         ]
         with self.assertRaises(module.ProvisioningRejected):
             await self.apply()
