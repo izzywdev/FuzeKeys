@@ -28,7 +28,8 @@ async def require_owner_permission(
         resource_type not in ("Identity", "Account")
         or type(resource_id) is not int
         or resource_id <= 0
-        or action not in ("update", "delete")
+        or action not in ("read", "update", "delete", "use")
+        or (action == "use" and resource_type != "Identity")
     ):
         raise HTTPException(403, "Invalid resource permission request")
     result = await db.execute(

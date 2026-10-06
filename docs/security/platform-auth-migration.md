@@ -77,3 +77,29 @@ without that rollout will be denied on these three operations. This stacked work
 is not independently production ready. Creation and its transactional grant
 lifecycle, reads and all other mutating families still need implementation; the
 platform authorization gate is not evidence of complete enforcement.
+
+
+## Google identity-bound operations
+
+`POST /api/google/signup/{identity_id}` now requires an explicit
+`fuzekeys_Identity:use` decision for `identity:<id>` after SQL ownership verification
+and before constructing the browser signup service. `POST
+/api/google/test/identity-conversion/{identity_id}` requires `Identity:read` on the
+same instance before any conversion/decryption. The repository and Helm policy
+copies declare `use` only on the Identity instance owner's role; no tenant-wide
+role receives it. These calls retain verified immutable platform bindings and
+fail closed on a missing/denied grant or unavailable Security response.
+
+Register the updated `use` action and verify actual owner decisions before
+rolling out these guards. Existing unlinked owners cannot run these operations.
+This extension checks two additional identity-backed POST operations; it does
+not certify the remaining route families or the account-create grant lifecycle.
+Manual Google signup has no persisted owned instance and remains outside this
+adapter. The Google account list now requires Identity:read and an individual
+Account:read allow on every owned returned row before decrypting any response.
+Signup persists the actual Account model's website and encrypted email/notes
+fields; account status is projected from is_active/signup_completed. The API
+keeps the existing email/status/metadata response keys without plaintext database
+storage. New account grants still require the verified inventory/provisioning
+lifecycle before reads can succeed. The Google OAuth connector custody path is
+separate from these browser signup automation routes.

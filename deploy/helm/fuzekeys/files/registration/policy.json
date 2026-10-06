@@ -8,12 +8,13 @@
         "read": { "name": "Read" },
         "create": { "name": "Create" },
         "update": { "name": "Update" },
-        "delete": { "name": "Delete" }
+        "delete": { "name": "Delete" },
+        "use": { "name": "Use identity for account signup" }
       },
       "roles": {
         "owner": {
           "name": "Instance owner",
-          "permissions": ["read", "create", "update", "delete"]
+          "permissions": ["read", "create", "update", "delete", "use"]
         }
       }
     },
@@ -116,3 +117,4 @@
     }
   ]
 }
+
