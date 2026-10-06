@@ -1,0 +1,1223 @@
+{
+  "source": "actual app.main FastAPI mounts; startup/deployment not executed",
+  "production_verified": false,
+  "route_method_count": 92,
+  "mutating_http_count": 46,
+  "assessment_counts": {
+    "broker_platform_mapping_gap": 3,
+    "device_proof_platform_migration_gap": 3,
+    "dual_session_proof_boundary": 1,
+    "enrollment_proof_boundary": 2,
+    "instance_enforced": 14,
+    "instance_enforced_with_staged_registration": 10,
+    "local_session_profile": 1,
+    "parent_instance_enforced_child_lifecycle_gap": 2,
+    "platform_policy_design_gap": 30,
+    "public_catalog_or_health": 3,
+    "public_enrollment_security_gap": 1,
+    "public_framework_documentation": 8,
+    "public_health": 1,
+    "public_health_or_static_catalog": 9,
+    "public_static_demo": 1,
+    "signup_branch_enforced_general_ai_gap": 1,
+    "verified_delegated_input_validation": 1,
+    "verified_workload_sql_owner_tenant_policy_gap": 1
+  },
+  "not_mounted": [
+    "app.routers.background",
+    "app.routers.sites (real database CRUD/import; app.main mounts its static sites_router instead)"
+  ],
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/openapi.json",
+      "endpoint": "fastapi.applications.openapi",
+      "include_in_schema": false,
+      "dependencies": [],
+      "guard_helpers": [],
+      "assessment": "public_framework_documentation",
+      "reason": "Framework schema/UI endpoint. Credential/session-bound routes stay excluded from generated schema."
+    },
+    {
+      "method": "HEAD",
+      "path": "/openapi.json",
+      "endpoint": "fastapi.applications.openapi",
+      "include_in_schema": false,
+      "dependencies": [],
+      "guard_helpers": [],
+      "assessment": "public_framework_documentation",
+      "reason": "Framework schema/UI endpoint. Credential/session-bound routes stay excluded from generated schema."
+    },
+    {
+      "method": "GET",
+      "path": "/docs",
+      "endpoint": "fastapi.applications.swagger_ui_html",
+      "include_in_schema": false,
+      "dependencies": [],
+      "guard_helpers": [],
+      "assessment": "public_framework_documentation",
+      "reason": "Framework schema/UI endpoint. Credential/session-bound routes stay excluded from generated schema."
+    },
+    {
+      "method": "HEAD",
+      "path": "/docs",
+      "endpoint": "fastapi.applications.swagger_ui_html",
+      "include_in_schema": false,
+      "dependencies": [],
+      "guard_helpers": [],
+      "assessment": "public_framework_documentation",
+      "reason": "Framework schema/UI endpoint. Credential/session-bound routes stay excluded from generated schema."
+    },
+    {
+      "method": "GET",
+      "path": "/docs/oauth2-redirect",
+      "endpoint": "fastapi.applications.swagger_ui_redirect",
+      "include_in_schema": false,
+      "dependencies": [],
+      "guard_helpers": [],
+      "assessment": "public_framework_documentation",
+      "reason": "Framework schema/UI endpoint. Credential/session-bound routes stay excluded from generated schema."
+    },
+    {
+      "method": "HEAD",
+      "path": "/docs/oauth2-redirect",
+      "endpoint": "fastapi.applications.swagger_ui_redirect",
+      "include_in_schema": false,
+      "dependencies": [],
+      "guard_helpers": [],
+      "assessment": "public_framework_documentation",
+      "reason": "Framework schema/UI endpoint. Credential/session-bound routes stay excluded from generated schema."
+    },
+    {
+      "method": "GET",
+      "path": "/redoc",
+      "endpoint": "fastapi.applications.redoc_html",
+      "include_in_schema": false,
+      "dependencies": [],
+      "guard_helpers": [],
+      "assessment": "public_framework_documentation",
+      "reason": "Framework schema/UI endpoint. Credential/session-bound routes stay excluded from generated schema."
+    },
+    {
+      "method": "HEAD",
+      "path": "/redoc",
+      "endpoint": "fastapi.applications.redoc_html",
+      "include_in_schema": false,
+      "dependencies": [],
+      "guard_helpers": [],
+      "assessment": "public_framework_documentation",
+      "reason": "Framework schema/UI endpoint. Credential/session-bound routes stay excluded from generated schema."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/register",
+      "endpoint": "app.routers.auth.register",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session"
+      ],
+      "guard_helpers": [],
+      "assessment": "enrollment_proof_boundary",
+      "reason": "Pre-session registration/login cannot require an existing user instance grant. Password/master-key proof stays required; this inventory does not certify enrollment rate limits or deployment controls."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/login",
+      "endpoint": "app.routers.auth.login",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session"
+      ],
+      "guard_helpers": [],
+      "assessment": "enrollment_proof_boundary",
+      "reason": "Pre-session registration/login cannot require an existing user instance grant. Password/master-key proof stays required; this inventory does not certify enrollment rate limits or deployment controls."
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/me",
+      "endpoint": "app.routers.auth.get_current_user_info",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "local_session_profile",
+      "reason": "Reads the authenticated local session's own User profile; platform session federation remains separate."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/logout",
+      "endpoint": "app.routers.auth.logout",
+      "include_in_schema": true,
+      "dependencies": [],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/platform-link",
+      "endpoint": "app.routers.platform_identity.link_platform_identity",
+      "include_in_schema": false,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "dual_session_proof_boundary",
+      "reason": "Local session plus trusted Security active tenant-membership proof creates an immutable mapping; no grants are created."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/identities/",
+      "endpoint": "app.routers.identities.create_identity",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/identities/",
+      "endpoint": "app.routers.identities.list_identities",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [
+        "require_owner_permission"
+      ],
+      "assessment": "instance_enforced",
+      "reason": "SQL ownership and immutable verified mapping plus exact instance allow precede response, decryption or mutation. Live mappings/grants remain required."
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/identities/{identity_id}",
+      "endpoint": "app.routers.identities.get_identity",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [
+        "require_owner_permission"
+      ],
+      "assessment": "instance_enforced",
+      "reason": "SQL ownership and immutable verified mapping plus exact instance allow precede response, decryption or mutation. Live mappings/grants remain required."
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/identities/{identity_id}",
+      "endpoint": "app.routers.identities.update_identity",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [
+        "require_owner_permission"
+      ],
+      "assessment": "instance_enforced",
+      "reason": "SQL ownership and immutable verified mapping plus exact instance allow precede response, decryption or mutation. Live mappings/grants remain required."
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/identities/{identity_id}",
+      "endpoint": "app.routers.identities.delete_identity",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [
+        "require_owner_permission"
+      ],
+      "assessment": "instance_enforced",
+      "reason": "SQL ownership and immutable verified mapping plus exact instance allow precede response, decryption or mutation. Live mappings/grants remain required."
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/accounts/",
+      "endpoint": "app.routers.accounts.list_accounts",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [
+        "require_owner_permission"
+      ],
+      "assessment": "instance_enforced",
+      "reason": "SQL ownership and immutable verified mapping plus exact instance allow precede response, decryption or mutation. Live mappings/grants remain required."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/accounts/",
+      "endpoint": "app.routers.accounts.create_account",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [
+        "require_owner_permission"
+      ],
+      "assessment": "parent_instance_enforced_child_lifecycle_gap",
+      "reason": "Owned Identity:use is required before automation or writes; new Account grant creation/reconciliation is still unfinished."
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/accounts/{account_id}/stages/{stage_id}",
+      "endpoint": "app.routers.accounts.update_account_stage",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [
+        "require_owner_permission"
+      ],
+      "assessment": "instance_enforced",
+      "reason": "SQL ownership and immutable verified mapping plus exact instance allow precede response, decryption or mutation. Live mappings/grants remain required."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/automation/analyze",
+      "endpoint": "app.routers.automation.analyze_website",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/chat/message",
+      "endpoint": "app.routers.chat.chat_message",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [
+        "require_owner_permission"
+      ],
+      "assessment": "signup_branch_enforced_general_ai_gap",
+      "reason": "Signup branch requires SQL-owned Identity:use; general AI chat/cost controls have no platform resource contract."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/chat/signup",
+      "endpoint": "app.routers.chat.initiate_signup",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [
+        "require_owner_permission"
+      ],
+      "assessment": "instance_enforced",
+      "reason": "SQL ownership and immutable verified mapping plus exact instance allow precede response, decryption or mutation. Live mappings/grants remain required."
+    },
+    {
+      "method": "POST",
+      "path": "/api/sms/register-device",
+      "endpoint": "app.routers.sms.register_device",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session"
+      ],
+      "guard_helpers": [],
+      "assessment": "public_enrollment_security_gap",
+      "reason": "Public bootstrap can rotate an existing device key; production enrollment attestation/token and durable key custody are unresolved. Do not treat this as an approved public-policy exception."
+    },
+    {
+      "method": "POST",
+      "path": "/api/sms/otp",
+      "endpoint": "app.routers.sms.receive_otp",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session"
+      ],
+      "guard_helpers": [],
+      "assessment": "device_proof_platform_migration_gap",
+      "reason": "Device key/callback assignment checks remain; device enrollment, durable verified principal and platform policy are not complete."
+    },
+    {
+      "method": "GET",
+      "path": "/api/sms/requests/{device_id}",
+      "endpoint": "app.routers.sms.get_otp_requests",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session"
+      ],
+      "guard_helpers": [],
+      "assessment": "device_proof_platform_migration_gap",
+      "reason": "Device key/callback assignment checks remain; device enrollment, durable verified principal and platform policy are not complete."
+    },
+    {
+      "method": "POST",
+      "path": "/api/sms/request-otp",
+      "endpoint": "app.routers.sms.request_otp",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "GET",
+      "path": "/api/sms/request-status/{request_id}",
+      "endpoint": "app.routers.sms.get_request_status",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "GET",
+      "path": "/api/sms/devices",
+      "endpoint": "app.routers.sms.get_devices",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "WEBSOCKET",
+      "path": "/api/sms/ws/sms-interceptor",
+      "endpoint": "app.routers.sms.websocket_endpoint",
+      "include_in_schema": false,
+      "dependencies": [],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "GET",
+      "path": "/api/sms/health",
+      "endpoint": "app.routers.sms.health_check",
+      "include_in_schema": true,
+      "dependencies": [],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "POST",
+      "path": "/api/infrastructure/sms/request-verification",
+      "endpoint": "app.routers.infrastructure.request_sms_verification",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "GET",
+      "path": "/api/infrastructure/sms/get-verification/{request_id}",
+      "endpoint": "app.routers.infrastructure.get_sms_verification",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "POST",
+      "path": "/api/infrastructure/sms/complete-verification/{request_id}",
+      "endpoint": "app.routers.infrastructure.complete_sms_verification",
+      "include_in_schema": true,
+      "dependencies": [],
+      "guard_helpers": [],
+      "assessment": "device_proof_platform_migration_gap",
+      "reason": "Device-key verification and request assignment precede callback mutation; verified device principal/platform policy still need migration."
+    },
+    {
+      "method": "POST",
+      "path": "/api/infrastructure/email/setup-monitoring",
+      "endpoint": "app.routers.infrastructure.setup_email_monitoring",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "GET",
+      "path": "/api/infrastructure/email/get-verification/{monitor_id}",
+      "endpoint": "app.routers.infrastructure.get_email_verification",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "POST",
+      "path": "/api/infrastructure/mobile/send-command",
+      "endpoint": "app.routers.infrastructure.send_mobile_command",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "GET",
+      "path": "/api/infrastructure/mobile/get-command-result/{command_id}",
+      "endpoint": "app.routers.infrastructure.get_mobile_command_result",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "POST",
+      "path": "/api/infrastructure/scraper/report-error",
+      "endpoint": "app.routers.infrastructure.report_scraper_error",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "POST",
+      "path": "/api/infrastructure/scraper/report-success",
+      "endpoint": "app.routers.infrastructure.report_scraper_success",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "WEBSOCKET",
+      "path": "/api/infrastructure/ws/mobile-commands",
+      "endpoint": "app.routers.infrastructure.mobile_commands_websocket",
+      "include_in_schema": false,
+      "dependencies": [],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "POST",
+      "path": "/api/llm-scraper/generate",
+      "endpoint": "app.routers.llm_scraper.generate_scraper",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "POST",
+      "path": "/api/llm-scraper/improve",
+      "endpoint": "app.routers.llm_scraper.improve_scraper",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "GET",
+      "path": "/api/llm-scraper/scrapers",
+      "endpoint": "app.routers.llm_scraper.list_scrapers",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "GET",
+      "path": "/api/llm-scraper/scrapers/{site_name}/{action_type}",
+      "endpoint": "app.routers.llm_scraper.get_scraper",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "GET",
+      "path": "/api/llm-scraper/scrapers/{site_name}/{action_type}/history",
+      "endpoint": "app.routers.llm_scraper.get_scraper_history",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/llm-scraper/scrapers/{site_name}/{action_type}",
+      "endpoint": "app.routers.llm_scraper.delete_scraper",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "GET",
+      "path": "/api/llm-scraper/stats",
+      "endpoint": "app.routers.llm_scraper.get_generation_stats",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "POST",
+      "path": "/api/llm-scraper/debug",
+      "endpoint": "app.routers.llm_scraper.debug_scraper",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "POST",
+      "path": "/api/credentials/request-identity-credentials",
+      "endpoint": "app.routers.credentials.request_identity_credentials",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.security.fuzefront_auth.dependency"
+      ],
+      "guard_helpers": [
+        "require_delegated_owner_permission"
+      ],
+      "assessment": "instance_enforced",
+      "reason": "SQL ownership and immutable verified mapping plus exact instance allow precede response, decryption or mutation. Live mappings/grants remain required."
+    },
+    {
+      "method": "POST",
+      "path": "/api/credentials/request-account-credentials",
+      "endpoint": "app.routers.credentials.request_account_credentials",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.security.fuzefront_auth.dependency"
+      ],
+      "guard_helpers": [
+        "require_delegated_owner_permission"
+      ],
+      "assessment": "instance_enforced",
+      "reason": "SQL ownership and immutable verified mapping plus exact instance allow precede response, decryption or mutation. Live mappings/grants remain required."
+    },
+    {
+      "method": "POST",
+      "path": "/api/credentials/store-account-credentials",
+      "endpoint": "app.routers.credentials.store_account_credentials",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.security.fuzefront_auth.dependency"
+      ],
+      "guard_helpers": [
+        "require_delegated_owner_permission"
+      ],
+      "assessment": "instance_enforced",
+      "reason": "SQL ownership and immutable verified mapping plus exact instance allow precede response, decryption or mutation. Live mappings/grants remain required."
+    },
+    {
+      "method": "GET",
+      "path": "/api/credentials/account/{account_id}/credentials",
+      "endpoint": "app.routers.credentials.get_account_credentials",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.security.fuzefront_auth.dependency"
+      ],
+      "guard_helpers": [
+        "require_delegated_owner_permission"
+      ],
+      "assessment": "instance_enforced",
+      "reason": "SQL ownership and immutable verified mapping plus exact instance allow precede response, decryption or mutation. Live mappings/grants remain required."
+    },
+    {
+      "method": "GET",
+      "path": "/api/credentials/identity/{identity_id}/accounts",
+      "endpoint": "app.routers.credentials.get_identity_accounts",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.security.fuzefront_auth.dependency"
+      ],
+      "guard_helpers": [
+        "require_delegated_owner_permission"
+      ],
+      "assessment": "instance_enforced",
+      "reason": "SQL ownership and immutable verified mapping plus exact instance allow precede response, decryption or mutation. Live mappings/grants remain required."
+    },
+    {
+      "method": "POST",
+      "path": "/api/credentials/validate-credentials",
+      "endpoint": "app.routers.credentials.validate_credentials",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.security.fuzefront_auth.dependency"
+      ],
+      "guard_helpers": [],
+      "assessment": "verified_delegated_input_validation",
+      "reason": "Verified workload/delegation tokens, audience, actor binding and credential-write scope precede in-memory format validation; no stored resource is read or changed."
+    },
+    {
+      "method": "GET",
+      "path": "/api/credentials/health",
+      "endpoint": "app.routers.credentials.health_check",
+      "include_in_schema": true,
+      "dependencies": [],
+      "guard_helpers": [],
+      "assessment": "public_health",
+      "reason": "Health response exposes no credential values or persisted owner resource."
+    },
+    {
+      "method": "POST",
+      "path": "/api/google/signup/manual",
+      "endpoint": "app.routers.google_integration.manual_signup",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "POST",
+      "path": "/api/google/signup/{identity_id}",
+      "endpoint": "app.routers.google_integration.signup_with_identity",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [
+        "require_owner_permission"
+      ],
+      "assessment": "parent_instance_enforced_child_lifecycle_gap",
+      "reason": "Owned Identity:use is required before automation or writes; new Account grant creation/reconciliation is still unfinished."
+    },
+    {
+      "method": "GET",
+      "path": "/api/google/config/default",
+      "endpoint": "app.routers.google_integration.get_default_config",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "POST",
+      "path": "/api/google/test/identity-conversion/{identity_id}",
+      "endpoint": "app.routers.google_integration.test_identity_conversion",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [
+        "require_owner_permission"
+      ],
+      "assessment": "instance_enforced",
+      "reason": "SQL ownership and immutable verified mapping plus exact instance allow precede response, decryption or mutation. Live mappings/grants remain required."
+    },
+    {
+      "method": "GET",
+      "path": "/api/google/accounts/{identity_id}",
+      "endpoint": "app.routers.google_integration.get_google_accounts",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [
+        "require_owner_permission"
+      ],
+      "assessment": "instance_enforced",
+      "reason": "SQL ownership and immutable verified mapping plus exact instance allow precede response, decryption or mutation. Live mappings/grants remain required."
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/integrations/sites",
+      "endpoint": "app.routers.site_integrations.list_available_sites",
+      "include_in_schema": true,
+      "dependencies": [],
+      "guard_helpers": [],
+      "assessment": "public_catalog_or_health",
+      "reason": "Provider integration discovery/health; no persisted owned resource is read or changed."
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/integrations/sites/{site_name}/capabilities",
+      "endpoint": "app.routers.site_integrations.get_site_capabilities_endpoint",
+      "include_in_schema": true,
+      "dependencies": [],
+      "guard_helpers": [],
+      "assessment": "public_catalog_or_health",
+      "reason": "Provider integration discovery/health; no persisted owned resource is read or changed."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/integrations/signup",
+      "endpoint": "app.routers.site_integrations.create_account",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/integrations/signin",
+      "endpoint": "app.routers.site_integrations.authenticate_account",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/integrations/apikey",
+      "endpoint": "app.routers.site_integrations.create_api_key",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/integrations/health",
+      "endpoint": "app.routers.site_integrations.integration_health_check",
+      "include_in_schema": true,
+      "dependencies": [],
+      "guard_helpers": [],
+      "assessment": "public_catalog_or_health",
+      "reason": "Provider integration discovery/health; no persisted owned resource is read or changed."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/broker/grant",
+      "endpoint": "app.routers.broker.grant",
+      "include_in_schema": true,
+      "dependencies": [],
+      "guard_helpers": [],
+      "assessment": "broker_platform_mapping_gap",
+      "reason": "Existing broker service-key/macaroon proof and caveats remain; this is not proof of platform resource-instance policy migration."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/broker/redeem",
+      "endpoint": "app.routers.broker.redeem",
+      "include_in_schema": true,
+      "dependencies": [],
+      "guard_helpers": [],
+      "assessment": "broker_platform_mapping_gap",
+      "reason": "Existing broker service-key/macaroon proof and caveats remain; this is not proof of platform resource-instance policy migration."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/broker/mint-token",
+      "endpoint": "app.routers.broker.mint_token",
+      "include_in_schema": true,
+      "dependencies": [],
+      "guard_helpers": [],
+      "assessment": "broker_platform_mapping_gap",
+      "reason": "Existing broker service-key/macaroon proof and caveats remain; this is not proof of platform resource-instance policy migration."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/broker/revoke",
+      "endpoint": "app.routers.broker.revoke",
+      "include_in_schema": true,
+      "dependencies": [],
+      "guard_helpers": [],
+      "assessment": "verified_workload_sql_owner_tenant_policy_gap",
+      "reason": "SDK-verified fuze-workload token for service:fuzekeys plus exact SQL grantor principal permits revocation; caller-asserted gateway headers are ignored. Stored grants still lack verified tenant/platform instance policy mapping."
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/connectors/google-gmail",
+      "endpoint": "app.routers.connectors.status",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.security.fuzefront_auth.dependency"
+      ],
+      "guard_helpers": [
+        "require_connector_permission"
+      ],
+      "assessment": "instance_enforced_with_staged_registration",
+      "reason": "Trusted delegation, tenant-scoped SQL/vault custody and exact Connector decisions; first PUT stages only non-secret owner intent (202). Live policy/grants remain required."
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/connectors/{provider}",
+      "endpoint": "app.routers.connectors.status",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.security.fuzefront_auth.dependency"
+      ],
+      "guard_helpers": [
+        "require_connector_permission"
+      ],
+      "assessment": "instance_enforced_with_staged_registration",
+      "reason": "Trusted delegation, tenant-scoped SQL/vault custody and exact Connector decisions; first PUT stages only non-secret owner intent (202). Live policy/grants remain required."
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/connectors/google-gmail",
+      "endpoint": "app.routers.connectors.configure_gmail",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.security.fuzefront_auth.dependency"
+      ],
+      "guard_helpers": [
+        "require_connector_permission"
+      ],
+      "assessment": "instance_enforced_with_staged_registration",
+      "reason": "Trusted delegation, tenant-scoped SQL/vault custody and exact Connector decisions; first PUT stages only non-secret owner intent (202). Live policy/grants remain required."
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/connectors/{provider}",
+      "endpoint": "app.routers.connectors.configure",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.security.fuzefront_auth.dependency"
+      ],
+      "guard_helpers": [
+        "require_connector_permission"
+      ],
+      "assessment": "instance_enforced_with_staged_registration",
+      "reason": "Trusted delegation, tenant-scoped SQL/vault custody and exact Connector decisions; first PUT stages only non-secret owner intent (202). Live policy/grants remain required."
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/connectors/google-gmail",
+      "endpoint": "app.routers.connectors.disconnect",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.security.fuzefront_auth.dependency"
+      ],
+      "guard_helpers": [
+        "require_connector_permission"
+      ],
+      "assessment": "instance_enforced_with_staged_registration",
+      "reason": "Trusted delegation, tenant-scoped SQL/vault custody and exact Connector decisions; first PUT stages only non-secret owner intent (202). Live policy/grants remain required."
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/connectors/{provider}",
+      "endpoint": "app.routers.connectors.disconnect",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.security.fuzefront_auth.dependency"
+      ],
+      "guard_helpers": [
+        "require_connector_permission"
+      ],
+      "assessment": "instance_enforced_with_staged_registration",
+      "reason": "Trusted delegation, tenant-scoped SQL/vault custody and exact Connector decisions; first PUT stages only non-secret owner intent (202). Live policy/grants remain required."
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/connectors/google-gmail/credential",
+      "endpoint": "app.routers.connectors.lease_credential",
+      "include_in_schema": false,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.security.fuzefront_auth.dependency"
+      ],
+      "guard_helpers": [
+        "require_connector_permission"
+      ],
+      "assessment": "instance_enforced_with_staged_registration",
+      "reason": "Trusted delegation, tenant-scoped SQL/vault custody and exact Connector decisions; first PUT stages only non-secret owner intent (202). Live policy/grants remain required."
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/connectors/{provider}/credential",
+      "endpoint": "app.routers.connectors.lease_credential",
+      "include_in_schema": false,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.security.fuzefront_auth.dependency"
+      ],
+      "guard_helpers": [
+        "require_connector_permission"
+      ],
+      "assessment": "instance_enforced_with_staged_registration",
+      "reason": "Trusted delegation, tenant-scoped SQL/vault custody and exact Connector decisions; first PUT stages only non-secret owner intent (202). Live policy/grants remain required."
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/connectors/google-gmail/credential",
+      "endpoint": "app.routers.connectors.update_credential",
+      "include_in_schema": false,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.security.fuzefront_auth.dependency"
+      ],
+      "guard_helpers": [
+        "require_connector_permission"
+      ],
+      "assessment": "instance_enforced_with_staged_registration",
+      "reason": "Trusted delegation, tenant-scoped SQL/vault custody and exact Connector decisions; first PUT stages only non-secret owner intent (202). Live policy/grants remain required."
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/connectors/{provider}/credential",
+      "endpoint": "app.routers.connectors.update_credential",
+      "include_in_schema": false,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.security.fuzefront_auth.dependency"
+      ],
+      "guard_helpers": [
+        "require_connector_permission"
+      ],
+      "assessment": "instance_enforced_with_staged_registration",
+      "reason": "Trusted delegation, tenant-scoped SQL/vault custody and exact Connector decisions; first PUT stages only non-secret owner intent (202). Live policy/grants remain required."
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sites/categories",
+      "endpoint": "app.main.list_categories",
+      "include_in_schema": true,
+      "dependencies": [],
+      "guard_helpers": [],
+      "assessment": "public_health_or_static_catalog",
+      "reason": "Health/info or in-source demo/site catalog; real routers/sites.py mutation endpoints are not mounted."
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sites/stats/overview",
+      "endpoint": "app.main.get_sites_overview",
+      "include_in_schema": true,
+      "dependencies": [],
+      "guard_helpers": [],
+      "assessment": "public_health_or_static_catalog",
+      "reason": "Health/info or in-source demo/site catalog; real routers/sites.py mutation endpoints are not mounted."
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sites/",
+      "endpoint": "app.main.list_sites",
+      "include_in_schema": true,
+      "dependencies": [],
+      "guard_helpers": [],
+      "assessment": "public_health_or_static_catalog",
+      "reason": "Health/info or in-source demo/site catalog; real routers/sites.py mutation endpoints are not mounted."
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sites/{site_id}",
+      "endpoint": "app.main.get_site",
+      "include_in_schema": true,
+      "dependencies": [],
+      "guard_helpers": [],
+      "assessment": "public_health_or_static_catalog",
+      "reason": "Health/info or in-source demo/site catalog; real routers/sites.py mutation endpoints are not mounted."
+    },
+    {
+      "method": "GET",
+      "path": "/",
+      "endpoint": "app.main.root",
+      "include_in_schema": true,
+      "dependencies": [],
+      "guard_helpers": [],
+      "assessment": "public_health_or_static_catalog",
+      "reason": "Health/info or in-source demo/site catalog; real routers/sites.py mutation endpoints are not mounted."
+    },
+    {
+      "method": "GET",
+      "path": "/health",
+      "endpoint": "app.main.health_check",
+      "include_in_schema": true,
+      "dependencies": [],
+      "guard_helpers": [],
+      "assessment": "public_health_or_static_catalog",
+      "reason": "Health/info or in-source demo/site catalog; real routers/sites.py mutation endpoints are not mounted."
+    },
+    {
+      "method": "GET",
+      "path": "/api/info",
+      "endpoint": "app.main.api_info",
+      "include_in_schema": true,
+      "dependencies": [],
+      "guard_helpers": [],
+      "assessment": "public_health_or_static_catalog",
+      "reason": "Health/info or in-source demo/site catalog; real routers/sites.py mutation endpoints are not mounted."
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/demo/identities",
+      "endpoint": "app.main.demo_identities",
+      "include_in_schema": true,
+      "dependencies": [],
+      "guard_helpers": [],
+      "assessment": "public_health_or_static_catalog",
+      "reason": "Health/info or in-source demo/site catalog; real routers/sites.py mutation endpoints are not mounted."
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/demo/accounts",
+      "endpoint": "app.main.demo_accounts",
+      "include_in_schema": true,
+      "dependencies": [],
+      "guard_helpers": [],
+      "assessment": "public_health_or_static_catalog",
+      "reason": "Health/info or in-source demo/site catalog; real routers/sites.py mutation endpoints are not mounted."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/demo/chat",
+      "endpoint": "app.main.demo_chat",
+      "include_in_schema": true,
+      "dependencies": [],
+      "guard_helpers": [],
+      "assessment": "public_static_demo",
+      "reason": "Returns canned in-source strings; no provider request, database mutation or secret is performed."
+    }
+  ]
+}

@@ -212,3 +212,32 @@ def setup_test_env():
             "DATABASE_URL_ASYNC": TEST_DATABASE_URL,
         }
     )
+
+
+@pytest_asyncio.fixture
+async def verified_owner_permissions(db_session, test_user, monkeypatch):
+    """Verified test binding and positive platform decisions for legacy CRUD tests.
+
+    The route guards and SQL predicates still run; dedicated guard regressions
+    exercise negative grants, absent mappings, other owners and outages.
+    """
+    from app.models.platform_identity import PlatformIdentity
+    from app.security import owner_authz
+
+    db_session.add(
+        PlatformIdentity(
+            user_id=test_user.id, subject="test-owner", tenant="test-tenant"
+        )
+    )
+    await db_session.commit()
+
+    async def allow_test_owner(subject, tenant, resource_type, action, *, resource_key):
+        assert (subject, tenant) == ("test-owner", "test-tenant")
+        assert resource_type in ("fuzekeys_Identity", "fuzekeys_Account")
+        assert action in ("update", "delete")
+        assert resource_key.startswith(
+            "identity:" if resource_type == "fuzekeys_Identity" else "account:"
+        )
+        return True
+
+    monkeypatch.setattr(owner_authz, "check_permission", allow_test_owner)

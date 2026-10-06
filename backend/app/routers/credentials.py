@@ -14,8 +14,12 @@ from typing import Any, Dict, List, Optional
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.security.fuzefront_auth import Identity as DelegatedIdentity
+from app.security.fuzefront_auth import delegated_auth
+from app.security.owner_authz import require_delegated_owner_permission
 from app.utils.logging import log_security_event
 from app.utils.pagination import Page, PageInfo
 
@@ -433,7 +437,10 @@ class ValidationResult(BaseModel):
     )
 
 
-# Authentication dependency
+# Legacy compatibility helper only. Mounted credential routes use delegated_auth;
+# keeping this parser temporarily preserves explicit fail-closed regression coverage
+# while existing callers migrate, but possession of one of these keys grants no route
+# authority.
 async def verify_api_key(
     x_api_key: str = Header(..., description="API key for service authentication")
 ):
@@ -479,6 +486,15 @@ async def verify_api_key(
         )
         raise HTTPException(status_code=401, detail="Invalid API key")
 
+    return service_name
+
+
+def _delegated_service_name(identity: DelegatedIdentity) -> str:
+    """Return the verified workload actor for credential audit records."""
+    actor = getattr(identity, "actor", None)
+    service_name = actor.get("sub") if isinstance(actor, dict) else None
+    if not isinstance(service_name, str) or not service_name.strip():
+        raise HTTPException(403, "Verified credential workload required")
     return service_name
 
 
@@ -553,9 +569,9 @@ def generate_credentials_for_identity(
         # Generate unique email for signup
         timestamp = int(datetime.utcnow().timestamp())
         email_domain = "@example.com"  # Use configured domain
-        credentials[
-            "email"
-        ] = f"{identity.name.lower().replace(' ', '.')}.{timestamp}{email_domain}"
+        credentials["email"] = (
+            f"{identity.name.lower().replace(' ', '.')}.{timestamp}{email_domain}"
+        )
     else:
         # Use existing email pattern for signin
         credentials["email"] = f"{identity.name.lower().replace(' ', '.')}@example.com"
@@ -582,9 +598,9 @@ def generate_credentials_for_identity(
 
     # Site-specific customizations
     if site_name.lower() == "github":
-        credentials[
-            "username"
-        ] = f"{identity.name.lower().replace(' ', '')}_{secrets.token_hex(4)}"
+        credentials["username"] = (
+            f"{identity.name.lower().replace(' ', '')}_{secrets.token_hex(4)}"
+        )
     elif site_name.lower() == "google":
         credentials["recovery_email"] = f"backup.{credentials['email']}"
 
@@ -618,21 +634,29 @@ and the target website's requirements. Perfect for automated signup processes.
 )
 async def request_identity_credentials(
     request: CredentialRequest,
-    service_name: str = Depends(verify_api_key),
-    db: Session = Depends(get_db),
+    delegated_identity: DelegatedIdentity = Depends(
+        delegated_auth("connectors:credentials:write")
+    ),
+    db: AsyncSession = Depends(get_db),
 ):
     """Request credentials for an identity to sign up for a specific site"""
 
     try:
-        # SECURITY (HIGH-2 / appsec #18): per-tenant key scoping — the calling key
-        # must be authorized for this identity before we generate credentials from
-        # its PII.
-        require_identity_scope(service_name, request.identity_id)
-
         # Get identity
-        identity = db.query(Identity).filter(Identity.id == request.identity_id).first()
+        identity = (
+            await db.execute(select(Identity).where(Identity.id == request.identity_id))
+        ).scalar_one_or_none()
         if not identity:
             raise HTTPException(status_code=404, detail="Identity not found")
+        await require_delegated_owner_permission(
+            db,
+            delegated_identity,
+            identity.user_id,
+            "Identity",
+            identity.id,
+            "use",
+        )
+        service_name = _delegated_service_name(delegated_identity)
 
         logger.info(
             f"Generating credentials for identity {identity.name} on {request.site_name} by {service_name}"
@@ -701,39 +725,39 @@ stored after successful signup.
 )
 async def request_account_credentials(
     request: AccountCredentialRequest,
-    service_name: str = Depends(verify_api_key),
-    db: Session = Depends(get_db),
+    delegated_identity: DelegatedIdentity = Depends(
+        delegated_auth("connectors:credentials:read")
+    ),
+    db: AsyncSession = Depends(get_db),
 ):
     """Request stored credentials for an existing account"""
 
     try:
-        # SECURITY (VULN 2 - IDOR): scope the lookup to the supplied owning
-        # identity. We join Account -> Identity and require both that the account
-        # has the requested id AND that it belongs to request.identity_id. A
-        # service key can therefore never fetch an account whose owning identity
-        # it did not supply. We return 404 (not 403) when no match is found so we
-        # do not leak whether the account id exists under a different owner.
-        #
-        # RESIDUAL TRUST ASSUMPTION: there is no tenant/authorization model yet,
-        # so a valid service key is trusted to act on behalf of any identity it
-        # names. This closes cross-account IDOR via raw id but does NOT yet bind a
-        # key to a specific set of identities.
-        # SECURITY (HIGH-2 / appsec #18 — RESOLVED): per-tenant key scoping. The
-        # calling key must be authorized for request.identity_id before we look up
-        # (and decrypt) the account's credentials. Combined with the identity-scoped
-        # account filter below, a key can neither name an arbitrary identity nor
-        # reach an account outside the identity it was granted.
-        require_identity_scope(service_name, request.identity_id)
+        owner = (
+            await db.execute(select(Identity).where(Identity.id == request.identity_id))
+        ).scalar_one_or_none()
+        if not owner:
+            raise HTTPException(status_code=404, detail="Account not found")
+        await require_delegated_owner_permission(
+            db,
+            delegated_identity,
+            owner.user_id,
+            "Account",
+            request.account_id,
+            "read",
+        )
+        service_name = _delegated_service_name(delegated_identity)
 
         account = (
-            db.query(Account)
-            .join(Identity, Account.identity_id == Identity.id)
-            .filter(
-                (Account.id == request.account_id)
-                & (Account.identity_id == request.identity_id)
+            await db.execute(
+                select(Account)
+                .join(Identity, Account.identity_id == Identity.id)
+                .where(
+                    (Account.id == request.account_id)
+                    & (Account.identity_id == request.identity_id)
+                )
             )
-            .first()
-        )
+        ).scalar_one_or_none()
         if not account:
             log_security_event(
                 "credential_access_denied",
@@ -788,7 +812,7 @@ async def request_account_credentials(
 
         # Update last accessed
         account.last_accessed = datetime.utcnow()
-        db.commit()
+        await db.commit()
 
         return AccountCredentialResponse(
             account_id=request.account_id,
@@ -800,6 +824,7 @@ async def request_account_credentials(
     except HTTPException:
         raise
     except Exception as e:
+        await db.rollback()
         logger.error(f"Error requesting account credentials: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve credentials")
 
@@ -829,29 +854,42 @@ creation process. All credentials are encrypted before storage.
 )
 async def store_account_credentials(
     request: CredentialUpdate,
-    service_name: str = Depends(verify_api_key),
-    db: Session = Depends(get_db),
+    delegated_identity: DelegatedIdentity = Depends(
+        delegated_auth("connectors:credentials:write")
+    ),
+    db: AsyncSession = Depends(get_db),
 ):
     """Store/update credentials for an account after successful signup"""
 
     try:
-        # SECURITY (HIGH-2 / appsec #18): per-tenant key scoping — the calling key
-        # must be authorized for request.identity_id before mutating any of its
-        # accounts' stored credentials.
-        require_identity_scope(service_name, request.identity_id)
+        owner = (
+            await db.execute(select(Identity).where(Identity.id == request.identity_id))
+        ).scalar_one_or_none()
+        if not owner:
+            raise HTTPException(status_code=404, detail="Account not found")
+        await require_delegated_owner_permission(
+            db,
+            delegated_identity,
+            owner.user_id,
+            "Account",
+            request.account_id,
+            "update",
+        )
+        service_name = _delegated_service_name(delegated_identity)
 
         # SECURITY (VULN 2 - IDOR): scope the mutation to the supplied owning
         # identity. 404 (not 403) here avoids leaking the existence of accounts
         # owned by a different identity within the key's allowed scope.
         account = (
-            db.query(Account)
-            .join(Identity, Account.identity_id == Identity.id)
-            .filter(
-                (Account.id == request.account_id)
-                & (Account.identity_id == request.identity_id)
+            await db.execute(
+                select(Account)
+                .join(Identity, Account.identity_id == Identity.id)
+                .where(
+                    (Account.id == request.account_id)
+                    & (Account.identity_id == request.identity_id)
+                )
             )
-            .first()
-        )
+        ).scalar_one_or_none()
         if not account:
             log_security_event(
                 "credential_store_denied",
@@ -894,7 +932,7 @@ async def store_account_credentials(
         account.is_active = True
         account.last_accessed = datetime.utcnow()
 
-        db.commit()
+        await db.commit()
 
         return {
             "success": True,
@@ -905,6 +943,7 @@ async def store_account_credentials(
     except HTTPException:
         raise
     except Exception as e:
+        await db.rollback()
         logger.error(f"Error storing credentials: {e}")
         raise HTTPException(status_code=500, detail="Failed to store credentials")
 
@@ -928,8 +967,10 @@ async def get_account_credentials(
     credential_types: Optional[str] = Query(
         None, description="Comma-separated list of credential types to retrieve"
     ),
-    service_name: str = Depends(verify_api_key),
-    db: Session = Depends(get_db),
+    delegated_identity: DelegatedIdentity = Depends(
+        delegated_auth("connectors:credentials:read")
+    ),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get stored credentials for a specific account.
 
@@ -946,7 +987,7 @@ async def get_account_credentials(
         credential_types=credential_types_list or [],
     )
 
-    return await request_account_credentials(request, service_name, db)
+    return await request_account_credentials(request, delegated_identity, db)
 
 
 @router.get(
@@ -963,28 +1004,60 @@ async def get_identity_accounts(
     identity_id: int = Path(..., description="Identity ID to get accounts for"),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    service_name: str = Depends(verify_api_key),
-    db: Session = Depends(get_db),
+    delegated_identity: DelegatedIdentity = Depends(
+        delegated_auth("connectors:credentials:read")
+    ),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get all accounts for an identity"""
 
     try:
-        # SECURITY (HIGH-2 / appsec #18): enforce per-tenant key scoping BEFORE any
-        # lookup, so a valid key cannot enumerate an identity it is not scoped for.
-        # 403 (not 404) here is intentional: scope is a property of the calling key,
-        # not of whether the identity exists, so denying out-of-scope access does
-        # not leak identity existence (we never query for it).
-        require_identity_scope(service_name, identity_id)
-
         # Get identity
-        identity = db.query(Identity).filter(Identity.id == identity_id).first()
+        identity = (
+            await db.execute(select(Identity).where(Identity.id == identity_id))
+        ).scalar_one_or_none()
         if not identity:
             raise HTTPException(status_code=404, detail="Identity not found")
+        await require_delegated_owner_permission(
+            db,
+            delegated_identity,
+            identity.user_id,
+            "Identity",
+            identity.id,
+            "read",
+        )
 
         # Get accounts for this identity
-        base_query = db.query(Account).filter(Account.identity_id == identity_id)
-        total = base_query.count()
-        accounts = base_query.order_by(Account.id).offset(offset).limit(limit).all()
+        total = (
+            await db.execute(
+                select(func.count(Account.id)).where(Account.identity_id == identity_id)
+            )
+        ).scalar_one()
+        accounts = (
+            (
+                await db.execute(
+                    select(Account)
+                    .where(Account.identity_id == identity_id)
+                    .order_by(Account.id)
+                    .offset(offset)
+                    .limit(limit)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        # Authorize every row before projecting any metadata so a later denied
+        # item cannot produce a partially disclosed page.
+        for account in accounts:
+            await require_delegated_owner_permission(
+                db,
+                delegated_identity,
+                identity.user_id,
+                "Account",
+                account.id,
+                "read",
+            )
 
         account_list = []
         for account in accounts:
@@ -995,9 +1068,9 @@ async def get_identity_accounts(
                 "is_active": account.is_active,
                 "signup_completed": account.signup_completed,
                 "created_at": account.created_at.isoformat(),
-                "last_accessed": account.last_accessed.isoformat()
-                if account.last_accessed
-                else None,
+                "last_accessed": (
+                    account.last_accessed.isoformat() if account.last_accessed else None
+                ),
                 "has_stored_credentials": bool(
                     hasattr(account, "encrypted_credentials")
                     and account.encrypted_credentials
@@ -1040,11 +1113,15 @@ attempting to use them.
              """,
 )
 async def validate_credentials(
-    request: ValidationRequest, service_name: str = Depends(verify_api_key)
+    request: ValidationRequest,
+    delegated_identity: DelegatedIdentity = Depends(
+        delegated_auth("connectors:credentials:write")
+    ),
 ):
     """Validate credentials format for a specific site"""
 
     try:
+        _delegated_service_name(delegated_identity)
         validation_rules = {
             "github": {
                 "required": ["email", "password", "username"],
@@ -1103,6 +1180,8 @@ async def validate_credentials(
 
         return ValidationResult(**validation_result)
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error validating credentials: {e}")
         raise HTTPException(status_code=500, detail="Failed to validate credentials")

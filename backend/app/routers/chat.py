@@ -15,6 +15,7 @@ from app.database import get_db
 from app.models.identity import Identity
 from app.models.user import User
 from app.routers.auth import get_current_user
+from app.security.owner_authz import require_owner_permission
 from app.utils.logging import get_logger, log_automation_event
 
 logger = get_logger(__name__)
@@ -152,6 +153,8 @@ async def chat_message(
 
         return ChatResponse(response=ai_response, suggested_actions=suggested_actions)
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error processing chat message: {str(e)}")
         raise HTTPException(
@@ -169,17 +172,13 @@ async def handle_signup_request(
         identity_name = signup_request.get("identity_name")
 
         # Find appropriate identity
-        identity = None
+        query = select(Identity).where(Identity.user_id == current_user.id)
         if identity_name:
-            # Find identity by name
-            for user_identity in current_user.identities:
-                if identity_name.lower() in user_identity.name.lower():
-                    identity = user_identity
-                    break
-
-        if not identity and current_user.identities:
-            # Use first available identity
-            identity = current_user.identities[0]
+            # Bind selection to SQL ownership, never a supplied identity name alone.
+            query = query.where(Identity.name.ilike("%" + identity_name + "%"))
+        identity = (
+            await db.execute(query.order_by(Identity.id).limit(1))
+        ).scalar_one_or_none()
 
         if not identity:
             return ChatResponse(
@@ -191,6 +190,10 @@ async def handle_signup_request(
                     "Learn about identities",
                 ],
             )
+
+        await require_owner_permission(
+            db, current_user.id, "Identity", identity.id, "use"
+        )
 
         # Analyze the website
         try:
@@ -237,6 +240,8 @@ async def handle_signup_request(
                 ],
             )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error handling signup request: {str(e)}")
         return ChatResponse(
@@ -290,6 +295,10 @@ async def initiate_signup(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Identity not found"
             )
+
+        await require_owner_permission(
+            db, current_user.id, "Identity", identity.id, "use"
+        )
 
         # Start the signup process
         log_automation_event(

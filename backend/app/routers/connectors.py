@@ -14,15 +14,22 @@ import urllib.parse
 from typing import Any, Dict, List, Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.broker import runtime
 from app.broker.vault import MutableSecretVault
 from app.database import get_db
-from app.models.connector import ConnectorCredential
+from app.models.connector import ConnectorCredential, ConnectorGrantIntent
+from app.security.connector_authz import (
+    connector_resource_key,
+    connector_tenant,
+    require_connector_permission,
+)
 from app.security.fuzefront_auth import Identity, delegated_auth
 
 router = APIRouter(prefix="/api/v1/connectors", tags=["Connectors"])
@@ -61,26 +68,32 @@ class CredentialUpdate(BaseModel):
     google_identity: Optional[GoogleIdentity] = None
 
 
-def _canonical_google_ref(owner: str) -> str:
-    # Preserve the deployed Gmail key while sharing only credential custody.
-    return f"connectors/{urllib.parse.quote(owner, safe='')}/{GMAIL}"
+def _connector_ref(tenant: str, owner: str, provider: str) -> str:
+    return f"connectors/tenants/{urllib.parse.quote(tenant, safe='')}/{urllib.parse.quote(owner, safe='')}/{provider}"
 
 
-async def _lock_google(db: AsyncSession, owner: str) -> None:
+def _canonical_google_ref(tenant: str, owner: str) -> str:
+    return _connector_ref(tenant, owner, GMAIL)
+
+
+async def _lock_google(db: AsyncSession, tenant: str, owner: str) -> None:
     # Transaction-scoped, cross-replica serialization. A process lock is not enough.
     # SQLite tests have one writer; production uses PostgreSQL.
     if db.get_bind().dialect.name == "postgresql":
         key = int.from_bytes(
-            hashlib.sha256(f"fuzekeys:google:{owner}".encode()).digest()[:8],
+            hashlib.sha256(
+                json.dumps(["fuzekeys:google", tenant, owner]).encode()
+            ).digest()[:8],
             "big",
             signed=True,
         )
         await db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": key})
 
 
-async def _google_records(db: AsyncSession, owner: str):
+async def _google_records(db: AsyncSession, tenant: str, owner: str):
     result = await db.execute(
         select(ConnectorCredential).where(
+            ConnectorCredential.tenant_id == tenant,
             ConnectorCredential.owner_subject == owner,
             ConnectorCredential.provider.in_(GOOGLE_SCOPES),
         )
@@ -133,15 +146,39 @@ def _vault() -> MutableSecretVault:
 
 
 async def _record(
-    db: AsyncSession, owner: str, provider: str
+    db: AsyncSession, tenant: str, owner: str, provider: str
 ) -> Optional[ConnectorCredential]:
     result = await db.execute(
         select(ConnectorCredential).where(
+            ConnectorCredential.tenant_id == tenant,
             ConnectorCredential.owner_subject == owner,
             ConnectorCredential.provider == provider,
         )
     )
     return result.scalar_one_or_none()
+
+
+async def _grant_intent(db, identity, provider, desired_state):
+    tenant = connector_tenant(identity)
+    key = connector_resource_key(tenant, identity.subject, provider)
+    result = await db.execute(
+        select(ConnectorGrantIntent).where(
+            ConnectorGrantIntent.tenant_id == tenant,
+            ConnectorGrantIntent.resource_key == key,
+        )
+    )
+    intent = result.scalar_one_or_none()
+    if intent is None:
+        intent = ConnectorGrantIntent(
+            tenant_id=tenant,
+            owner_subject=identity.subject,
+            provider=provider,
+            resource_key=key,
+            desired_state=desired_state,
+        )
+        db.add(intent)
+    else:
+        intent.desired_state = desired_state
 
 
 @router.get("/{provider}", operation_id="get_connector_status")
@@ -156,9 +193,10 @@ async def status(
     db: AsyncSession = Depends(get_db),
 ):
     provider = _provider(provider)
-    row = await _record(db, identity.subject, provider)
+    row = await _record(db, connector_tenant(identity), identity.subject, provider)
     if row is None:
         return {"provider": provider, "status": "disconnected"}
+    await require_connector_permission(identity, provider, "read")
     return {
         "provider": provider,
         "status": row.status,
@@ -192,9 +230,10 @@ async def configure(
 async def _configure(
     provider: str, configuration: Dict[str, Any], identity: Identity, db: AsyncSession
 ):
-    row = await _record(db, identity.subject, provider)
+    row = await _record(db, connector_tenant(identity), identity.subject, provider)
     if row is None:
         raise HTTPException(status_code=404, detail="connector is not connected")
+    await require_connector_permission(identity, provider, "configure")
     row.configuration = configuration  # type: ignore[assignment]
     await db.commit()
     return {"status": "configured", "configuration": row.configuration}
@@ -209,18 +248,22 @@ async def disconnect(
 ):
     provider = _provider(provider)
     if provider in GOOGLE_SCOPES:
-        await _lock_google(db, identity.subject)
-    row = await _record(db, identity.subject, provider)
+        await _lock_google(db, connector_tenant(identity), identity.subject)
+    row = await _record(db, connector_tenant(identity), identity.subject, provider)
     if row is not None:
+        await require_connector_permission(identity, provider, "disconnect")
         retained = []
         if provider in GOOGLE_SCOPES:
             retained = [
                 other
-                for other in await _google_records(db, identity.subject)
+                for other in await _google_records(
+                    db, connector_tenant(identity), identity.subject
+                )
                 if other.provider != provider and other.vault_ref == row.vault_ref
             ]
         if not retained:
             await asyncio.to_thread(_vault().delete, cast(str, row.vault_ref))
+        await _grant_intent(db, identity, provider, "absent")
         await db.delete(row)
         await db.commit()
     return {"status": "disconnected"}
@@ -235,10 +278,13 @@ async def lease_credential(
 ):
     provider = _provider(provider)
     if provider in GOOGLE_SCOPES:
-        await _lock_google(db, identity.subject)
-    row = await _record(db, identity.subject, provider)
+        await _lock_google(db, connector_tenant(identity), identity.subject)
+    row = await _record(db, connector_tenant(identity), identity.subject, provider)
     if row is None:
         raise HTTPException(status_code=404, detail="connector is not connected")
+    await require_connector_permission(identity, provider, "reveal")
+    if row.status != "connected":
+        raise HTTPException(409, "Connector authorization is pending")
     raw = await asyncio.to_thread(_vault().load_root, cast(str, row.vault_ref))
     if raw is None:
         raise HTTPException(
@@ -274,15 +320,51 @@ async def update_credential(
 ):
     provider = _provider(provider)
     owner = identity.subject
+    tenant = connector_tenant(identity)
     google = provider in GOOGLE_SCOPES
     if google:
-        await _lock_google(db, owner)
-    row = await _record(db, owner, provider)
+        await _lock_google(db, tenant, owner)
+    row = await _record(db, tenant, owner, provider)
+    if row is None:
+        row = ConnectorCredential(
+            tenant_id=tenant,
+            owner_subject=owner,
+            provider=provider,
+            vault_ref=_canonical_google_ref(tenant, owner)
+            if google
+            else _connector_ref(tenant, owner, provider),
+            status="authorization_pending",
+        )
+        db.add(row)
+        await _grant_intent(db, identity, provider, "present")
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            row = await _record(db, tenant, owner, provider)
+            if row is None:
+                raise HTTPException(503, "Connector registration unavailable")
+        return JSONResponse(
+            status_code=202,
+            content={
+                "status": "authorization_pending",
+                "provider": provider,
+                "resource_key": connector_resource_key(tenant, owner, provider),
+                "retry_after_authorization": True,
+            },
+        )
+    if row.status == "authorization_pending":
+        await require_connector_permission(identity, provider, "create")
+    await require_connector_permission(identity, provider, "write_credential")
     credential = dict(body.credential)
     payload: Dict[str, Any] = credential
     if google:
-        canonical = _canonical_google_ref(owner)
-        records = await _google_records(db, owner)
+        canonical = _canonical_google_ref(tenant, owner)
+        records = [
+            record
+            for record in await _google_records(db, tenant, owner)
+            if record.status == "connected"
+        ]
         if any(record.vault_ref != canonical for record in records):
             raise HTTPException(
                 status_code=409,
@@ -355,16 +437,6 @@ async def update_credential(
                 credential, {provider, *(record.provider for record in records)}
             )
             payload = {"credential": credential, "google_identity": new_binding}
-    if row is None:
-        vault_ref = (
-            _canonical_google_ref(owner)
-            if google
-            else f"connectors/{urllib.parse.quote(owner, safe='')}/{provider}"
-        )
-        row = ConnectorCredential(
-            owner_subject=owner, provider=provider, vault_ref=vault_ref
-        )
-        db.add(row)
     await asyncio.to_thread(
         _vault().put, cast(str, row.vault_ref), json.dumps(payload).encode()
     )

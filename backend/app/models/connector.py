@@ -10,11 +10,16 @@ class ConnectorCredential(Base):
     __tablename__ = "connector_credentials"
     __table_args__ = (
         UniqueConstraint(
-            "owner_subject", "provider", name="uq_connector_owner_provider"
+            "tenant_id",
+            "owner_subject",
+            "provider",
+            name="uq_connector_tenant_owner_provider",
         ),
     )
 
     id = Column(Integer, primary_key=True)
+    # NULL legacy rows remain quarantined: no automatic tenant backfill.
+    tenant_id = Column(String(255), nullable=True, index=True)
     owner_subject = Column(String(255), nullable=False, index=True)
     provider = Column(String(80), nullable=False)
     vault_ref = Column(String(500), nullable=False)
@@ -25,6 +30,27 @@ class ConnectorCredential(Base):
     created_at = Column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class ConnectorGrantIntent(Base):
+    """Non-secret operator reconciliation outbox; runtime never applies grants."""
+
+    __tablename__ = "connector_grant_intents"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "resource_key", name="uq_connector_grant_intent"),
+    )
+    id = Column(Integer, primary_key=True)
+    tenant_id = Column(String(255), nullable=False)
+    owner_subject = Column(String(255), nullable=False)
+    provider = Column(String(80), nullable=False)
+    resource_key = Column(String(80), nullable=False)
+    desired_state = Column(String(16), nullable=False, default="present")
     updated_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),

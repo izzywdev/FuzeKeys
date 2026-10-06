@@ -34,13 +34,25 @@ ENVIRONMENT CONSTRAINT (documented, not ours to fix):
 """
 
 import asyncio
+from unittest.mock import AsyncMock
 
 import pytest
+import pytest_asyncio
 from fastapi import HTTPException
 
 # Importing these specific modules is cv2-free (verified). Importing app.main is NOT.
 import app.routers.credentials as credentials_mod
 import app.routers.sms as sms_mod
+from app.security.fuzefront_auth import Identity as DelegatedIdentity
+
+DELEGATED = DelegatedIdentity(
+    subject="owner",
+    tenant_id="tenant-1",
+    scopes=frozenset({"connectors:credentials:read", "connectors:credentials:write"}),
+    audience="service:fuzekeys",
+    actor={"sub": "service:scraper"},
+    token_kind="fuze-delegation",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +182,7 @@ class TestVerifyApiKeyFailsClosed:
 # Ownership chain: Account.identity_id -> Identity.id, Identity.user_id -> User.id.
 #
 # We exercise the REAL endpoint handlers (request_account_credentials /
-# store_account_credentials) against a real (in-memory SQLite) synchronous
+# store_account_credentials) against a real (in-memory SQLite) asynchronous
 # SQLAlchemy session, seeding two identities owned by different users, each with
 # its own account. We stub verify_api_key out by passing service_name directly
 # (the handlers take service_name as a plain arg), so this isolates the
@@ -179,50 +191,38 @@ class TestVerifyApiKeyFailsClosed:
 # Reversion this would catch: removing the `Account.identity_id == identity_id`
 # filter (i.e. looking up by account_id alone), which is the IDOR.
 # ===========================================================================
+@pytest.mark.asyncio
 class TestIdorOwnershipScoping:
     @pytest.fixture(autouse=True)
-    def _grant_full_identity_scope(self):
-        """These tests isolate the per-IDENTITY IDOR layer (Account.identity_id
-        scoping). The newer per-KEY scope gate (HIGH-2, require_identity_scope)
-        sits in FRONT of it, so we grant the calling service a wildcard scope here
-        and restore it afterwards; otherwise the request would 403 on key-scope
-        before ever reaching the IDOR check under test. The key-scope behaviour is
-        covered independently in TestServiceKeyIdentityScoping."""
-        original = credentials_mod.SERVICE_IDENTITY_SCOPES
-        credentials_mod.SERVICE_IDENTITY_SCOPES = {"scraper-service": "*"}
-        yield
-        credentials_mod.SERVICE_IDENTITY_SCOPES = original
+    def _allow_platform_decision(self, monkeypatch):
+        """Isolate the SQL identity/account predicate from platform decisions."""
+        monkeypatch.setattr(
+            credentials_mod, "require_delegated_owner_permission", AsyncMock()
+        )
 
-    @pytest.fixture
-    def db_session(self):
-        """A synchronous in-memory SQLite session with the User/Identity/Account
+    @pytest_asyncio.fixture
+    async def db_session(self):
+        """An asynchronous in-memory SQLite session with the User/Identity/Account
         tables created. Uses the app's real ORM models so the scoping query the
         endpoint runs is exercised verbatim."""
-        from sqlalchemy import create_engine
-        from sqlalchemy.orm import sessionmaker
+        from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-        # Import the models AND database.Base. account/identity/user all bind to
-        # app.database.Base; importing the modules registers their tables on it.
         from app.database import Base
-        from app.models.account import Account  # noqa: F401  (registers table)
+        from app.models.account import Account
         from app.models.identity import Identity
         from app.models.user import User
 
-        engine = create_engine("sqlite:///:memory:")
-        # Create only the tables defined on app.database.Base (not the separate
-        # sms Base). create_all is safe/idempotent for the registered tables.
-        Base.metadata.create_all(engine)
-
-        Session = sessionmaker(bind=engine)
-        session = Session()
+        engine = create_async_engine("sqlite+aiosqlite://")
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
         try:
-            yield session, User, Identity, Account
+            async with AsyncSession(engine, expire_on_commit=False) as session:
+                yield session, User, Identity, Account
         finally:
-            session.close()
-            engine.dispose()
+            await engine.dispose()
 
     @staticmethod
-    def _seed_two_tenants(session, User, Identity, Account):
+    async def _seed_two_tenants(session, User, Identity, Account):
         """Create two users, each with one identity owning one account."""
         user_a = User(
             email="<EMAIL_a>",
@@ -237,12 +237,12 @@ class TestIdorOwnershipScoping:
             master_key_hash="m",
         )
         session.add_all([user_a, user_b])
-        session.flush()
+        await session.flush()
 
         identity_a = Identity(user_id=user_a.id, name="Identity A")
         identity_b = Identity(user_id=user_b.id, name="Identity B")
         session.add_all([identity_a, identity_b])
-        session.flush()
+        await session.flush()
 
         account_a = Account(
             identity_id=identity_a.id,
@@ -257,14 +257,14 @@ class TestIdorOwnershipScoping:
             encrypted_credentials=None,
         )
         session.add_all([account_a, account_b])
-        session.commit()
+        await session.commit()
         return identity_a, identity_b, account_a, account_b
 
-    def test_retrieve_with_wrong_owning_identity_yields_404(self, db_session):
+    async def test_retrieve_with_wrong_owning_identity_yields_404(self, db_session):
         """IDOR core: account_b belongs to identity_b. A request for account_b
         that names identity_a (a different owner) must 404 — no cross-tenant data."""
         session, User, Identity, Account = db_session
-        identity_a, identity_b, account_a, account_b = self._seed_two_tenants(
+        identity_a, identity_b, account_a, account_b = await self._seed_two_tenants(
             session, User, Identity, Account
         )
 
@@ -274,19 +274,15 @@ class TestIdorOwnershipScoping:
             credential_types=[],
         )
         with pytest.raises(HTTPException) as exc:
-            _run(
-                credentials_mod.request_account_credentials(
-                    req, "scraper-service", session
-                )
-            )
+            await credentials_mod.request_account_credentials(req, DELEGATED, session)
         assert exc.value.status_code == 404
 
-    def test_retrieve_with_correct_owner_succeeds(self, db_session):
+    async def test_retrieve_with_correct_owner_succeeds(self, db_session):
         """The legitimate path: correct (identity, account) pair returns the
         account (200), proving the 404 above is the scoping check, not a blanket deny.
         """
         session, User, Identity, Account = db_session
-        identity_a, identity_b, account_a, account_b = self._seed_two_tenants(
+        identity_a, identity_b, account_a, account_b = await self._seed_two_tenants(
             session, User, Identity, Account
         )
 
@@ -295,19 +291,19 @@ class TestIdorOwnershipScoping:
             account_id=account_b.id,
             credential_types=[],
         )
-        resp = _run(
-            credentials_mod.request_account_credentials(req, "scraper-service", session)
+        resp = await credentials_mod.request_account_credentials(
+            req, DELEGATED, session
         )
         assert resp.account_id == account_b.id
         assert resp.site_name == "SiteB"
 
-    def test_store_with_wrong_owning_identity_yields_404_and_no_mutation(
+    async def test_store_with_wrong_owning_identity_yields_404_and_no_mutation(
         self, db_session, monkeypatch
     ):
         """Store path enforces the same scoping AND does not mutate the victim's
         account when the wrong owner is named."""
         session, User, Identity, Account = db_session
-        identity_a, identity_b, account_a, account_b = self._seed_two_tenants(
+        identity_a, identity_b, account_a, account_b = await self._seed_two_tenants(
             session, User, Identity, Account
         )
         # Provide a working cipher so a (hypothetically-passing) store wouldn't 503
@@ -326,24 +322,20 @@ class TestIdorOwnershipScoping:
             metadata=None,
         )
         with pytest.raises(HTTPException) as exc:
-            _run(
-                credentials_mod.store_account_credentials(
-                    req, "scraper-service", session
-                )
-            )
+            await credentials_mod.store_account_credentials(req, DELEGATED, session)
         assert exc.value.status_code == 404
 
-        session.expire_all()
-        refreshed = session.get(Account, account_b.id)
+        await session.refresh(account_b)
+        refreshed = account_b
         assert (
             refreshed.encrypted_credentials == before
         ), "victim account must not be mutated"
         assert refreshed.encrypted_credentials is None
 
-    def test_store_with_correct_owner_succeeds(self, db_session, monkeypatch):
+    async def test_store_with_correct_owner_succeeds(self, db_session, monkeypatch):
         """Legitimate store with the correct owner persists encrypted credentials."""
         session, User, Identity, Account = db_session
-        identity_a, identity_b, account_a, account_b = self._seed_two_tenants(
+        identity_a, identity_b, account_a, account_b = await self._seed_two_tenants(
             session, User, Identity, Account
         )
         from cryptography.fernet import Fernet
@@ -357,12 +349,12 @@ class TestIdorOwnershipScoping:
             credentials={"password": "legit"},
             metadata=None,
         )
-        result = _run(
-            credentials_mod.store_account_credentials(req, "scraper-service", session)
+        result = await credentials_mod.store_account_credentials(
+            req, DELEGATED, session
         )
         assert result["success"] is True
-        session.expire_all()
-        refreshed = session.get(Account, account_b.id)
+        await session.refresh(account_b)
+        refreshed = account_b
         assert refreshed.encrypted_credentials is not None
 
 
@@ -674,51 +666,18 @@ class TestServiceKeyIdentityScoping:
         assert loaded["scraper-service"] == "*"
         assert loaded["mobile-service"] == {1, 2, 3}
 
-    # --- get_identity_accounts enforces the scope BEFORE any DB lookup --------
-    def test_get_identity_accounts_out_of_scope_denied_403(self):
-        """The endpoint must 403 an out-of-scope identity WITHOUT touching the DB
-        (so a bad db would not even be queried). Closes the enumeration BOLA."""
-        credentials_mod.SERVICE_IDENTITY_SCOPES = {"scraper-service": {1}}
-
-        class _ExplodingDb:
-            def query(self, *a, **k):
-                raise AssertionError(
-                    "DB must not be queried for an out-of-scope identity"
-                )
-
-        with pytest.raises(HTTPException) as exc:
-            _run(
-                credentials_mod.get_identity_accounts(
-                    identity_id=99,  # not in {1}
-                    service_name="scraper-service",
-                    db=_ExplodingDb(),
-                )
-            )
-        assert exc.value.status_code == 403
-
-    def test_request_account_credentials_out_of_scope_denied_403(self):
-        """The IDOR-hardened retrieval path now ALSO fails closed on key scope:
-        an out-of-scope identity is rejected 403 before any account lookup."""
-        credentials_mod.SERVICE_IDENTITY_SCOPES = {"scraper-service": {1}}
-
-        class _ExplodingDb:
-            def query(self, *a, **k):
-                raise AssertionError(
-                    "DB must not be queried for an out-of-scope identity"
-                )
-
-        req = credentials_mod.AccountCredentialRequest(
-            identity_id=99,
-            account_id=5,
-            credential_types=[],
-        )
-        with pytest.raises(HTTPException) as exc:
-            _run(
-                credentials_mod.request_account_credentials(
-                    req, "scraper-service", _ExplodingDb()
-                )
-            )
-        assert exc.value.status_code == 403
+    # The parser/constant-time unit contract remains for compatibility, but the
+    # mounted credential routes deliberately no longer accept this legacy proof.
+    def test_static_service_key_is_not_a_mounted_credential_dependency(self):
+        for route in credentials_mod.router.routes:
+            if route.path == "/api/credentials/health":
+                continue
+            calls = {
+                dependency.call
+                for dependency in route.dependant.dependencies
+                if dependency.call is not None
+            }
+            assert credentials_mod.verify_api_key not in calls
 
 
 import app.routers.llm_scraper as llm_mod  # cv2-free
