@@ -1,4 +1,4 @@
-# fuze:managed template=fuze-code-review.yml baseline=v1 digest=sha256:f09913a7aaf01b4eab9b5bfb28a2b81152784e8c0848fc4503d0d827426a0290
+# fuze:managed template=fuze-code-review.yml baseline=v1 digest=sha256:31aa61eb76060cce55113bdd32b07af7dc24f73c98473fdf463e7fc4820ff298
 name: Fuze Code Review
 
 # THE CANONICAL LLM CODE REVIEW + APPROVAL GATE — now a MANDATORY approve-or-fail check.
@@ -233,7 +233,10 @@ jobs:
       nonce: ${{ steps.prompt.outputs.nonce }}
       sensitive_files: ${{ steps.context.outputs.sensitive_files }}
       conclusion: ${{ steps.review.outputs.conclusion }}
-      result-text: ${{ steps.review.outputs.result-text }}
+      # GitHub can suppress raw JSON job outputs when CODEX_AUTH_JSON is registered,
+      # because its structured-secret masker treats JSON punctuation as secret-bearing.
+      # Base64 is transport only; the verdict script decodes it and still fails closed.
+      result-text-b64: ${{ steps.encode-result.outputs.result-text-b64 }}
       mode: ${{ steps.review.outputs.mode }}
       vendor: ${{ steps.review.outputs.vendor }}
       availability: ${{ steps.review.outputs.availability }}
@@ -242,6 +245,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Gather PR context — diff, changed files, sensitive-path check, credential check
         id: context
@@ -249,19 +253,29 @@ jobs:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
           HAS_LITELLM: ${{ secrets.LITELLM_FUZE_KEY != '' }}
           HAS_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY != '' }}
-          HAS_OPENAI: ${{ secrets.OPENAI_API_KEY != '' }}
-          HAS_GEMINI: ${{ secrets.GEMINI_API_KEY != '' }}
+          HAS_CODEX: ${{ secrets.CODEX_AUTH_JSON != '' }}
         run: |
           set -uo pipefail
-          git fetch origin "$BASE_REF" --depth=1
+          # Checkout fetched all branches with fetch-depth: 0 and removed its
+          # credentials. Use that base snapshot without exposing a job token
+          # to this shell step or the review model.
+          if ! git rev-parse --verify --quiet "origin/$BASE_REF" > /dev/null; then
+            echo "::error title=fuze-code-review::origin/$BASE_REF does not resolve -- refusing to review a diff this job cannot see"
+            exit 1
+          fi
 
-          git diff --name-only "origin/$BASE_REF"...HEAD > /tmp/changed_files.txt 2>/dev/null || true
+          if ! git diff --name-only "origin/$BASE_REF"...HEAD > /tmp/changed_files.txt; then
+            echo "::error title=fuze-code-review::cannot compute changed files against origin/$BASE_REF"
+            exit 1
+          fi
 
           # Diff to a temp file first: piping straight into `head` makes git die of
-          # SIGPIPE (exit 141) when head closes the stream early — the same fix
-          # already applied in the gate-code-review job this wraps.
-          git diff "origin/$BASE_REF"...HEAD -- ':!*.lock' ':!package-lock.json' \
-            > /tmp/fulldiff.txt 2>/dev/null || true
+          # SIGPIPE (exit 141) when head closes the stream early.
+          if ! git diff "origin/$BASE_REF"...HEAD -- ':!*.lock' ':!package-lock.json' \
+            > /tmp/fulldiff.txt; then
+            echo "::error title=fuze-code-review::cannot compute the review diff against origin/$BASE_REF"
+            exit 1
+          fi
           DIFF=$(head -c 80000 /tmp/fulldiff.txt)
 
           # The approval machinery and the org governance surface. Matched against
@@ -276,9 +290,9 @@ jobs:
             READY=false
             REASON="no reviewable diff (only excluded lockfiles changed, or no changes)"
           elif [ "${HAS_LITELLM:-false}" != "true" ] && [ "${HAS_ANTHROPIC:-false}" != "true" ] \
-               && [ "${HAS_OPENAI:-false}" != "true" ] && [ "${HAS_GEMINI:-false}" != "true" ]; then
+               && [ "${HAS_CODEX:-false}" != "true" ]; then
             READY=false
-            REASON="no LLM credential configured (need one of LITELLM_FUZE_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY) -- skipping, not failing: this is environmental, not a defect in the PR"
+            REASON="no LLM credential configured (need one of LITELLM_FUZE_KEY, ANTHROPIC_API_KEY, CODEX_AUTH_JSON) -- skipping, not failing: this is environmental, not a defect in the PR"
           fi
 
           # Per-run nonce for the GITHUB_OUTPUT heredoc delimiters below. The diff and
@@ -383,10 +397,28 @@ jobs:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           # fuze:secret-sourcing CLAUDE_CODE_OAUTH_TOKEN=fleet — distributed by provision-llm-vendor-keys.yml (optional, skipped-by-name when unset); tracked separately from the provision-secrets.yml SRC_ block that FLEET_SOURCED mirrors
           claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          gemini-api-key: ${{ secrets.GEMINI_API_KEY }}
+          # fuze:secret-sourcing CODEX_AUTH_JSON=fleet — provision-llm-vendor-keys.yml; optional ChatGPT subscription auth
+          codex-auth-json: ${{ secrets.CODEX_AUTH_JSON }}
           claude-args: '--allowedTools "Read,Grep,Glob"'
           task-prompt: ${{ steps.prompt.outputs.text }}
+
+      - name: Encode review result for cross-job transfer
+        id: encode-result
+        if: always()
+        shell: bash
+        env:
+          FUZE_RESULT_TEXT: ${{ steps.review.outputs.result-text }}
+        run: |
+          python3 - <<'PY'
+          import base64
+          import os
+
+          encoded = base64.b64encode(
+              os.environ.get("FUZE_RESULT_TEXT", "").encode("utf-8")
+          ).decode("ascii")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"result-text-b64={encoded}\n")
+          PY
 
   # THE REQUIRED STATUS CONTEXT. `name:` is what GitHub reports and what
   # governance/required-checks.json lists — do NOT change it without updating that
@@ -414,7 +446,7 @@ jobs:
         id: verdict
         env:
           FUZE_ACTION_CONCLUSION: ${{ needs.review.outputs.conclusion }}
-          FUZE_RESULT_TEXT: ${{ needs.review.outputs.result-text }}
+          FUZE_RESULT_TEXT_B64: ${{ needs.review.outputs.result-text-b64 }}
           FUZE_VERDICT_NONCE: ${{ needs.review.outputs.nonce }}
           FUZE_ACTION_MODE: ${{ needs.review.outputs.mode }}
           FUZE_ACTION_VENDOR: ${{ needs.review.outputs.vendor }}
