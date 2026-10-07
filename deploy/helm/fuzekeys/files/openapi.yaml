@@ -453,32 +453,31 @@ paths:
       description: 'Register a new SMS interceptor device.
 
 
-        SECURITY / BOOTSTRAP TRUST ASSUMPTION: This endpoint is intentionally left
+        This bootstrap issues or rotates a device API key, so it requires the strong
 
-        UNauthenticated because it is the bootstrap that ISSUES the per-device API
+        out-of-band ``X-Enrollment-Token`` configured in
 
-        key — requiring the device key here would be a chicken-and-egg problem and
+        ``SMS_DEVICE_ENROLLMENT_TOKEN``. Missing/short server configuration fails
 
-        break first-time registration. The trust assumption is therefore that
+        closed with 503; missing or wrong client proof returns 401 before any device
 
-        registration is reachable only by intended devices (network/ingress policy
-
-        or an out-of-band enrolment secret should gate it in production). Note it is
-
-        also self-overwriting: re-registering an existing device_id rotates its key,
-
-        so exposure should be limited by the surrounding network controls.
-
-        PRODUCTION NOTE: add an enrolment token / mutual-TLS / signed attestation so
-
-        arbitrary callers cannot register or hijack a device_id.'
+        lookup or mutation. The token is never accepted in the URL or logged.'
       operationId: post_sms_register_device
+      parameters:
+      - name: X-Enrollment-Token
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Enrollment-Token
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/DeviceRegistrationRequest'
-        required: true
       responses:
         '200':
           description: Successful Response
@@ -647,15 +646,13 @@ paths:
 
         SECURITY: This endpoint returns the received OTP value itself
 
-        (``otp_code``), which is highly sensitive. It is operator/user-facing
+        (``otp_code``), which is highly sensitive. It requires both the application
 
-        (the main app polls for the result), so it requires the application JWT.
+        JWT and an exact creator binding recorded when the request was made. Foreign,
 
-        Leaving it unauthenticated would let any caller read OTP codes by guessing
+        unknown and legacy unbound request IDs all return the same 404. Device-key
 
-        or enumerating request_ids. Device-key auth is not used because devices
-
-        submit OTPs (via /otp), they do not read them back.'
+        auth is not used because devices submit OTPs; they do not read them back.'
       operationId: get_sms_request_status_by_request_id
       security:
       - HTTPBearer: []
@@ -763,15 +760,13 @@ paths:
       description: 'Request SMS verification from mobile device for scraper use.
 
 
-        SECURITY: Operator/app-facing — this initiates a verification job and
+        SECURITY: Operator/app-facing — this initiates a verification job. Requires
 
-        broadcasts it to mobile devices. Requires the application JWT so arbitrary
+        the application JWT so arbitrary callers cannot push fake jobs or exhaust
 
-        callers cannot push fake jobs to devices or exhaust resources. The
+        resources. The request remains withheld until a separate authorized
 
-        request->device binding is established later, when a device authenticates
-
-        and submits the code via /sms/complete-verification.'
+        assignment lifecycle binds it to one verified device.'
       operationId: post_infrastructure_sms_request_verification
       requestBody:
         content:
@@ -808,11 +803,9 @@ paths:
 
         SECURITY: Returns the verification CODE itself, which is highly sensitive.
 
-        Operator/app-facing (the scraper orchestration polls for the result via the
+        The application JWT must identify the exact local user that created the
 
-        app), so it requires the application JWT. Previously unauthenticated, this
-
-        let any caller read codes by enumerating request_ids.'
+        request. Foreign, unknown and legacy unbound IDs all return the same 404.'
       operationId: get_infrastructure_sms_get_verification_by_request_id
       security:
       - HTTPBearer: []
@@ -848,12 +841,9 @@ paths:
         \ must present the ``X-Device-Key`` it was\n   issued at registration, verified against ``device_id``\
         \ via the shared\n   ``_verify_device``. Unknown/unauthenticated devices are rejected 401.\n \
         \  This closes the hole where ANY unauthenticated caller could complete a\n   verification with\
-        \ an attacker-controlled code.\n2) BINDING — the request is bound to a specific device. infrastructure.py\n\
-        \   owns its own request store (``verification_requests``), and that store\n   had no device assignment\
-        \ at request time, so (mirroring sms.py's /otp)\n   we bind on first authenticated completion:\
-        \ the first authenticated\n   device to answer becomes the assigned device, and a DIFFERENT device\n\
-        \   attempting to complete the same request is rejected 403. This prevents\n   a second (even\
-        \ authenticated) device from overwriting another device's\n   in-flight verification."
+        \ an attacker-controlled code.\n2) BINDING — the request must already be assigned to this device\
+        \ by the\n   server-side authorization lifecycle. An authenticated device may not\n   claim unassigned\
+        \ work merely by learning a request id."
       operationId: post_infrastructure_sms_complete_verification_by_request_id
       parameters:
       - name: request_id
@@ -944,11 +934,11 @@ paths:
 
         SECURITY: Returns captured email content (``found_emails``), which is
 
-        sensitive. Operator/app-facing, so it requires the application JWT.
+        sensitive. The application JWT must identify the exact local user that
 
-        Previously unauthenticated, allowing enumeration of monitor_ids to read
+        created the monitor. Foreign, unknown and legacy unbound IDs all return the
 
-        intercepted emails.'
+        same 404.'
       operationId: get_infrastructure_email_get_verification_by_monitor_id
       security:
       - HTTPBearer: []
@@ -980,11 +970,15 @@ paths:
       description: 'Send command to mobile device for UI automation.
 
 
-        SECURITY: Operator/app-facing — this dispatches automation commands to
+        SECURITY: Operator/app-facing — this dispatches automation commands to one
 
-        devices. Requires the application JWT so an unauthenticated caller cannot
+        explicitly selected, authenticated WebSocket device. Requires the
 
-        drive devices / inject commands.'
+        application JWT so an unauthenticated caller cannot drive devices / inject
+
+        commands. The command is bound to its creator for result retrieval. Device
+
+        ownership/tenant policy remains a separate platform authorization gap.'
       operationId: post_infrastructure_mobile_send_command
       requestBody:
         content:
@@ -1019,13 +1013,11 @@ paths:
       description: 'Get result of mobile command execution.
 
 
-        SECURITY: Operator/app-facing. Although currently a stub, it is designed to
+        SECURITY: Operator/app-facing and owner-bound. Results may contain sensitive
 
-        surface results returned by mobile devices (potentially sensitive), so it
+        device output, so only the authenticated user that created the command may
 
-        is gated by the application JWT now to avoid shipping an unauthenticated
-
-        read endpoint once result tracking is implemented.'
+        retrieve them. A foreign or unknown command has the same 404 response.'
       operationId: get_infrastructure_mobile_get_command_result_by_command_id
       security:
       - HTTPBearer: []
@@ -1460,14 +1452,18 @@ paths:
         **Security:** All requests are logged with service identity for audit purposes.'
       operationId: post_credentials_request_identity_credentials
       parameters:
-      - name: x-api-key
+      - name: authorization
         in: header
         required: true
         schema:
           type: string
-          description: API key for service authentication
-          title: X-Api-Key
-        description: API key for service authentication
+          title: Authorization
+      - name: x-fuze-delegation
+        in: header
+        required: true
+        schema:
+          type: string
+          title: X-Fuze-Delegation
       requestBody:
         required: true
         content:
@@ -1519,14 +1515,18 @@ paths:
         **Security:** Updates last accessed timestamp and logs access for audit.'
       operationId: post_credentials_request_account_credentials
       parameters:
-      - name: x-api-key
+      - name: authorization
         in: header
         required: true
         schema:
           type: string
-          description: API key for service authentication
-          title: X-Api-Key
-        description: API key for service authentication
+          title: Authorization
+      - name: x-fuze-delegation
+        in: header
+        required: true
+        schema:
+          type: string
+          title: X-Fuze-Delegation
       requestBody:
         required: true
         content:
@@ -1578,14 +1578,18 @@ paths:
         **Security:** All credentials are encrypted using Fernet (AES 128) before storage.'
       operationId: post_credentials_store_account_credentials
       parameters:
-      - name: x-api-key
+      - name: authorization
         in: header
         required: true
         schema:
           type: string
-          description: API key for service authentication
-          title: X-Api-Key
-        description: API key for service authentication
+          title: Authorization
+      - name: x-fuze-delegation
+        in: header
+        required: true
+        schema:
+          type: string
+          title: X-Fuze-Delegation
       requestBody:
         required: true
         content:
@@ -1648,14 +1652,18 @@ paths:
           description: Comma-separated list of credential types to retrieve
           title: Credential Types
         description: Comma-separated list of credential types to retrieve
-      - name: x-api-key
+      - name: authorization
         in: header
         required: true
         schema:
           type: string
-          description: API key for service authentication
-          title: X-Api-Key
-        description: API key for service authentication
+          title: Authorization
+      - name: x-fuze-delegation
+        in: header
+        required: true
+        schema:
+          type: string
+          title: X-Fuze-Delegation
       responses:
         '200':
           description: Successful Response
@@ -1707,14 +1715,18 @@ paths:
           minimum: 0
           default: 0
           title: Offset
-      - name: x-api-key
+      - name: authorization
         in: header
         required: true
         schema:
           type: string
-          description: API key for service authentication
-          title: X-Api-Key
-        description: API key for service authentication
+          title: Authorization
+      - name: x-fuze-delegation
+        in: header
+        required: true
+        schema:
+          type: string
+          title: X-Fuze-Delegation
       responses:
         '200':
           description: Successful Response
@@ -1753,14 +1765,18 @@ paths:
         - Site-specific username patterns'
       operationId: post_credentials_validate_credentials
       parameters:
-      - name: x-api-key
+      - name: authorization
         in: header
         required: true
         schema:
           type: string
-          description: API key for service authentication
-          title: X-Api-Key
-        description: API key for service authentication
+          title: Authorization
+      - name: x-fuze-delegation
+        in: header
+        required: true
+        schema:
+          type: string
+          title: X-Fuze-Delegation
       requestBody:
         required: true
         content:
@@ -3832,6 +3848,9 @@ components:
       title: MintTokenRequest
     MobileCommandRequest:
       properties:
+        device_id:
+          type: string
+          title: Device Id
         command_type:
           type: string
           title: Command Type
@@ -3845,6 +3864,7 @@ components:
           default: 60
       type: object
       required:
+      - device_id
       - command_type
       - parameters
       title: MobileCommandRequest

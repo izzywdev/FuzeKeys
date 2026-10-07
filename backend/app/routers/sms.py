@@ -1,6 +1,7 @@
 import hmac
 import json
 import logging
+import os
 import re
 import secrets
 import uuid
@@ -58,6 +59,21 @@ registered_device_keys: Dict[str, str] = {}
 OTP_MIN_LEN = 4
 OTP_MAX_LEN = 10
 _OTP_PATTERN = re.compile(r"^\d{%d,%d}$" % (OTP_MIN_LEN, OTP_MAX_LEN))
+_ENROLLMENT_TOKEN_ENV = "SMS_DEVICE_ENROLLMENT_TOKEN"
+
+
+def _require_device_enrollment_token(presented: Optional[str]) -> None:
+    """Require a strong out-of-band token before issuing or rotating device keys."""
+    configured = os.getenv(_ENROLLMENT_TOKEN_ENV, "").strip()
+    if len(configured) < 32:
+        raise HTTPException(
+            status_code=503,
+            detail="Device enrollment is not configured",
+        )
+    if not presented or not hmac.compare_digest(
+        configured.encode("utf-8"), presented.encode("utf-8")
+    ):
+        raise HTTPException(status_code=401, detail="Device enrollment denied")
 
 
 def _verify_device(device_id: str, api_key: Optional[str]) -> bool:
@@ -94,22 +110,23 @@ class DeviceRegistrationRequest(BaseModel):
 
 @router.post("/register-device")
 async def register_device(
-    request: DeviceRegistrationRequest, db: Session = Depends(get_db)
+    request: DeviceRegistrationRequest,
+    x_enrollment_token: Optional[str] = Header(
+        default=None, alias="X-Enrollment-Token"
+    ),
+    db: Session = Depends(get_db),
 ):
     """Register a new SMS interceptor device.
 
-    SECURITY / BOOTSTRAP TRUST ASSUMPTION: This endpoint is intentionally left
-    UNauthenticated because it is the bootstrap that ISSUES the per-device API
-    key — requiring the device key here would be a chicken-and-egg problem and
-    break first-time registration. The trust assumption is therefore that
-    registration is reachable only by intended devices (network/ingress policy
-    or an out-of-band enrolment secret should gate it in production). Note it is
-    also self-overwriting: re-registering an existing device_id rotates its key,
-    so exposure should be limited by the surrounding network controls.
-    PRODUCTION NOTE: add an enrolment token / mutual-TLS / signed attestation so
-    arbitrary callers cannot register or hijack a device_id.
+    This bootstrap issues or rotates a device API key, so it requires the strong
+    out-of-band ``X-Enrollment-Token`` configured in
+    ``SMS_DEVICE_ENROLLMENT_TOKEN``. Missing/short server configuration fails
+    closed with 503; missing or wrong client proof returns 401 before any device
+    lookup or mutation. The token is never accepted in the URL or logged.
     """
     try:
+        _require_device_enrollment_token(x_enrollment_token)
+
         # Check if device already exists
         existing_device = (
             db.query(SmsDevice).filter(SmsDevice.device_id == request.device_id).first()
@@ -158,6 +175,8 @@ async def register_device(
             "api_key": api_key,
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error registering device: {e}")
         raise HTTPException(status_code=500, detail="Failed to register device")

@@ -305,3 +305,12 @@ column and is deliberately not used as a result-read fallback; after a restart,
 unbound rows remain inaccessible instead of becoming cross-user disclosures.
 This containment does not replace immutable platform subject/tenant mapping,
 durable owned job resources, or instance-scoped Security grants.
+
+Device registration no longer relies on ingress reachability as its bootstrap
+proof. Issuing or rotating a device key requires a strong out-of-band enrollment
+token supplied only in `X-Enrollment-Token`; missing or shorter-than-32-character
+server configuration fails closed before database access, and wrong client proof
+cannot rotate an existing device ID. Production must add
+`SMS_DEVICE_ENROLLMENT_TOKEN` to the existing FuzeKeys-owned SealedSecret; no
+credential value is committed here. This is still an enrollment containment
+mechanism, not durable device-key custody, attestation or platform ownership.

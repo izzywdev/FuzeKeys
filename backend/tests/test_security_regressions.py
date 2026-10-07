@@ -580,6 +580,8 @@ class TestOtpDeviceAuthAndBinding:
             return val
 
         monkeypatch.setattr(sms_mod.secrets, "token_urlsafe", _spy)
+        enrollment_token = "e" * 32
+        monkeypatch.setenv("SMS_DEVICE_ENROLLMENT_TOKEN", enrollment_token)
 
         reg = sms_mod.DeviceRegistrationRequest(
             device_id="dev-new",
@@ -587,7 +589,13 @@ class TestOtpDeviceAuthAndBinding:
             os_version="14",
             app_version="1.0.0",
         )
-        result = _run(sms_mod.register_device(reg, db=_FakeDbSession()))
+        result = _run(
+            sms_mod.register_device(
+                reg,
+                x_enrollment_token=enrollment_token,
+                db=_FakeDbSession(),
+            )
+        )
 
         assert result["success"] is True
         assert captured["nbytes"] == 32, "key must be secrets.token_urlsafe(32)"
@@ -597,6 +605,60 @@ class TestOtpDeviceAuthAndBinding:
         assert sms_mod.registered_device_keys["dev-new"] == issued
         assert sms_mod._verify_device("dev-new", issued) is True
         assert sms_mod._verify_device("dev-new", "not-the-key") is False
+
+    @pytest.mark.parametrize("configured", [None, "too-short"])
+    def test_registration_fails_closed_without_strong_server_token(
+        self, monkeypatch, configured
+    ):
+        if configured is None:
+            monkeypatch.delenv("SMS_DEVICE_ENROLLMENT_TOKEN", raising=False)
+        else:
+            monkeypatch.setenv("SMS_DEVICE_ENROLLMENT_TOKEN", configured)
+        reg = sms_mod.DeviceRegistrationRequest(
+            device_id="dev-new",
+            device_name="Pixel",
+            os_version="14",
+            app_version="1.0.0",
+        )
+        db = _FakeDbSession()
+        with pytest.raises(HTTPException) as denied:
+            _run(
+                sms_mod.register_device(
+                    reg,
+                    x_enrollment_token="presented-but-not-configured",
+                    db=db,
+                )
+            )
+        assert denied.value.status_code == 503
+        assert db.added == []
+        assert db.commits == 0
+        assert "dev-new" not in sms_mod.registered_device_keys
+
+    @pytest.mark.parametrize("presented", [None, "wrong-token"])
+    def test_registration_rejects_missing_or_wrong_enrollment_proof(
+        self, monkeypatch, presented
+    ):
+        monkeypatch.setenv("SMS_DEVICE_ENROLLMENT_TOKEN", "e" * 32)
+        reg = sms_mod.DeviceRegistrationRequest(
+            device_id="dev-existing",
+            device_name="Pixel",
+            os_version="14",
+            app_version="1.0.0",
+        )
+        sms_mod.registered_device_keys["dev-existing"] = "current-device-key"
+        db = _FakeDbSession()
+        with pytest.raises(HTTPException) as denied:
+            _run(
+                sms_mod.register_device(
+                    reg,
+                    x_enrollment_token=presented,
+                    db=db,
+                )
+            )
+        assert denied.value.status_code == 401
+        assert db.added == []
+        assert db.commits == 0
+        assert sms_mod.registered_device_keys["dev-existing"] == "current-device-key"
 
 
 # ===========================================================================
