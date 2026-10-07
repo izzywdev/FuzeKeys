@@ -82,6 +82,8 @@ this file with the documented env vars to have it write GITHUB_OUTPUT directly (
 """
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import os
 import re
@@ -421,6 +423,17 @@ def _write_github_output(decision: dict, body: str) -> None:
 def main() -> int:
     action_conclusion = os.environ.get("FUZE_ACTION_CONCLUSION", "")
     result_text = os.environ.get("FUZE_RESULT_TEXT", "")
+    result_text_b64 = os.environ.get("FUZE_RESULT_TEXT_B64", "")
+    if not result_text and result_text_b64:
+        # GitHub suppresses job outputs that its secret masker considers secret-bearing.
+        # CODEX_AUTH_JSON is structured JSON, so review verdict JSON can collide with that
+        # heuristic even though it contains no credential. The review job therefore sends
+        # the non-secret result as base64 across the job boundary; malformed transport must
+        # stay empty so the existing fail-closed verdict path abstains.
+        try:
+            result_text = base64.b64decode(result_text_b64, validate=True).decode("utf-8")
+        except (binascii.Error, UnicodeDecodeError):
+            result_text = ""
     nonce = os.environ.get("FUZE_VERDICT_NONCE", "")
     mode = os.environ.get("FUZE_ACTION_MODE", "")
     vendor = os.environ.get("FUZE_ACTION_VENDOR", "")
