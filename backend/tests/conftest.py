@@ -234,7 +234,12 @@ async def verified_owner_permissions(db_session, test_user, monkeypatch):
     async def allow_test_owner(subject, tenant, resource_type, action, *, resource_key):
         assert (subject, tenant) == ("test-owner", "test-tenant")
         assert resource_type in ("fuzekeys_Identity", "fuzekeys_Account")
-        assert action in ("update", "delete")
+        # Legacy CRUD tests exercise the complete positive owner path. Keep the
+        # fixture aligned with the route contract: list uses read, account
+        # creation uses the owned identity, and mutations use update/delete.
+        # Negative decisions and exact action/resource keys are covered in the
+        # dedicated owner authorization suites.
+        assert action in ("read", "use", "update", "delete")
         assert resource_key.startswith(
             "identity:" if resource_type == "fuzekeys_Identity" else "account:"
         )

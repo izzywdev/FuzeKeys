@@ -20,14 +20,13 @@ mint routes still require complete workload and owned secret/capability policy
 migration. It is not clearance of the broker platform authorization gate.
 
 SMS/device migration has additional concrete schema blockers: its models declare
-a separate Base outside app Alembic metadata, sync Session handlers receive
-the app AsyncSession, device keys live in process memory, device records and OTP
-requests have no immutable verified tenant/owner mapping, public registration can
-rotate device IDs, polls enumerate unowned pending requests and callbacks bind
-an unassigned request to its first responding device. No static enrollment
-credential or inferred Identity/VaultAsset grant substitutes for fixing those
-boundaries. Required next work is explicit verified enrollment ownership, managed
-schema/durable custody and per-request owner/device binding before platform grants.
+a separate Base outside app Alembic metadata, sync Session handlers receive the
+app AsyncSession, device-key digests live in process memory, and device records
+and OTP requests have no immutable verified tenant/owner mapping. Registration is
+now protected by a strong out-of-band enrollment proof, polling withholds unowned
+pending requests, and callbacks refuse unassigned work. Those containment controls
+do not substitute for explicit verified enrollment ownership, managed schema,
+durable digest custody and per-request owner/device binding before platform grants.
 
 ## Actual mounted route inventory
 
@@ -257,3 +256,70 @@ families and are not implicitly granted. No credential-delete endpoint exists.
 Existing workload callers must be upgraded to the dual-token contract, and real
 tenant mappings, exact grants, PostgreSQL transactions and authenticated service
 canaries remain deployment prerequisites.
+
+### SMS polling follow-up (2026-10-06)
+
+Device polling now returns only waiting, unexpired requests explicitly assigned
+by `assigned_device_id` to the authenticated device. Foreign, malformed and
+unassigned legacy requests are withheld without changing their assignment.
+Expiry comparisons and newly created request epochs use timezone-aware UTC;
+naive `utcnow().timestamp()` depended on the host timezone and could extend OTP
+validity. Regression coverage runs in UTC, Jerusalem and Los Angeles.
+
+This is a narrow containment change, not completion of SMS platform authorization.
+The existing request-creation route still creates unassigned requests, so those
+requests are withheld by polling, are not broadcast, and cannot be completed until
+an explicit authorized assignment exists. OTP callbacks now reject unassigned
+requests instead of binding the first authenticated device. WebSocket clients must
+prove the same device id/key pair before acceptance, and completion notices target
+only that assigned device.
+
+Enrollment now requires the out-of-band proof described below. Device principals,
+key digests, OTP requests, creator bindings and exact device assignments are
+persisted through the application AsyncSession and Alembic metadata. The creator
+may assign only its own waiting, unexpired request to one active registered device;
+polling and completion then require that exact device. Immutable platform
+subject/tenant ownership and Security instance policies/grants remain
+unprovisioned, so the mounted-route inventory continues to classify these paths
+as platform-mapping gaps rather than production-complete authorization.
+
+The parallel infrastructure verification API now reuses the same durable
+SmsOtpRequest custody, creator binding and assignment lifecycle. Its target phone
+number is persisted with the request and projected only to the exact authenticated
+assigned device. Unassigned requests are not broadcast and cannot be claimed on
+completion; expired or already-completed requests fail closed, and completed codes
+survive process restarts for creator-only reads. The mobile-command WebSocket proves
+the device id/key pair before acceptance. Mobile commands still lack an
+owner-authorized target-device resource contract, so the operator command route
+remains a platform-policy design gap rather than being treated as
+production-complete authorization.
+
+As an additional containment boundary, a mobile command now names one connected,
+device-key-authenticated target instead of broadcasting its parameters to every
+connected device. Command results are accepted only from that exact target and
+are returned only to the authenticated local user that created the command;
+foreign and unknown command IDs are indistinguishable. Command and result state
+is still process-local, and a local user is not yet mapped to ownership of the
+selected device. Durable device principals, tenant/owner mapping and an explicit
+`FuzeKeysInfrastructure:{device_id}:operate` decision therefore remain required.
+
+OTP and infrastructure SMS verification requests now persist their authenticated
+local creator, target context and exact device assignment. Sensitive OTP results
+survive process restarts and are returned only to that creator; foreign, unknown
+and legacy unbound identifiers share a 404 response. Email monitors remain
+process-local but retain creator-only read containment. None of these local
+bindings substitutes for immutable platform subject/tenant mapping or
+instance-scoped Security grants.
+
+Device registration no longer relies on ingress reachability as its bootstrap
+proof. Issuing or rotating a device key requires a strong out-of-band enrollment
+token supplied only in `X-Enrollment-Token`; missing or shorter-than-32-character
+server configuration fails closed before database access, and wrong client proof
+cannot rotate an existing device ID. Production must add
+`SMS_DEVICE_ENROLLMENT_TOKEN` to the existing FuzeKeys-owned SealedSecret; no
+credential value is committed here. The generated bearer key is returned once;
+only its SHA-256 digest and rotation timestamp are committed atomically with the
+active device row. Subsequent verification uses the durable digest and
+constant-time comparison, so restart no longer loses device authority and
+deactivating the row revokes it. This is still enrollment-token custody rather
+than device attestation or verified platform tenant ownership.

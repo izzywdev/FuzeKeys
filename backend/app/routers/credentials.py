@@ -569,9 +569,9 @@ def generate_credentials_for_identity(
         # Generate unique email for signup
         timestamp = int(datetime.utcnow().timestamp())
         email_domain = "@example.com"  # Use configured domain
-        credentials["email"] = (
-            f"{identity.name.lower().replace(' ', '.')}.{timestamp}{email_domain}"
-        )
+        credentials[
+            "email"
+        ] = f"{identity.name.lower().replace(' ', '.')}.{timestamp}{email_domain}"
     else:
         # Use existing email pattern for signin
         credentials["email"] = f"{identity.name.lower().replace(' ', '.')}@example.com"
@@ -598,9 +598,9 @@ def generate_credentials_for_identity(
 
     # Site-specific customizations
     if site_name.lower() == "github":
-        credentials["username"] = (
-            f"{identity.name.lower().replace(' ', '')}_{secrets.token_hex(4)}"
-        )
+        credentials[
+            "username"
+        ] = f"{identity.name.lower().replace(' ', '')}_{secrets.token_hex(4)}"
     elif site_name.lower() == "google":
         credentials["recovery_email"] = f"backup.{credentials['email']}"
 

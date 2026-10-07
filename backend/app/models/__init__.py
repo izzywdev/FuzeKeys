@@ -13,6 +13,7 @@ from .organization import Organization, OrganizationMember
 from .platform_identity import PlatformIdentity
 from .signup_script import SignupScript
 from .site import DifficultyLevel, ImplementationStatus, Site
+from .sms import SmsDevice, SmsOtpReceived, SmsOtpRequest, SmsStatistics
 from .user import User
 from .vault_assets import ApiCredential, IdentityCard
 
@@ -34,4 +35,8 @@ __all__ = [
     "ApprovalRequest",
     "AuditLog",
     "Grant",
+    "SmsDevice",
+    "SmsOtpRequest",
+    "SmsOtpReceived",
+    "SmsStatistics",
 ]

@@ -107,6 +107,9 @@ secrets:
   secretKey: ""
   credentialEncryptionKey: ""
   masterKeySalt: ""
+  # Strong out-of-band bootstrap proof for /api/sms/register-device. Production
+  # supplies SMS_DEVICE_ENROLLMENT_TOKEN through the existing SealedSecret.
+  smsDeviceEnrollmentToken: ""
   openaiApiKey: ""
   # Token for a least-privilege policy limited to secret/data/connectors/*.
   vaultToken: ""

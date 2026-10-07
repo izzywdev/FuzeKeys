@@ -1,9 +1,17 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, Text
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+)
 
-Base = declarative_base()
+from app.database import Base
 
 
 class SmsDevice(Base):
@@ -17,6 +25,9 @@ class SmsDevice(Base):
     os_version = Column(String(100), nullable=True)
     app_version = Column(String(50), nullable=True)
     is_active = Column(Boolean, default=True)
+    # Only the SHA-256 digest is retained. The bearer key is returned once.
+    device_key_hash = Column(String(64), nullable=True)
+    key_rotated_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_seen = Column(DateTime, nullable=True)
 
@@ -32,6 +43,7 @@ class SmsOtpRequest(Base):
     id = Column(Integer, primary_key=True, index=True)
     request_id = Column(String(255), unique=True, index=True, nullable=False)
     service = Column(String(255), nullable=False)  # Which service the OTP is for
+    target_phone_number = Column(String(64), nullable=True)
     status = Column(
         String(50), default="waiting"
     )  # waiting, completed, timeout, failed
@@ -40,6 +52,10 @@ class SmsOtpRequest(Base):
     completed_at = Column(DateTime, nullable=True)
     timeout_at = Column(DateTime, nullable=False)
     device_id = Column(String(255), nullable=True)  # Which device fulfilled the request
+    owner_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    assigned_device_id = Column(
+        String(255), ForeignKey("sms_devices.device_id"), nullable=True, index=True
+    )
 
     def __repr__(self):
         return f"<SmsOtpRequest(request_id='{self.request_id}', service='{self.service}', status='{self.status}')>"
