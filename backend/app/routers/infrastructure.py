@@ -97,6 +97,7 @@ async def request_sms_verification(
         # Store request details
         verification_requests[request_id] = {
             "type": "sms_verification",
+            "owner_user_id": current_user.id,
             "site": request.site,
             "phone_number": request.phone_number,
             "status": "pending",
@@ -133,17 +134,15 @@ async def get_sms_verification(
     """Get SMS verification code for scraper.
 
     SECURITY: Returns the verification CODE itself, which is highly sensitive.
-    Operator/app-facing (the scraper orchestration polls for the result via the
-    app), so it requires the application JWT. Previously unauthenticated, this
-    let any caller read codes by enumerating request_ids.
+    The application JWT must identify the exact local user that created the
+    request. Foreign, unknown and legacy unbound IDs all return the same 404.
     """
     try:
-        if request_id not in verification_requests:
+        request_data = verification_requests.get(request_id)
+        if request_data is None or request_data.get("owner_user_id") != current_user.id:
             raise HTTPException(
                 status_code=404, detail="Verification request not found"
             )
-
-        request_data = verification_requests[request_id]
 
         # Check if timeout exceeded
         timeout_at = request_data["timeout_at"]
@@ -299,12 +298,13 @@ async def setup_email_monitoring(
         monitor_id = str(uuid.uuid4())
 
         email_monitors[monitor_id] = {
+            "owner_user_id": current_user.id,
             "email": request.email,
             "sender_patterns": request.sender_patterns,
             "subject_patterns": request.subject_patterns,
             "status": "monitoring",
-            "created_at": datetime.utcnow(),
-            "timeout_at": datetime.utcnow()
+            "created_at": datetime.now(timezone.utc),
+            "timeout_at": datetime.now(timezone.utc)
             + timedelta(seconds=request.timeout_seconds),
             "found_emails": [],
         }
@@ -335,18 +335,20 @@ async def get_email_verification(
     """Get email verification content.
 
     SECURITY: Returns captured email content (``found_emails``), which is
-    sensitive. Operator/app-facing, so it requires the application JWT.
-    Previously unauthenticated, allowing enumeration of monitor_ids to read
-    intercepted emails.
+    sensitive. The application JWT must identify the exact local user that
+    created the monitor. Foreign, unknown and legacy unbound IDs all return the
+    same 404.
     """
     try:
-        if monitor_id not in email_monitors:
+        monitor_data = email_monitors.get(monitor_id)
+        if monitor_data is None or monitor_data.get("owner_user_id") != current_user.id:
             raise HTTPException(status_code=404, detail="Email monitor not found")
 
-        monitor_data = email_monitors[monitor_id]
-
         # Check if timeout exceeded
-        if datetime.utcnow() > monitor_data["timeout_at"]:
+        timeout_at = monitor_data["timeout_at"]
+        if timeout_at.tzinfo is None:
+            timeout_at = timeout_at.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) > timeout_at:
             monitor_data["status"] = "timeout"
 
         return {

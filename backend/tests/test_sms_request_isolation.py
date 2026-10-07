@@ -10,6 +10,11 @@ from fastapi import HTTPException
 from app.routers import sms
 
 
+class User:
+    def __init__(self, user_id):
+        self.id = user_id
+
+
 @pytest.fixture(autouse=True, params=["UTC", "Asia/Jerusalem", "America/Los_Angeles"])
 def host_timezone(request, monkeypatch):
     previous = os.environ.get("TZ")
@@ -100,11 +105,34 @@ async def test_new_request_expiry_is_epoch_time_in_every_host_timezone(monkeypat
     monkeypatch.setattr(sms.sms_manager, "broadcast", AsyncMock())
     before = time.time()
     result = await sms.request_otp(
-        "test", timeout_seconds=300, db=Database(), current_user=object()
+        "test", timeout_seconds=300, db=Database(), current_user=User(7)
     )
     assert before + 300 <= result["timeout"] <= time.time() + 300
     pending = sms.pending_otp_requests[result["request_id"]]
+    assert pending["owner_user_id"] == 7
     assert before <= pending["created_at"] <= time.time()
+
+
+@pytest.mark.asyncio
+async def test_otp_result_is_visible_only_to_request_creator():
+    sms.pending_otp_requests["owned"] = {
+        "owner_user_id": 7,
+        "status": "completed",
+        "otp_code": "123456",
+        "timeout": time.time() + 300,
+    }
+    result = await sms.get_request_status("owned", db=None, current_user=User(7))
+    assert result["otp_code"] == "123456"
+
+    for request_id in ("owned", "legacy", "missing"):
+        if request_id == "legacy":
+            sms.pending_otp_requests[request_id] = {
+                "status": "completed",
+                "otp_code": "654321",
+            }
+        with pytest.raises(HTTPException) as hidden:
+            await sms.get_request_status(request_id, db=None, current_user=User(8))
+        assert hidden.value.status_code == 404
 
 
 @pytest.mark.asyncio

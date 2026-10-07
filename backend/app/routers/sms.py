@@ -423,6 +423,7 @@ async def request_otp(
         pending_otp_requests[request_id] = {
             "service": service,
             "status": "waiting",
+            "owner_user_id": current_user.id,
             "created_at": datetime.now(timezone.utc).timestamp(),
             "timeout": timeout_timestamp,
         }
@@ -454,43 +455,25 @@ async def get_request_status(
     """Get the status of an OTP request.
 
     SECURITY: This endpoint returns the received OTP value itself
-    (``otp_code``), which is highly sensitive. It is operator/user-facing
-    (the main app polls for the result), so it requires the application JWT.
-    Leaving it unauthenticated would let any caller read OTP codes by guessing
-    or enumerating request_ids. Device-key auth is not used because devices
-    submit OTPs (via /otp), they do not read them back.
+    (``otp_code``), which is highly sensitive. It requires both the application
+    JWT and an exact creator binding recorded when the request was made. Foreign,
+    unknown and legacy unbound request IDs all return the same 404. Device-key
+    auth is not used because devices submit OTPs; they do not read them back.
     """
     try:
-        if request_id in pending_otp_requests:
-            request_data = pending_otp_requests[request_id]
-            return {
-                "request_id": request_id,
-                "status": request_data.get("status"),
-                "otp_code": request_data.get("otp_code"),
-                "created_at": request_data.get("created_at"),
-                "completed_at": request_data.get("completed_at"),
-                "timeout": request_data.get("timeout"),
-            }
-        else:
-            # Check database
-            db_request = (
-                db.query(SmsOtpRequest)
-                .filter(SmsOtpRequest.request_id == request_id)
-                .first()
-            )
-            if db_request:
-                return {
-                    "request_id": request_id,
-                    "status": db_request.status,
-                    "otp_code": db_request.otp_code,
-                    "created_at": db_request.created_at.timestamp(),
-                    "completed_at": db_request.completed_at.timestamp()
-                    if db_request.completed_at
-                    else None,
-                    "timeout": db_request.timeout_at.timestamp(),
-                }
-            else:
-                raise HTTPException(status_code=404, detail="Request not found")
+        request_data = pending_otp_requests.get(request_id)
+        if request_data is None or request_data.get("owner_user_id") != current_user.id:
+            # The legacy database row has no verifiable owner field and must not
+            # become an authenticated-but-cross-user OTP disclosure fallback.
+            raise HTTPException(status_code=404, detail="Request not found")
+        return {
+            "request_id": request_id,
+            "status": request_data.get("status"),
+            "otp_code": request_data.get("otp_code"),
+            "created_at": request_data.get("created_at"),
+            "completed_at": request_data.get("completed_at"),
+            "timeout": request_data.get("timeout"),
+        }
 
     except HTTPException:
         raise

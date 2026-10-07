@@ -296,3 +296,12 @@ foreign and unknown command IDs are indistinguishable. Command and result state
 is still process-local, and a local user is not yet mapped to ownership of the
 selected device. Durable device principals, tenant/owner mapping and an explicit
 `FuzeKeysInfrastructure:{device_id}:operate` decision therefore remain required.
+
+Process-local OTP requests, infrastructure SMS verification requests and email
+monitors now record the authenticated local creator and return sensitive codes or
+captured email data only to that exact user. Foreign, unknown and legacy unbound
+identifiers share a 404 response. The legacy SMS database model has no owner
+column and is deliberately not used as a result-read fallback; after a restart,
+unbound rows remain inaccessible instead of becoming cross-user disclosures.
+This containment does not replace immutable platform subject/tenant mapping,
+durable owned job resources, or instance-scoped Security grants.

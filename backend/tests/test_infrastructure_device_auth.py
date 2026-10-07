@@ -11,6 +11,11 @@ from starlette.websockets import WebSocketDisconnect
 from app.routers import infrastructure, sms
 
 
+class User:
+    def __init__(self, user_id):
+        self.id = user_id
+
+
 class FakeWebSocket:
     def __init__(self, device_id="", key=None, incoming=None):
         self.query_params = {"device_id": device_id} if device_id else {}
@@ -41,11 +46,13 @@ class FakeWebSocket:
 def isolated_device_state():
     original_keys = dict(sms.registered_device_keys)
     original_requests = dict(infrastructure.verification_requests)
+    original_monitors = dict(infrastructure.email_monitors)
     original_active = list(infrastructure.mobile_manager.active_connections)
     original_devices = dict(infrastructure.mobile_manager.device_connections)
     original_commands = dict(infrastructure.mobile_commands)
     sms.registered_device_keys.clear()
     infrastructure.verification_requests.clear()
+    infrastructure.email_monitors.clear()
     infrastructure.mobile_manager.active_connections.clear()
     infrastructure.mobile_manager.device_connections.clear()
     infrastructure.mobile_commands.clear()
@@ -55,6 +62,8 @@ def isolated_device_state():
     sms.registered_device_keys.update(original_keys)
     infrastructure.verification_requests.clear()
     infrastructure.verification_requests.update(original_requests)
+    infrastructure.email_monitors.clear()
+    infrastructure.email_monitors.update(original_monitors)
     infrastructure.mobile_manager.active_connections[:] = original_active
     infrastructure.mobile_manager.device_connections.clear()
     infrastructure.mobile_manager.device_connections.update(original_devices)
@@ -81,13 +90,57 @@ async def test_request_is_withheld_until_authorized_assignment(monkeypatch):
             phone_number="+15555550100",
         ),
         db=None,
-        current_user=object(),
+        current_user=User(7),
     )
     assert result["status"] == "pending"
     assert "sent" not in result["message"].lower()
     broadcast.assert_not_awaited()
     stored = infrastructure.verification_requests[result["request_id"]]
+    assert stored["owner_user_id"] == 7
     assert "assigned_device_id" not in stored
+
+
+@pytest.mark.asyncio
+async def test_verification_code_is_visible_only_to_request_creator():
+    infrastructure.verification_requests["owned"] = pending_request(
+        owner_user_id=7,
+        status="completed",
+        code="123456",
+    )
+    result = await infrastructure.get_sms_verification("owned", current_user=User(7))
+    assert result.code == "123456"
+
+    for request_id in ("owned", "legacy", "missing"):
+        if request_id == "legacy":
+            infrastructure.verification_requests[request_id] = pending_request(
+                status="completed", code="654321"
+            )
+        with pytest.raises(HTTPException) as hidden:
+            await infrastructure.get_sms_verification(request_id, current_user=User(8))
+        assert hidden.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_email_monitor_is_visible_only_to_request_creator():
+    created = await infrastructure.setup_email_monitoring(
+        infrastructure.EmailMonitoringRequest(
+            email="owner@example.com",
+            sender_patterns=["security"],
+            subject_patterns=["code"],
+        ),
+        current_user=User(7),
+    )
+    monitor_id = created["monitor_id"]
+    assert infrastructure.email_monitors[monitor_id]["owner_user_id"] == 7
+
+    result = await infrastructure.get_email_verification(
+        monitor_id, current_user=User(7)
+    )
+    assert result["monitor_id"] == monitor_id
+
+    with pytest.raises(HTTPException) as hidden:
+        await infrastructure.get_email_verification(monitor_id, current_user=User(8))
+    assert hidden.value.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -173,11 +226,6 @@ async def test_authenticated_mobile_socket_joins_and_is_removed():
     assert websocket.closed is None
     assert websocket not in infrastructure.mobile_manager.active_connections
     assert "device-a" not in infrastructure.mobile_manager.device_connections
-
-
-class User:
-    def __init__(self, user_id):
-        self.id = user_id
 
 
 @pytest.mark.asyncio
