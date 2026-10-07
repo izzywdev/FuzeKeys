@@ -394,20 +394,6 @@
       "reason": "Durable SQL creator/device scoping is enforced locally. Immutable platform subject/tenant mapping and exact instance policy remain."
     },
     {
-      "method": "POST",
-      "path": "/api/sms/requests/{request_id}/assign/{device_id}",
-      "endpoint": "app.routers.sms.assign_otp_request",
-      "include_in_schema": true,
-      "dependencies": [
-        "app.database.get_async_session",
-        "app.routers.auth.get_current_user",
-        "fastapi.security.http.HTTPBearer"
-      ],
-      "guard_helpers": [],
-      "assessment": "durable_local_owner_platform_mapping_gap",
-      "reason": "The authenticated local creator may bind its durable request to one active durable device. Immutable platform subject/tenant mapping and an exact Security instance decision remain."
-    },
-    {
       "method": "GET",
       "path": "/api/sms/request-status/{request_id}",
       "endpoint": "app.routers.sms.get_request_status",
@@ -458,6 +444,20 @@
       "guard_helpers": [],
       "assessment": "public_health",
       "reason": "Health returns only coarse connection/request counts; no device id, OTP or owner resource is projected."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/sms/requests/{request_id}/assign/{device_id}",
+      "endpoint": "app.routers.sms.assign_otp_request",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "durable_local_owner_platform_mapping_gap",
+      "reason": "The authenticated local creator may bind its durable request to one active durable device. Immutable platform subject/tenant mapping and an exact Security instance decision remain."
     },
     {
       "method": "POST",

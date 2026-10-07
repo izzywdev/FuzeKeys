@@ -496,6 +496,7 @@ app.include_router(accounts.router, prefix="/api/v1/accounts", tags=["Accounts"]
 app.include_router(automation.router, prefix="/api/v1/automation", tags=["Automation"])
 app.include_router(chat.router, prefix="/api/v1/chat", tags=["Chat"])
 app.include_router(sms.router, tags=["SMS"])
+app.include_router(sms.assignment_router, tags=["SMS"])
 app.include_router(infrastructure.router, tags=["Infrastructure"])
 app.include_router(llm_scraper.router, tags=["LLM Scraper"])
 app.include_router(credentials.router, tags=["Credentials"])

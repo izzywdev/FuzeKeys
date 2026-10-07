@@ -38,6 +38,10 @@ from .auth import get_current_user
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/sms", tags=["SMS"])
+# New endpoints must use the platform's versioned API namespace. Keep the
+# legacy router above only for the existing mobile-client surface while it is
+# migrated under the separately tracked API-version debt.
+assignment_router = APIRouter(prefix="/api/v1/sms", tags=["SMS"])
 security = HTTPBearer()
 
 # WebSocket connection manager for real-time communication
@@ -471,7 +475,7 @@ async def request_otp(
         raise HTTPException(status_code=500, detail="Failed to create OTP request")
 
 
-@router.post("/requests/{request_id}/assign/{device_id}")
+@assignment_router.post("/requests/{request_id}/assign/{device_id}")
 async def assign_otp_request(
     request_id: str,
     device_id: str,

@@ -635,41 +635,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
-  /api/sms/requests/{request_id}/assign/{device_id}:
-    post:
-      tags:
-      - SMS
-      - SMS
-      summary: Assign Otp Request
-      description: Bind one creator-owned OTP request to one active device instance.
-      operationId: post_sms_requests_by_request_id_assign_by_device_id
-      security:
-      - HTTPBearer: []
-      parameters:
-      - name: request_id
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Request Id
-      - name: device_id
-        in: path
-        required: true
-        schema:
-          type: string
-          title: Device Id
-      responses:
-        '200':
-          description: Successful Response
-          content:
-            application/json:
-              schema: {}
-        '422':
-          description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
   /api/sms/request-status/{request_id}:
     get:
       tags:
@@ -786,6 +751,41 @@ paths:
             application/json:
               schema: {}
       x-pagination: exempt
+  /api/v1/sms/requests/{request_id}/assign/{device_id}:
+    post:
+      tags:
+      - SMS
+      - SMS
+      summary: Assign Otp Request
+      description: Bind one creator-owned OTP request to one active device instance.
+      operationId: post_sms_requests_by_request_id_assign_by_device_id
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Request Id
+      - name: device_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Device Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/infrastructure/sms/request-verification:
     post:
       tags:
