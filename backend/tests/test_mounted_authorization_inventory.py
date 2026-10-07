@@ -23,7 +23,11 @@ def test_reviewed_inventory_matches_all_actual_mounted_routes():
     assert ("POST", "/api/v1/sites/") not in tuples
     assert not any("background" in row["endpoint"] for row in snapshot["routes"])
     assert any(
-        row["assessment"] == "public_enrollment_security_gap"
+        row["assessment"] == "enrollment_token_platform_mapping_gap"
+        for row in snapshot["routes"]
+    )
+    assert any(
+        row["assessment"] == "durable_local_owner_platform_mapping_gap"
         for row in snapshot["routes"]
     )
     assert any(

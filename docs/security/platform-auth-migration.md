@@ -274,11 +274,14 @@ requests instead of binding the first authenticated device. WebSocket clients mu
 prove the same device id/key pair before acceptance, and completion notices target
 only that assigned device.
 
-Enrollment now requires the out-of-band proof described below. Device-key digests
-and requests are still process-local, and the server-side assignment lifecycle,
-durable verified device principals, owner/tenant bindings and instance
-policies/grants remain unprovisioned. The mounted-route inventory therefore
-continues to classify these paths as authorization gaps.
+Enrollment now requires the out-of-band proof described below. Device principals,
+key digests, OTP requests, creator bindings and exact device assignments are
+persisted through the application AsyncSession and Alembic metadata. The creator
+may assign only its own waiting, unexpired request to one active registered device;
+polling and completion then require that exact device. Immutable platform
+subject/tenant ownership and Security instance policies/grants remain
+unprovisioned, so the mounted-route inventory continues to classify these paths
+as platform-mapping gaps rather than production-complete authorization.
 
 The parallel infrastructure verification callback now has the same containment:
 unassigned requests are not broadcast and cannot be claimed on completion, expired
@@ -297,14 +300,13 @@ is still process-local, and a local user is not yet mapped to ownership of the
 selected device. Durable device principals, tenant/owner mapping and an explicit
 `FuzeKeysInfrastructure:{device_id}:operate` decision therefore remain required.
 
-Process-local OTP requests, infrastructure SMS verification requests and email
-monitors now record the authenticated local creator and return sensitive codes or
-captured email data only to that exact user. Foreign, unknown and legacy unbound
-identifiers share a 404 response. The legacy SMS database model has no owner
-column and is deliberately not used as a result-read fallback; after a restart,
-unbound rows remain inaccessible instead of becoming cross-user disclosures.
-This containment does not replace immutable platform subject/tenant mapping,
-durable owned job resources, or instance-scoped Security grants.
+OTP requests now persist their authenticated local creator and exact device
+assignment. Sensitive OTP results survive process restarts and are returned only
+to that creator; foreign, unknown and legacy unbound identifiers share a 404
+response. Infrastructure SMS verification requests and email monitors remain
+process-local but retain the same creator-only read containment. None of these
+local bindings substitutes for immutable platform subject/tenant mapping or
+instance-scoped Security grants.
 
 Device registration no longer relies on ingress reachability as its bootstrap
 proof. Issuing or rotating a device key requires a strong out-of-band enrollment
@@ -312,10 +314,9 @@ token supplied only in `X-Enrollment-Token`; missing or shorter-than-32-characte
 server configuration fails closed before database access, and wrong client proof
 cannot rotate an existing device ID. Production must add
 `SMS_DEVICE_ENROLLMENT_TOKEN` to the existing FuzeKeys-owned SealedSecret; no
-credential value is committed here. This is still an enrollment containment
-mechanism, not durable device-key custody, attestation or platform ownership.
-The generated bearer key is returned once to the enrolling device and only its
-SHA-256 digest remains in process memory; subsequent verification uses a
-constant-time digest comparison. Durable managed storage, rotation metadata and
-restart-safe revocation remain required before this becomes production-grade
-device identity custody.
+credential value is committed here. The generated bearer key is returned once;
+only its SHA-256 digest and rotation timestamp are committed atomically with the
+active device row. Subsequent verification uses the durable digest and
+constant-time comparison, so restart no longer loses device authority and
+deactivating the row revokes it. This is still enrollment-token custody rather
+than device attestation or verified platform tenant ownership.

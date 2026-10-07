@@ -115,7 +115,7 @@ def assess(module, endpoint, method, helpers):
     }:
         return (
             "device_proof_platform_migration_gap",
-            "Device key/callback assignment checks remain; device enrollment, durable verified principal and platform policy are not complete.",
+            "Active device proof uses a durable SHA-256 key digest and callbacks require a creator-owned durable assignment; verified tenant mapping and platform instance policy remain.",
         )
     if module == "app.routers.infrastructure" and endpoint in {
         "complete_sms_verification",
@@ -123,12 +123,31 @@ def assess(module, endpoint, method, helpers):
     }:
         return (
             "device_proof_platform_migration_gap",
-            "Device-key verification precedes socket acceptance or callback mutation, and callbacks require prior assignment; durable verified device principals and platform policy still need migration.",
+            "Durable active-device proof precedes socket acceptance or callback mutation, and callbacks require prior assignment; verified tenant mapping and platform instance policy remain.",
         )
     if module == "app.routers.sms" and endpoint == "register_device":
         return (
-            "public_enrollment_security_gap",
-            "Public bootstrap can rotate an existing device key; production enrollment attestation/token and durable key custody are unresolved. Do not treat this as an approved public-policy exception.",
+            "enrollment_token_platform_mapping_gap",
+            "A strong out-of-band enrollment token gates atomic durable digest issuance/rotation. Device attestation, verified tenant ownership and platform grants remain.",
+        )
+    if module == "app.routers.sms" and endpoint == "assign_otp_request":
+        return (
+            "durable_local_owner_platform_mapping_gap",
+            "The authenticated local creator may bind its durable request to one active durable device. Immutable platform subject/tenant mapping and an exact Security instance decision remain.",
+        )
+    if module == "app.routers.sms" and endpoint in {
+        "request_otp",
+        "get_request_status",
+        "get_devices",
+    }:
+        return (
+            "durable_local_owner_platform_mapping_gap",
+            "Durable SQL creator/device scoping is enforced locally. Immutable platform subject/tenant mapping and exact instance policy remain.",
+        )
+    if module == "app.routers.sms" and endpoint == "health_check":
+        return (
+            "public_health",
+            "Health returns only coarse connection/request counts; no device id, OTP or owner resource is projected.",
         )
     if module == "app.routers.credentials" and endpoint == "validate_credentials":
         return (

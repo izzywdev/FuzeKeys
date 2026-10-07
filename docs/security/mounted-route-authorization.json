@@ -1,22 +1,23 @@
 {
   "source": "actual app.main FastAPI mounts; startup/deployment not executed",
   "production_verified": false,
-  "route_method_count": 92,
-  "mutating_http_count": 46,
+  "route_method_count": 93,
+  "mutating_http_count": 47,
   "assessment_counts": {
     "broker_platform_mapping_gap": 3,
     "device_proof_platform_migration_gap": 5,
     "dual_session_proof_boundary": 1,
+    "durable_local_owner_platform_mapping_gap": 4,
     "enrollment_proof_boundary": 2,
+    "enrollment_token_platform_mapping_gap": 1,
     "instance_enforced": 14,
     "instance_enforced_with_staged_registration": 10,
     "local_session_profile": 1,
     "parent_instance_enforced_child_lifecycle_gap": 2,
-    "platform_policy_design_gap": 28,
+    "platform_policy_design_gap": 24,
     "public_catalog_or_health": 3,
-    "public_enrollment_security_gap": 1,
     "public_framework_documentation": 8,
-    "public_health": 1,
+    "public_health": 2,
     "public_health_or_static_catalog": 9,
     "public_static_demo": 1,
     "signup_branch_enforced_general_ai_gap": 1,
@@ -351,8 +352,8 @@
         "app.database.get_async_session"
       ],
       "guard_helpers": [],
-      "assessment": "public_enrollment_security_gap",
-      "reason": "Public bootstrap can rotate an existing device key; production enrollment attestation/token and durable key custody are unresolved. Do not treat this as an approved public-policy exception."
+      "assessment": "enrollment_token_platform_mapping_gap",
+      "reason": "A strong out-of-band enrollment token gates atomic durable digest issuance/rotation. Device attestation, verified tenant ownership and platform grants remain."
     },
     {
       "method": "POST",
@@ -364,7 +365,7 @@
       ],
       "guard_helpers": [],
       "assessment": "device_proof_platform_migration_gap",
-      "reason": "Device key/callback assignment checks remain; device enrollment, durable verified principal and platform policy are not complete."
+      "reason": "Active device proof uses a durable SHA-256 key digest and callbacks require a creator-owned durable assignment; verified tenant mapping and platform instance policy remain."
     },
     {
       "method": "GET",
@@ -376,7 +377,7 @@
       ],
       "guard_helpers": [],
       "assessment": "device_proof_platform_migration_gap",
-      "reason": "Device key/callback assignment checks remain; device enrollment, durable verified principal and platform policy are not complete."
+      "reason": "Active device proof uses a durable SHA-256 key digest and callbacks require a creator-owned durable assignment; verified tenant mapping and platform instance policy remain."
     },
     {
       "method": "POST",
@@ -389,8 +390,22 @@
         "fastapi.security.http.HTTPBearer"
       ],
       "guard_helpers": [],
-      "assessment": "platform_policy_design_gap",
-      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+      "assessment": "durable_local_owner_platform_mapping_gap",
+      "reason": "Durable SQL creator/device scoping is enforced locally. Immutable platform subject/tenant mapping and exact instance policy remain."
+    },
+    {
+      "method": "POST",
+      "path": "/api/sms/requests/{request_id}/assign/{device_id}",
+      "endpoint": "app.routers.sms.assign_otp_request",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "durable_local_owner_platform_mapping_gap",
+      "reason": "The authenticated local creator may bind its durable request to one active durable device. Immutable platform subject/tenant mapping and an exact Security instance decision remain."
     },
     {
       "method": "GET",
@@ -403,8 +418,8 @@
         "fastapi.security.http.HTTPBearer"
       ],
       "guard_helpers": [],
-      "assessment": "platform_policy_design_gap",
-      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+      "assessment": "durable_local_owner_platform_mapping_gap",
+      "reason": "Durable SQL creator/device scoping is enforced locally. Immutable platform subject/tenant mapping and exact instance policy remain."
     },
     {
       "method": "GET",
@@ -417,28 +432,32 @@
         "fastapi.security.http.HTTPBearer"
       ],
       "guard_helpers": [],
-      "assessment": "platform_policy_design_gap",
-      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+      "assessment": "durable_local_owner_platform_mapping_gap",
+      "reason": "Durable SQL creator/device scoping is enforced locally. Immutable platform subject/tenant mapping and exact instance policy remain."
     },
     {
       "method": "WEBSOCKET",
       "path": "/api/sms/ws/sms-interceptor",
       "endpoint": "app.routers.sms.sms_interceptor_websocket",
       "include_in_schema": false,
-      "dependencies": [],
+      "dependencies": [
+        "app.database.get_async_session"
+      ],
       "guard_helpers": [],
       "assessment": "device_proof_platform_migration_gap",
-      "reason": "Device key/callback assignment checks remain; device enrollment, durable verified principal and platform policy are not complete."
+      "reason": "Active device proof uses a durable SHA-256 key digest and callbacks require a creator-owned durable assignment; verified tenant mapping and platform instance policy remain."
     },
     {
       "method": "GET",
       "path": "/api/sms/health",
       "endpoint": "app.routers.sms.health_check",
       "include_in_schema": true,
-      "dependencies": [],
+      "dependencies": [
+        "app.database.get_async_session"
+      ],
       "guard_helpers": [],
-      "assessment": "platform_policy_design_gap",
-      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+      "assessment": "public_health",
+      "reason": "Health returns only coarse connection/request counts; no device id, OTP or owner resource is projected."
     },
     {
       "method": "POST",
@@ -473,10 +492,12 @@
       "path": "/api/infrastructure/sms/complete-verification/{request_id}",
       "endpoint": "app.routers.infrastructure.complete_sms_verification",
       "include_in_schema": true,
-      "dependencies": [],
+      "dependencies": [
+        "app.database.get_async_session"
+      ],
       "guard_helpers": [],
       "assessment": "device_proof_platform_migration_gap",
-      "reason": "Device-key verification precedes socket acceptance or callback mutation, and callbacks require prior assignment; durable verified device principals and platform policy still need migration."
+      "reason": "Durable active-device proof precedes socket acceptance or callback mutation, and callbacks require prior assignment; verified tenant mapping and platform instance policy remain."
     },
     {
       "method": "POST",
@@ -567,10 +588,12 @@
       "path": "/api/infrastructure/ws/mobile-commands",
       "endpoint": "app.routers.infrastructure.mobile_commands_websocket",
       "include_in_schema": false,
-      "dependencies": [],
+      "dependencies": [
+        "app.database.get_async_session"
+      ],
       "guard_helpers": [],
       "assessment": "device_proof_platform_migration_gap",
-      "reason": "Device-key verification precedes socket acceptance or callback mutation, and callbacks require prior assignment; durable verified device principals and platform policy still need migration."
+      "reason": "Durable active-device proof precedes socket acceptance or callback mutation, and callbacks require prior assignment; verified tenant mapping and platform instance policy remain."
     },
     {
       "method": "POST",

@@ -7,7 +7,7 @@ import re
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional
+from typing import Optional
 
 from fastapi import (
     APIRouter,
@@ -20,7 +20,8 @@ from fastapi import (
 )
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.utils.pagination import Page, PageInfo
 
@@ -41,20 +42,6 @@ security = HTTPBearer()
 
 # WebSocket connection manager for real-time communication
 sms_manager = ConnectionManager()
-
-# In-memory storage for pending OTP requests (in production, use Redis or database)
-pending_otp_requests: Dict[str, Dict] = {}
-
-# SECURITY: Module-level store mapping device_id -> one-way API-key digest.
-# The SmsDevice ORM model (app/models/sms.py) has no column to persist the
-# per-device API key, and this fix is scoped to sms.py only, so the digest is
-# persisted here. This is consistent with the file's existing in-memory
-# approach (see pending_otp_requests above).
-# PRODUCTION NOTE: replace with a persistent, hashed key store (e.g. a
-# `device_api_key_hash` column on SmsDevice or a Redis/secret store) so digests
-# survive restarts. The issued bearer key exists only in the registration
-# response; process memory retains only its SHA-256 digest.
-registered_device_keys: Dict[str, bytes] = {}
 
 # Minimum / maximum accepted OTP length and the allowed character set.
 OTP_MIN_LEN = 4
@@ -77,21 +64,35 @@ def _require_device_enrollment_token(presented: Optional[str]) -> None:
         raise HTTPException(status_code=401, detail="Device enrollment denied")
 
 
-def _device_key_digest(api_key: str) -> bytes:
+def _device_key_digest(api_key: str) -> str:
     """Return the fixed-length one-way digest retained for device authentication."""
-    return hashlib.sha256(api_key.encode("utf-8")).digest()
+    return hashlib.sha256(api_key.encode("utf-8")).hexdigest()
 
 
-def _verify_device(device_id: str, api_key: Optional[str]) -> bool:
-    """Constant-time verification against the retained device-key digest."""
+async def _verify_device(
+    db: AsyncSession, device_id: str, api_key: Optional[str]
+) -> bool:
+    """Verify one active device against its durable one-way key digest."""
     if not device_id or not api_key:
         return False
-    expected_digest = registered_device_keys.get(device_id)
-    if not expected_digest:
+    result = await db.execute(
+        select(SmsDevice).where(
+            SmsDevice.device_id == device_id,
+            SmsDevice.is_active.is_(True),
+        )
+    )
+    device = result.scalar_one_or_none()
+    expected_digest = device.device_key_hash if device else None
+    if not isinstance(expected_digest, str) or len(expected_digest) != 64:
         return False
-    # Fixed-length digest comparison avoids retaining or comparing the plaintext
-    # bearer key after its one-time issuance response.
     return hmac.compare_digest(expected_digest, _device_key_digest(api_key))
+
+
+def _utc(value: datetime) -> datetime:
+    """Normalize database datetimes for safe UTC comparisons."""
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 class OtpRequest(BaseModel):
@@ -121,7 +122,7 @@ async def register_device(
     x_enrollment_token: Optional[str] = Header(
         default=None, alias="X-Enrollment-Token"
     ),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Register a new SMS interceptor device.
 
@@ -134,42 +135,40 @@ async def register_device(
     try:
         _require_device_enrollment_token(x_enrollment_token)
 
-        # Check if device already exists
         existing_device = (
-            db.query(SmsDevice).filter(SmsDevice.device_id == request.device_id).first()
-        )
+            await db.execute(
+                select(SmsDevice).where(SmsDevice.device_id == request.device_id)
+            )
+        ).scalar_one_or_none()
+        api_key = secrets.token_urlsafe(32)
+        key_hash = _device_key_digest(api_key)
+        rotated_at = datetime.now(timezone.utc)
 
         if existing_device:
-            # Update existing device
             existing_device.device_name = request.device_name
             existing_device.os_version = request.os_version
             existing_device.app_version = request.app_version
-            existing_device.last_seen = datetime.utcnow()
+            existing_device.last_seen = rotated_at
             existing_device.is_active = True
+            existing_device.device_key_hash = key_hash
+            existing_device.key_rotated_at = rotated_at
         else:
-            # Create new device
             new_device = SmsDevice(
                 device_id=request.device_id,
                 device_name=request.device_name,
                 os_version=request.os_version,
                 app_version=request.app_version,
                 is_active=True,
-                created_at=datetime.utcnow(),
-                last_seen=datetime.utcnow(),
+                device_key_hash=key_hash,
+                key_rotated_at=rotated_at,
+                created_at=rotated_at,
+                last_seen=rotated_at,
             )
             db.add(new_device)
 
-        db.commit()
-
-        # SECURITY: Generate a cryptographically strong API key and retain only
-        # its one-way digest
-        # so it can actually be verified on subsequent device-authenticated
-        # calls (previously a uuid was returned but never stored or checked,
-        # leaving /otp completely unauthenticated).
-        # PRODUCTION NOTE: move this digest to a durable store and support
-        # rotation/expiry. Process-local custody does not survive restarts.
-        api_key = secrets.token_urlsafe(32)
-        registered_device_keys[request.device_id] = _device_key_digest(api_key)
+        # Device metadata and the rotated digest commit atomically. The plaintext
+        # key is returned once and is never retained by the service.
+        await db.commit()
 
         log_security_event(
             "sms_device_registered",
@@ -194,7 +193,7 @@ async def register_device(
 async def receive_otp(
     request: OtpRequest,
     x_device_key: Optional[str] = Header(default=None, alias="X-Device-Key"),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Receive OTP code from mobile app.
 
@@ -208,7 +207,7 @@ async def receive_otp(
     """
     try:
         # 1) Authenticate the device. Reject unknown / unauthenticated devices.
-        if not _verify_device(request.device_id, x_device_key):
+        if not await _verify_device(db, request.device_id, x_device_key):
             log_security_event(
                 "sms_otp_auth_failure",
                 details={
@@ -234,7 +233,13 @@ async def receive_otp(
         # 3) Bind the OTP to the SPECIFIC request named by the device.
         #    No more "first waiting" matching.
         request_id = request.request_id
-        pending_request = pending_otp_requests.get(request_id)
+        pending_request = (
+            await db.execute(
+                select(SmsOtpRequest)
+                .where(SmsOtpRequest.request_id == request_id)
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
         if pending_request is None:
             log_security_event(
                 "sms_otp_unknown_request",
@@ -243,13 +248,13 @@ async def receive_otp(
             raise HTTPException(status_code=404, detail="Request not found")
 
         # 3a) The request must still be open.
-        if pending_request.get("status") != "waiting":
+        if pending_request.status != "waiting":
             log_security_event(
                 "sms_otp_request_not_waiting",
                 details={
                     "device_id": request.device_id,
                     "request_id": request_id,
-                    "status": pending_request.get("status"),
+                    "status": pending_request.status,
                 },
             )
             raise HTTPException(
@@ -257,9 +262,9 @@ async def receive_otp(
             )
 
         # 3b) The request must not have expired.
-        timeout_ts = pending_request.get("timeout", 0)
-        if timeout_ts and timeout_ts < datetime.now(timezone.utc).timestamp():
-            pending_request["status"] = "timeout"
+        if _utc(pending_request.timeout_at) < datetime.now(timezone.utc):
+            pending_request.status = "timeout"
+            await db.commit()
             log_security_event(
                 "sms_otp_request_expired",
                 details={"device_id": request.device_id, "request_id": request_id},
@@ -270,7 +275,7 @@ async def receive_otp(
         #     Never let a device claim an unassigned request merely by knowing its
         #     id. Assignment is an authorization decision owned by the server-side
         #     orchestration lifecycle; polling already withholds unassigned work.
-        assigned_device = pending_request.get("assigned_device_id")
+        assigned_device = pending_request.assigned_device_id
         if not isinstance(assigned_device, str) or not assigned_device:
             log_security_event(
                 "sms_otp_request_unassigned",
@@ -304,18 +309,28 @@ async def receive_otp(
             sender=request.sender,
             message_body=request.message_body,
             confidence=request.confidence,
-            received_at=datetime.fromtimestamp(request.timestamp / 1000),
-            processed_at=datetime.utcnow(),
+            received_at=datetime.fromtimestamp(
+                request.timestamp / 1000, tz=timezone.utc
+            ),
+            processed_at=datetime.now(timezone.utc),
             matched_request_id=request_id,
         )
         db.add(otp_received)
 
         # 5) Complete the bound request.
-        pending_request["status"] = "completed"
-        pending_request["otp_code"] = otp
-        pending_request["completed_at"] = datetime.utcnow().isoformat()
+        pending_request.status = "completed"
+        pending_request.otp_code = otp
+        pending_request.completed_at = datetime.now(timezone.utc)
+        pending_request.device_id = request.device_id
 
-        db.commit()
+        device = (
+            await db.execute(
+                select(SmsDevice).where(SmsDevice.device_id == request.device_id)
+            )
+        ).scalar_one_or_none()
+        if device:
+            device.last_seen = datetime.now(timezone.utc)
+        await db.commit()
 
         log_security_event(
             "sms_otp_completed",
@@ -336,14 +351,6 @@ async def receive_otp(
             request.device_id,
         )
 
-        # Update device last seen.
-        device = (
-            db.query(SmsDevice).filter(SmsDevice.device_id == request.device_id).first()
-        )
-        if device:
-            device.last_seen = datetime.utcnow()
-            db.commit()
-
         return {
             "success": True,
             "message": "OTP received successfully",
@@ -361,7 +368,7 @@ async def receive_otp(
 async def get_otp_requests(
     device_id: str,
     x_device_key: Optional[str] = Header(default=None, alias="X-Device-Key"),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ):
     """Get pending OTP requests for a device.
 
@@ -374,7 +381,7 @@ async def get_otp_requests(
     """
     try:
         # Authenticate the calling device against the device_id in the path.
-        if not _verify_device(device_id, x_device_key):
+        if not await _verify_device(db, device_id, x_device_key):
             log_security_event(
                 "sms_requests_auth_failure",
                 details={
@@ -384,27 +391,27 @@ async def get_otp_requests(
             )
             raise HTTPException(status_code=401, detail="Device authentication failed")
 
-        # Return pending requests for this device
-        device_requests = []
-        for request_id, request_data in pending_otp_requests.items():
-            if (
-                request_data.get("status") == "waiting"
-                and request_data.get("timeout", 0)
-                > datetime.now(timezone.utc).timestamp()
-                and isinstance(request_data.get("assigned_device_id"), str)
-                and hmac.compare_digest(request_data["assigned_device_id"], device_id)
-            ):
-                device_requests.append(
-                    {
-                        "request_id": request_id,
-                        "service": request_data.get("service", "Unknown"),
-                        "timestamp": request_data.get("created_at", 0),
-                        "status": request_data.get("status"),
-                        "timeout": request_data.get("timeout"),
-                    }
+        rows = (
+            await db.execute(
+                select(SmsOtpRequest)
+                .where(
+                    SmsOtpRequest.assigned_device_id == device_id,
+                    SmsOtpRequest.status == "waiting",
+                    SmsOtpRequest.timeout_at > datetime.now(timezone.utc),
                 )
-
-        return device_requests
+                .order_by(SmsOtpRequest.created_at, SmsOtpRequest.request_id)
+            )
+        ).scalars()
+        return [
+            {
+                "request_id": row.request_id,
+                "service": row.service,
+                "timestamp": _utc(row.created_at).timestamp(),
+                "status": row.status,
+                "timeout": _utc(row.timeout_at).timestamp(),
+            }
+            for row in rows
+        ]
 
     except HTTPException:
         # Preserve auth/validation status codes (e.g. 401) — don't mask as 500.
@@ -418,7 +425,7 @@ async def get_otp_requests(
 async def request_otp(
     service: str,
     timeout_seconds: int = 300,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Request an OTP for a specific service (called by your main app).
@@ -431,29 +438,20 @@ async def request_otp(
     """
     try:
         request_id = str(uuid.uuid4())
-        timeout_timestamp = (
-            datetime.now(timezone.utc) + timedelta(seconds=timeout_seconds)
-        ).timestamp()
+        now = datetime.now(timezone.utc)
+        timeout_at = now + timedelta(seconds=timeout_seconds)
 
         # Store the OTP request
         otp_request = SmsOtpRequest(
             request_id=request_id,
             service=service,
             status="waiting",
-            created_at=datetime.utcnow(),
-            timeout_at=datetime.fromtimestamp(timeout_timestamp),
+            owner_user_id=current_user.id,
+            created_at=now,
+            timeout_at=timeout_at,
         )
         db.add(otp_request)
-        db.commit()
-
-        # Add to pending requests
-        pending_otp_requests[request_id] = {
-            "service": service,
-            "status": "waiting",
-            "owner_user_id": current_user.id,
-            "created_at": datetime.now(timezone.utc).timestamp(),
-            "timeout": timeout_timestamp,
-        }
+        await db.commit()
 
         # Do not broadcast an unassigned request. Assignment is intentionally a
         # separate, unfinished authorization lifecycle; exposing this id to every
@@ -464,7 +462,7 @@ async def request_otp(
         return {
             "success": True,
             "request_id": request_id,
-            "timeout": timeout_timestamp,
+            "timeout": timeout_at.timestamp(),
             "message": f"OTP request created for {service}",
         }
 
@@ -473,10 +471,67 @@ async def request_otp(
         raise HTTPException(status_code=500, detail="Failed to create OTP request")
 
 
+@router.post("/requests/{request_id}/assign/{device_id}")
+async def assign_otp_request(
+    request_id: str,
+    device_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Bind one creator-owned OTP request to one active device instance."""
+    otp_request = (
+        await db.execute(
+            select(SmsOtpRequest)
+            .where(
+                SmsOtpRequest.request_id == request_id,
+                SmsOtpRequest.owner_user_id == current_user.id,
+            )
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if otp_request is None:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if otp_request.status != "waiting":
+        raise HTTPException(status_code=409, detail="Request is not awaiting an OTP")
+    if _utc(otp_request.timeout_at) < datetime.now(timezone.utc):
+        otp_request.status = "timeout"
+        await db.commit()
+        raise HTTPException(status_code=410, detail="Request has expired")
+
+    device = (
+        await db.execute(
+            select(SmsDevice).where(
+                SmsDevice.device_id == device_id,
+                SmsDevice.is_active.is_(True),
+                SmsDevice.device_key_hash.is_not(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if device is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    otp_request.assigned_device_id = device.device_id
+    await db.commit()
+    await sms_manager.send_to_device(
+        json.dumps({"type": "otp_request_available", "request_id": request_id}),
+        device.device_id,
+    )
+    log_security_event(
+        "sms_otp_request_assigned",
+        user_id=current_user.id,
+        details={"request_id": request_id, "device_id": device.device_id},
+    )
+    return {
+        "success": True,
+        "request_id": request_id,
+        "device_id": device.device_id,
+    }
+
+
 @router.get("/request-status/{request_id}")
 async def get_request_status(
     request_id: str,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Get the status of an OTP request.
@@ -488,18 +543,27 @@ async def get_request_status(
     auth is not used because devices submit OTPs; they do not read them back.
     """
     try:
-        request_data = pending_otp_requests.get(request_id)
-        if request_data is None or request_data.get("owner_user_id") != current_user.id:
-            # The legacy database row has no verifiable owner field and must not
-            # become an authenticated-but-cross-user OTP disclosure fallback.
+        request_data = (
+            await db.execute(
+                select(SmsOtpRequest).where(
+                    SmsOtpRequest.request_id == request_id,
+                    SmsOtpRequest.owner_user_id == current_user.id,
+                )
+            )
+        ).scalar_one_or_none()
+        if request_data is None:
             raise HTTPException(status_code=404, detail="Request not found")
         return {
             "request_id": request_id,
-            "status": request_data.get("status"),
-            "otp_code": request_data.get("otp_code"),
-            "created_at": request_data.get("created_at"),
-            "completed_at": request_data.get("completed_at"),
-            "timeout": request_data.get("timeout"),
+            "status": request_data.status,
+            "otp_code": request_data.otp_code,
+            "created_at": _utc(request_data.created_at).timestamp(),
+            "completed_at": (
+                _utc(request_data.completed_at).isoformat()
+                if request_data.completed_at
+                else None
+            ),
+            "timeout": _utc(request_data.timeout_at).timestamp(),
         }
 
     except HTTPException:
@@ -513,7 +577,7 @@ async def get_request_status(
 async def get_devices(
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Get all registered SMS devices.
@@ -524,14 +588,17 @@ async def get_devices(
     the application JWT. Not a device callback, so device-key auth does not fit.
     """
     try:
-        total = db.query(SmsDevice).count()
+        total = (
+            await db.execute(select(func.count()).select_from(SmsDevice))
+        ).scalar_one()
         devices = (
-            db.query(SmsDevice)
-            .order_by(SmsDevice.device_id)
-            .offset(offset)
-            .limit(limit)
-            .all()
-        )
+            await db.execute(
+                select(SmsDevice)
+                .order_by(SmsDevice.device_id)
+                .offset(offset)
+                .limit(limit)
+            )
+        ).scalars()
         items = [
             {
                 "device_id": device.device_id,
@@ -560,7 +627,10 @@ async def get_devices(
 
 
 @router.websocket("/ws/sms-interceptor")
-async def sms_interceptor_websocket(websocket: WebSocket):
+async def sms_interceptor_websocket(
+    websocket: WebSocket,
+    db: AsyncSession = Depends(get_db),
+):
     """WebSocket endpoint for real-time communication with mobile apps.
 
     The native mobile client supplies its public ``device_id`` as a query
@@ -570,7 +640,7 @@ async def sms_interceptor_websocket(websocket: WebSocket):
     """
     device_id = websocket.query_params.get("device_id", "")
     device_key = websocket.headers.get("x-device-key")
-    if not _verify_device(device_id, device_key):
+    if not await _verify_device(db, device_id, device_key):
         log_security_event(
             "sms_websocket_auth_failure",
             details={"device_id": device_id or "missing"},
@@ -600,7 +670,7 @@ async def sms_interceptor_websocket(websocket: WebSocket):
 
 
 @router.get("/health", openapi_extra={"x-pagination": "exempt"})
-async def health_check():
+async def health_check(db: AsyncSession = Depends(get_db)):
     """Health check endpoint.
 
     SECURITY: Left unauthenticated by design — health/liveness probes are
@@ -609,10 +679,17 @@ async def health_check():
     count), not OTP values, device ids, or other sensitive data, so no auth is
     required.
     """
+    pending_count = (
+        await db.execute(
+            select(func.count())
+            .select_from(SmsOtpRequest)
+            .where(SmsOtpRequest.status == "waiting")
+        )
+    ).scalar_one()
     return {
         "status": "healthy",
         "timestamp": datetime.utcnow().isoformat(),
         "version": "1.0.0",
         "active_devices": len(sms_manager.active_connections),
-        "pending_requests": len(pending_otp_requests),
+        "pending_requests": pending_count,
     }

@@ -15,7 +15,7 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db
 from ..models.sms import SmsDevice, SmsOtpReceived, SmsOtpRequest
@@ -81,7 +81,7 @@ class VerificationResponse(BaseModel):
 @router.post("/sms/request-verification", response_model=Dict[str, str])
 async def request_sms_verification(
     request: SmsVerificationRequest,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Request SMS verification from mobile device for scraper use.
@@ -172,6 +172,7 @@ async def complete_sms_verification(
     code: str,
     device_id: str,
     x_device_key: Optional[str] = Header(default=None, alias="X-Device-Key"),
+    db: AsyncSession = Depends(get_db),
 ):
     """Called by mobile device to complete SMS verification.
 
@@ -190,7 +191,7 @@ async def complete_sms_verification(
     """
     try:
         # 1) Authenticate the device against the supplied device_id.
-        if not _verify_device(device_id, x_device_key):
+        if not await _verify_device(db, device_id, x_device_key):
             log_security_event(
                 "infra_sms_complete_auth_failure",
                 details={
@@ -508,7 +509,10 @@ async def report_scraper_success(
 
 # WebSocket endpoints for real-time communication
 @router.websocket("/ws/mobile-commands")
-async def mobile_commands_websocket(websocket: WebSocket):
+async def mobile_commands_websocket(
+    websocket: WebSocket,
+    db: AsyncSession = Depends(get_db),
+):
     """WebSocket endpoint for mobile device command communication.
 
     The public device id is supplied as a query parameter and its issued secret
@@ -517,7 +521,7 @@ async def mobile_commands_websocket(websocket: WebSocket):
     """
     device_id = websocket.query_params.get("device_id", "")
     device_key = websocket.headers.get("x-device-key")
-    if not _verify_device(device_id, device_key):
+    if not await _verify_device(db, device_id, device_key):
         log_security_event(
             "infra_mobile_websocket_auth_failure",
             details={"device_id": device_id or "missing"},

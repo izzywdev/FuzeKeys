@@ -1,10 +1,13 @@
 """SMS WebSocket clients must authenticate before joining the device manager."""
 
 import json
+from datetime import datetime, timezone
 
 import pytest
+import pytest_asyncio
 from starlette.websockets import WebSocketDisconnect
 
+from app.models.sms import SmsDevice
 from app.routers import sms
 
 
@@ -35,18 +38,23 @@ class FakeWebSocket:
         self.sent.append(value)
 
 
-@pytest.fixture(autouse=True)
-def isolated_device_state():
-    original_keys = dict(sms.registered_device_keys)
+@pytest_asyncio.fixture(autouse=True)
+async def isolated_device_state(db_session):
     original_active = list(sms.sms_manager.active_connections)
     original_devices = dict(sms.sms_manager.device_connections)
-    sms.registered_device_keys.clear()
     sms.sms_manager.active_connections.clear()
     sms.sms_manager.device_connections.clear()
-    sms.registered_device_keys["device-a"] = sms._device_key_digest("key-a")
+    db_session.add(
+        SmsDevice(
+            device_id="device-a",
+            device_name="device-a",
+            is_active=True,
+            device_key_hash=sms._device_key_digest("key-a"),
+            key_rotated_at=datetime.now(timezone.utc),
+        )
+    )
+    await db_session.commit()
     yield
-    sms.registered_device_keys.clear()
-    sms.registered_device_keys.update(original_keys)
     sms.sms_manager.active_connections[:] = original_active
     sms.sms_manager.device_connections.clear()
     sms.sms_manager.device_connections.update(original_devices)
@@ -57,9 +65,11 @@ def isolated_device_state():
     "device_id,key",
     [("", None), ("device-a", None), ("device-a", "wrong"), ("unknown", "key-a")],
 )
-async def test_invalid_handshake_closes_before_joining_manager(device_id, key):
+async def test_invalid_handshake_closes_before_joining_manager(
+    db_session, device_id, key
+):
     websocket = FakeWebSocket(device_id, key)
-    await sms.sms_interceptor_websocket(websocket)
+    await sms.sms_interceptor_websocket(websocket, db=db_session)
     assert websocket.accepted is False
     assert websocket.closed == (1008, "Device authentication failed")
     assert websocket not in sms.sms_manager.active_connections
@@ -67,13 +77,13 @@ async def test_invalid_handshake_closes_before_joining_manager(device_id, key):
 
 
 @pytest.mark.asyncio
-async def test_authenticated_device_joins_responds_and_is_removed():
+async def test_authenticated_device_joins_responds_and_is_removed(db_session):
     websocket = FakeWebSocket(
         "device-a",
         "key-a",
         incoming=[json.dumps({"type": "ping"})],
     )
-    await sms.sms_interceptor_websocket(websocket)
+    await sms.sms_interceptor_websocket(websocket, db=db_session)
     assert websocket.accepted is True
     assert websocket.closed is None
     assert websocket.sent == [json.dumps({"type": "pong"})]

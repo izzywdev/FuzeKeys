@@ -5,9 +5,11 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
 
 import pytest
+import pytest_asyncio
 from fastapi import HTTPException
 from starlette.websockets import WebSocketDisconnect
 
+from app.models.sms import SmsDevice
 from app.routers import infrastructure, sms
 
 
@@ -42,29 +44,38 @@ class FakeWebSocket:
         pass
 
 
-@pytest.fixture(autouse=True)
-def isolated_device_state():
-    original_keys = dict(sms.registered_device_keys)
+@pytest_asyncio.fixture(autouse=True)
+async def isolated_device_state(db_session):
     original_requests = dict(infrastructure.verification_requests)
     original_monitors = dict(infrastructure.email_monitors)
     original_active = list(infrastructure.mobile_manager.active_connections)
     original_devices = dict(infrastructure.mobile_manager.device_connections)
     original_commands = dict(infrastructure.mobile_commands)
-    sms.registered_device_keys.clear()
     infrastructure.verification_requests.clear()
     infrastructure.email_monitors.clear()
     infrastructure.mobile_manager.active_connections.clear()
     infrastructure.mobile_manager.device_connections.clear()
     infrastructure.mobile_commands.clear()
-    sms.registered_device_keys.update(
-        {
-            "device-a": sms._device_key_digest("key-a"),
-            "device-b": sms._device_key_digest("key-b"),
-        }
+    db_session.add_all(
+        [
+            SmsDevice(
+                device_id="device-a",
+                device_name="device-a",
+                is_active=True,
+                device_key_hash=sms._device_key_digest("key-a"),
+                key_rotated_at=datetime.now(timezone.utc),
+            ),
+            SmsDevice(
+                device_id="device-b",
+                device_name="device-b",
+                is_active=True,
+                device_key_hash=sms._device_key_digest("key-b"),
+                key_rotated_at=datetime.now(timezone.utc),
+            ),
+        ]
     )
+    await db_session.commit()
     yield
-    sms.registered_device_keys.clear()
-    sms.registered_device_keys.update(original_keys)
     infrastructure.verification_requests.clear()
     infrastructure.verification_requests.update(original_requests)
     infrastructure.email_monitors.clear()
@@ -149,30 +160,30 @@ async def test_email_monitor_is_visible_only_to_request_creator():
 
 
 @pytest.mark.asyncio
-async def test_authenticated_device_cannot_claim_unassigned_request():
+async def test_authenticated_device_cannot_claim_unassigned_request(db_session):
     infrastructure.verification_requests["req"] = pending_request()
     before = dict(infrastructure.verification_requests["req"])
     with pytest.raises(HTTPException) as denied:
         await infrastructure.complete_sms_verification(
-            "req", "123456", "device-a", x_device_key="key-a"
+            "req", "123456", "device-a", x_device_key="key-a", db=db_session
         )
     assert denied.value.status_code == 409
     assert infrastructure.verification_requests["req"] == before
 
 
 @pytest.mark.asyncio
-async def test_only_assigned_device_can_complete_pending_request():
+async def test_only_assigned_device_can_complete_pending_request(db_session):
     infrastructure.verification_requests["req"] = pending_request(
         assigned_device_id="device-a"
     )
     with pytest.raises(HTTPException) as denied:
         await infrastructure.complete_sms_verification(
-            "req", "123456", "device-b", x_device_key="key-b"
+            "req", "123456", "device-b", x_device_key="key-b", db=db_session
         )
     assert denied.value.status_code == 403
 
     result = await infrastructure.complete_sms_verification(
-        "req", " 123456 ", "device-a", x_device_key="key-a"
+        "req", " 123456 ", "device-a", x_device_key="key-a", db=db_session
     )
     assert result["status"] == "success"
     stored = infrastructure.verification_requests["req"]
@@ -181,14 +192,14 @@ async def test_only_assigned_device_can_complete_pending_request():
 
 
 @pytest.mark.asyncio
-async def test_expired_and_invalid_codes_fail_before_completion():
+async def test_expired_and_invalid_codes_fail_before_completion(db_session):
     infrastructure.verification_requests["expired"] = pending_request(
         assigned_device_id="device-a",
         timeout_at=datetime.now(timezone.utc) - timedelta(seconds=1),
     )
     with pytest.raises(HTTPException) as expired:
         await infrastructure.complete_sms_verification(
-            "expired", "123456", "device-a", x_device_key="key-a"
+            "expired", "123456", "device-a", x_device_key="key-a", db=db_session
         )
     assert expired.value.status_code == 410
     assert infrastructure.verification_requests["expired"]["status"] == "timeout"
@@ -199,7 +210,7 @@ async def test_expired_and_invalid_codes_fail_before_completion():
     )
     with pytest.raises(HTTPException) as invalid:
         await infrastructure.complete_sms_verification(
-            "invalid", "not-an-otp", "device-a", x_device_key="key-a"
+            "invalid", "not-an-otp", "device-a", x_device_key="key-a", db=db_session
         )
     assert invalid.value.status_code == 400
     assert infrastructure.verification_requests["invalid"]["status"] == "pending"
@@ -210,9 +221,9 @@ async def test_expired_and_invalid_codes_fail_before_completion():
     "device_id,key",
     [("", None), ("device-a", None), ("device-a", "wrong"), ("unknown", "key-a")],
 )
-async def test_invalid_mobile_socket_closes_before_join(device_id, key):
+async def test_invalid_mobile_socket_closes_before_join(db_session, device_id, key):
     websocket = FakeWebSocket(device_id, key)
-    await infrastructure.mobile_commands_websocket(websocket)
+    await infrastructure.mobile_commands_websocket(websocket, db=db_session)
     assert websocket.accepted is False
     assert websocket.closed == (1008, "Device authentication failed")
     assert websocket not in infrastructure.mobile_manager.active_connections
@@ -220,13 +231,13 @@ async def test_invalid_mobile_socket_closes_before_join(device_id, key):
 
 
 @pytest.mark.asyncio
-async def test_authenticated_mobile_socket_joins_and_is_removed():
+async def test_authenticated_mobile_socket_joins_and_is_removed(db_session):
     websocket = FakeWebSocket(
         "device-a",
         "key-a",
         incoming=[json.dumps({"type": "command_result", "secret": "redacted"})],
     )
-    await infrastructure.mobile_commands_websocket(websocket)
+    await infrastructure.mobile_commands_websocket(websocket, db=db_session)
     assert websocket.accepted is True
     assert websocket.closed is None
     assert websocket not in infrastructure.mobile_manager.active_connections
@@ -279,7 +290,7 @@ async def test_mobile_command_rejects_unavailable_device(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_mobile_result_requires_target_device_and_owner():
+async def test_mobile_result_requires_target_device_and_owner(db_session):
     infrastructure.mobile_commands["cmd"] = {
         "owner_user_id": 7,
         "device_id": "device-a",
@@ -295,7 +306,7 @@ async def test_mobile_result_requires_target_device_and_owner():
             )
         ],
     )
-    await infrastructure.mobile_commands_websocket(wrong_device)
+    await infrastructure.mobile_commands_websocket(wrong_device, db=db_session)
     assert infrastructure.mobile_commands["cmd"]["status"] == "pending"
     assert "result" not in infrastructure.mobile_commands["cmd"]
 
@@ -306,7 +317,7 @@ async def test_mobile_result_requires_target_device_and_owner():
             json.dumps({"type": "command_result", "command_id": "cmd", "result": "ok"})
         ],
     )
-    await infrastructure.mobile_commands_websocket(assigned_device)
+    await infrastructure.mobile_commands_websocket(assigned_device, db=db_session)
     assert infrastructure.mobile_commands["cmd"]["status"] == "completed"
 
     with pytest.raises(HTTPException) as hidden:
