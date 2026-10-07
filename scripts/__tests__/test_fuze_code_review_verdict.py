@@ -12,6 +12,7 @@ matters rather than just asserting it once.
 
 Run: python -m unittest discover -s scripts/__tests__ -p 'test_fuze_code_review_verdict.py'
 """
+import base64
 import json
 import os
 import sys
@@ -411,7 +412,8 @@ class ReadyGatingTests(unittest.TestCase):
         old = dict(os.environ)
         try:
             os.environ["GITHUB_OUTPUT"] = path
-            for k in ("FUZE_ACTION_CONCLUSION", "FUZE_RESULT_TEXT", "FUZE_VERDICT_NONCE",
+            for k in ("FUZE_ACTION_CONCLUSION", "FUZE_RESULT_TEXT", "FUZE_RESULT_TEXT_B64",
+                      "FUZE_VERDICT_NONCE",
                       "FUZE_ACTION_MODE", "FUZE_ACTION_VENDOR", "FUZE_ACTION_AVAILABILITY",
                       "FUZE_REVIEW_READY", "FUZE_REVIEW_JOB_RESULT", "FUZE_SENSITIVE_FILES"):
                 os.environ.pop(k, None)
@@ -451,6 +453,29 @@ class ReadyGatingTests(unittest.TestCase):
         })
         self.assertEqual(out["decision"], "approve")
         self.assertEqual(out["check"], "pass")
+
+    def test_base64_result_survives_cross_job_secret_scanning(self):
+        encoded = base64.b64encode(
+            sentinel(NONCE, CLEAN_APPROVE).encode("utf-8")
+        ).decode("ascii")
+        _rc, out = self._run_main({
+            "FUZE_REVIEW_READY": "true",
+            "FUZE_ACTION_CONCLUSION": "success",
+            "FUZE_RESULT_TEXT_B64": encoded,
+            "FUZE_VERDICT_NONCE": NONCE,
+        })
+        self.assertEqual(out["decision"], "approve")
+        self.assertEqual(out["check"], "pass")
+
+    def test_malformed_base64_fails_closed(self):
+        _rc, out = self._run_main({
+            "FUZE_REVIEW_READY": "true",
+            "FUZE_ACTION_CONCLUSION": "success",
+            "FUZE_RESULT_TEXT_B64": "not valid base64!",
+            "FUZE_VERDICT_NONCE": NONCE,
+        })
+        self.assertEqual(out["decision"], "abstain")
+        self.assertEqual(out["check"], "fail")
 
     def test_ready_true_availability_outage_through_main_passes(self):
         _rc, out = self._run_main({
