@@ -45,6 +45,7 @@ mobile_manager = ConnectionManager()
 # In-memory storage for verification requests (use Redis in production)
 verification_requests: Dict[str, Dict] = {}
 email_monitors: Dict[str, Dict] = {}
+mobile_commands: Dict[str, Dict] = {}
 
 
 # Request/Response Models
@@ -62,6 +63,7 @@ class EmailMonitoringRequest(BaseModel):
 
 
 class MobileCommandRequest(BaseModel):
+    device_id: str
     command_type: str  # "click_prompt", "extract_totp", "handle_buttons"
     parameters: Dict[str, Any]
     timeout_seconds: int = 60
@@ -369,25 +371,41 @@ async def send_mobile_command(
 ):
     """Send command to mobile device for UI automation.
 
-    SECURITY: Operator/app-facing — this dispatches automation commands to
-    devices. Requires the application JWT so an unauthenticated caller cannot
-    drive devices / inject commands.
+    SECURITY: Operator/app-facing — this dispatches automation commands to one
+    explicitly selected, authenticated WebSocket device. Requires the
+    application JWT so an unauthenticated caller cannot drive devices / inject
+    commands. The command is bound to its creator for result retrieval. Device
+    ownership/tenant policy remains a separate platform authorization gap.
     """
     try:
         command_id = str(uuid.uuid4())
+
+        if not mobile_manager.is_device_connected(request.device_id):
+            raise HTTPException(status_code=409, detail="Target device unavailable")
 
         command_data = {
             "command_id": command_id,
             "type": request.command_type,
             "parameters": request.parameters,
             "timeout": request.timeout_seconds,
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
 
-        # Send command to mobile device
-        await mobile_manager.broadcast(
-            json.dumps({"type": "automation_command", **command_data})
+        # Retain the owner binding server-side; never send it to the device.
+        mobile_commands[command_id] = {
+            "owner_user_id": current_user.id,
+            "device_id": request.device_id,
+            "status": "pending",
+            "created_at": command_data["created_at"],
+        }
+
+        sent = await mobile_manager.send_to_device(
+            json.dumps({"type": "automation_command", **command_data}),
+            request.device_id,
         )
+        if not sent:
+            mobile_commands.pop(command_id, None)
+            raise HTTPException(status_code=409, detail="Target device unavailable")
 
         logger.info(
             f"Mobile command sent: {request.command_type}, command_id: {command_id}"
@@ -399,6 +417,8 @@ async def send_mobile_command(
             "message": f"Command {request.command_type} sent to mobile device",
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error sending mobile command: {e}")
         raise HTTPException(status_code=500, detail="Failed to send mobile command")
@@ -411,14 +431,18 @@ async def get_mobile_command_result(
 ):
     """Get result of mobile command execution.
 
-    SECURITY: Operator/app-facing. Although currently a stub, it is designed to
-    surface results returned by mobile devices (potentially sensitive), so it
-    is gated by the application JWT now to avoid shipping an unauthenticated
-    read endpoint once result tracking is implemented.
+    SECURITY: Operator/app-facing and owner-bound. Results may contain sensitive
+    device output, so only the authenticated user that created the command may
+    retrieve them. A foreign or unknown command has the same 404 response.
     """
-    # TODO: Implement command result tracking
-    # This would store results from mobile device responses
-    return {"command_id": command_id, "status": "pending", "result": None}
+    command = mobile_commands.get(command_id)
+    if command is None or command.get("owner_user_id") != current_user.id:
+        raise HTTPException(status_code=404, detail="Command not found")
+    return {
+        "command_id": command_id,
+        "status": command["status"],
+        "result": command.get("result"),
+    }
 
 
 # Helper APIs for scrapers
@@ -507,9 +531,30 @@ async def mobile_commands_websocket(websocket: WebSocket):
 
             # Handle responses from mobile device
             if message.get("type") == "command_result":
-                # Do not log arbitrary device-controlled result payloads.
-                logger.info("Mobile command result received from %s", device_id)
-                # TODO: Store command result for retrieval
+                command_id = message.get("command_id")
+                command = mobile_commands.get(command_id)
+                if (
+                    not isinstance(command_id, str)
+                    or command is None
+                    or command.get("status") != "pending"
+                    or command.get("device_id") != device_id
+                ):
+                    log_security_event(
+                        "infra_mobile_command_result_rejected",
+                        details={"device_id": device_id},
+                    )
+                    continue
+
+                # Bind result data to the server-issued command and target
+                # device. Do not log arbitrary device-controlled payloads.
+                command["status"] = "completed"
+                command["result"] = message.get("result")
+                command["completed_at"] = datetime.now(timezone.utc).isoformat()
+                logger.info(
+                    "Mobile command result accepted for %s from %s",
+                    command_id,
+                    device_id,
+                )
 
     except WebSocketDisconnect:
         mobile_manager.disconnect(websocket, device_id)

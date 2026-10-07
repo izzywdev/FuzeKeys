@@ -43,10 +43,12 @@ def isolated_device_state():
     original_requests = dict(infrastructure.verification_requests)
     original_active = list(infrastructure.mobile_manager.active_connections)
     original_devices = dict(infrastructure.mobile_manager.device_connections)
+    original_commands = dict(infrastructure.mobile_commands)
     sms.registered_device_keys.clear()
     infrastructure.verification_requests.clear()
     infrastructure.mobile_manager.active_connections.clear()
     infrastructure.mobile_manager.device_connections.clear()
+    infrastructure.mobile_commands.clear()
     sms.registered_device_keys.update({"device-a": "key-a", "device-b": "key-b"})
     yield
     sms.registered_device_keys.clear()
@@ -56,6 +58,8 @@ def isolated_device_state():
     infrastructure.mobile_manager.active_connections[:] = original_active
     infrastructure.mobile_manager.device_connections.clear()
     infrastructure.mobile_manager.device_connections.update(original_devices)
+    infrastructure.mobile_commands.clear()
+    infrastructure.mobile_commands.update(original_commands)
 
 
 def pending_request(**overrides):
@@ -169,3 +173,92 @@ async def test_authenticated_mobile_socket_joins_and_is_removed():
     assert websocket.closed is None
     assert websocket not in infrastructure.mobile_manager.active_connections
     assert "device-a" not in infrastructure.mobile_manager.device_connections
+
+
+class User:
+    def __init__(self, user_id):
+        self.id = user_id
+
+
+@pytest.mark.asyncio
+async def test_mobile_command_targets_one_connected_device(monkeypatch):
+    send = AsyncMock(return_value=True)
+    broadcast = AsyncMock()
+    monkeypatch.setattr(
+        infrastructure.mobile_manager, "is_device_connected", lambda _: True
+    )
+    monkeypatch.setattr(infrastructure.mobile_manager, "send_to_device", send)
+    monkeypatch.setattr(infrastructure.mobile_manager, "broadcast", broadcast)
+
+    result = await infrastructure.send_mobile_command(
+        infrastructure.MobileCommandRequest(
+            device_id="device-a",
+            command_type="extract_totp",
+            parameters={"site": "example"},
+        ),
+        current_user=User(7),
+    )
+
+    command = infrastructure.mobile_commands[result["command_id"]]
+    assert command["owner_user_id"] == 7
+    assert command["device_id"] == "device-a"
+    send.assert_awaited_once()
+    assert send.await_args.args[1] == "device-a"
+    broadcast.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_mobile_command_rejects_unavailable_device(monkeypatch):
+    monkeypatch.setattr(
+        infrastructure.mobile_manager, "is_device_connected", lambda _: False
+    )
+    with pytest.raises(HTTPException) as denied:
+        await infrastructure.send_mobile_command(
+            infrastructure.MobileCommandRequest(
+                device_id="offline",
+                command_type="extract_totp",
+                parameters={},
+            ),
+            current_user=User(7),
+        )
+    assert denied.value.status_code == 409
+    assert infrastructure.mobile_commands == {}
+
+
+@pytest.mark.asyncio
+async def test_mobile_result_requires_target_device_and_owner():
+    infrastructure.mobile_commands["cmd"] = {
+        "owner_user_id": 7,
+        "device_id": "device-a",
+        "status": "pending",
+    }
+
+    wrong_device = FakeWebSocket(
+        "device-b",
+        "key-b",
+        incoming=[
+            json.dumps(
+                {"type": "command_result", "command_id": "cmd", "result": "stolen"}
+            )
+        ],
+    )
+    await infrastructure.mobile_commands_websocket(wrong_device)
+    assert infrastructure.mobile_commands["cmd"]["status"] == "pending"
+    assert "result" not in infrastructure.mobile_commands["cmd"]
+
+    assigned_device = FakeWebSocket(
+        "device-a",
+        "key-a",
+        incoming=[
+            json.dumps({"type": "command_result", "command_id": "cmd", "result": "ok"})
+        ],
+    )
+    await infrastructure.mobile_commands_websocket(assigned_device)
+    assert infrastructure.mobile_commands["cmd"]["status"] == "completed"
+
+    with pytest.raises(HTTPException) as hidden:
+        await infrastructure.get_mobile_command_result("cmd", current_user=User(8))
+    assert hidden.value.status_code == 404
+
+    result = await infrastructure.get_mobile_command_result("cmd", current_user=User(7))
+    assert result == {"command_id": "cmd", "status": "completed", "result": "ok"}

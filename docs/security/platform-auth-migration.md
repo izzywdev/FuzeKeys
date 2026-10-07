@@ -287,3 +287,12 @@ the device id/key pair before acceptance. Verification timestamps are UTC-aware.
 Mobile commands still lack an owner-authorized target-device resource contract, so
 the operator command route remains a platform-policy design gap rather than being
 treated as production-complete authorization.
+
+As an additional containment boundary, a mobile command now names one connected,
+device-key-authenticated target instead of broadcasting its parameters to every
+connected device. Command results are accepted only from that exact target and
+are returned only to the authenticated local user that created the command;
+foreign and unknown command IDs are indistinguishable. Command and result state
+is still process-local, and a local user is not yet mapped to ownership of the
+selected device. Durable device principals, tenant/owner mapping and an explicit
+`FuzeKeysInfrastructure:{device_id}:operate` decision therefore remain required.
