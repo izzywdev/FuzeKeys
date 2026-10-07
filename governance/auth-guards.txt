@@ -1,3 +1,4 @@
 delegated_auth  # FastAPI dependency verifies workload and delegation tokens, audience, actor binding, and required connector scope
 _introspect  # Broker revocation verifies the bearer through FuzeFront Security and then enforces workload token kind plus the FuzeKeys audience before opening SQL
 _verify_device  # SMS device callbacks compare the per-device secret against the path/body device id before reading or completing any assigned OTP request
+_require_device_enrollment_token  # SMS device bootstrap requires a strong out-of-band enrollment proof before issuing or rotating a device key
