@@ -170,7 +170,14 @@ def downgrade():
         "sms_devices",
     ):
         if table in tables:
-            row = bind.execute(sa.text(f"SELECT 1 FROM {table} LIMIT 1")).first()
+            authority_table = sa.Table(
+                table,
+                sa.MetaData(),
+                autoload_with=bind,
+            )
+            row = bind.execute(
+                sa.select(sa.literal(1)).select_from(authority_table).limit(1)
+            ).first()
             if row:
                 raise RuntimeError(
                     "SMS authorization custody cannot be removed while SMS rows exist"
