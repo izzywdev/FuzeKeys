@@ -7,14 +7,14 @@
     "broker_platform_mapping_gap": 3,
     "device_proof_platform_migration_gap": 5,
     "dual_session_proof_boundary": 1,
-    "durable_local_owner_platform_mapping_gap": 4,
+    "durable_local_owner_platform_mapping_gap": 6,
     "enrollment_proof_boundary": 2,
     "enrollment_token_platform_mapping_gap": 1,
     "instance_enforced": 14,
     "instance_enforced_with_staged_registration": 10,
     "local_session_profile": 1,
     "parent_instance_enforced_child_lifecycle_gap": 2,
-    "platform_policy_design_gap": 24,
+    "platform_policy_design_gap": 22,
     "public_catalog_or_health": 3,
     "public_framework_documentation": 8,
     "public_health": 2,
@@ -470,8 +470,8 @@
         "fastapi.security.http.HTTPBearer"
       ],
       "guard_helpers": [],
-      "assessment": "platform_policy_design_gap",
-      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+      "assessment": "durable_local_owner_platform_mapping_gap",
+      "reason": "Infrastructure SMS requests reuse durable creator-owned OTP custody and exact device assignments. Immutable platform subject/tenant mapping and exact Security grants remain."
     },
     {
       "method": "GET",
@@ -484,8 +484,8 @@
         "fastapi.security.http.HTTPBearer"
       ],
       "guard_helpers": [],
-      "assessment": "platform_policy_design_gap",
-      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+      "assessment": "durable_local_owner_platform_mapping_gap",
+      "reason": "Infrastructure SMS requests reuse durable creator-owned OTP custody and exact device assignments. Immutable platform subject/tenant mapping and exact Security grants remain."
     },
     {
       "method": "POST",

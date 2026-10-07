@@ -410,6 +410,7 @@ async def get_otp_requests(
             {
                 "request_id": row.request_id,
                 "service": row.service,
+                "phone_number": row.target_phone_number,
                 "timestamp": _utc(row.created_at).timestamp(),
                 "status": row.status,
                 "timeout": _utc(row.timeout_at).timestamp(),

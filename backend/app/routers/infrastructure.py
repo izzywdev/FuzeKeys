@@ -15,6 +15,7 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db
@@ -42,8 +43,7 @@ router = APIRouter(prefix="/api/infrastructure", tags=["Infrastructure"])
 sms_manager = ConnectionManager()
 mobile_manager = ConnectionManager()
 
-# In-memory storage for verification requests (use Redis in production)
-verification_requests: Dict[str, Dict] = {}
+# Email monitoring and mobile-command state still require durable custody.
 email_monitors: Dict[str, Dict] = {}
 mobile_commands: Dict[str, Dict] = {}
 
@@ -93,18 +93,19 @@ async def request_sms_verification(
     """
     try:
         request_id = str(uuid.uuid4())
-
-        # Store request details
-        verification_requests[request_id] = {
-            "type": "sms_verification",
-            "owner_user_id": current_user.id,
-            "site": request.site,
-            "phone_number": request.phone_number,
-            "status": "pending",
-            "created_at": datetime.now(timezone.utc),
-            "timeout_at": datetime.now(timezone.utc)
-            + timedelta(seconds=request.timeout_seconds),
-        }
+        now = datetime.now(timezone.utc)
+        db.add(
+            SmsOtpRequest(
+                request_id=request_id,
+                service=request.site,
+                target_phone_number=request.phone_number,
+                status="waiting",
+                owner_user_id=current_user.id,
+                created_at=now,
+                timeout_at=now + timedelta(seconds=request.timeout_seconds),
+            )
+        )
+        await db.commit()
 
         # Do not broadcast an unassigned request. The request contains a phone
         # number and request id and must not become first-device-claims-work.
@@ -129,6 +130,7 @@ async def request_sms_verification(
 @router.get("/sms/get-verification/{request_id}", response_model=VerificationResponse)
 async def get_sms_verification(
     request_id: str,
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Get SMS verification code for scraper.
@@ -138,25 +140,34 @@ async def get_sms_verification(
     request. Foreign, unknown and legacy unbound IDs all return the same 404.
     """
     try:
-        request_data = verification_requests.get(request_id)
-        if request_data is None or request_data.get("owner_user_id") != current_user.id:
+        request_data = (
+            await db.execute(
+                select(SmsOtpRequest).where(
+                    SmsOtpRequest.request_id == request_id,
+                    SmsOtpRequest.owner_user_id == current_user.id,
+                )
+            )
+        ).scalar_one_or_none()
+        if request_data is None:
             raise HTTPException(
                 status_code=404, detail="Verification request not found"
             )
 
-        # Check if timeout exceeded
-        timeout_at = request_data["timeout_at"]
+        timeout_at = request_data.timeout_at
         if timeout_at.tzinfo is None:
             timeout_at = timeout_at.replace(tzinfo=timezone.utc)
-        if datetime.now(timezone.utc) > timeout_at:
-            request_data["status"] = "timeout"
+        if datetime.now(timezone.utc) > timeout_at and request_data.status == "waiting":
+            request_data.status = "timeout"
+            await db.commit()
 
         return VerificationResponse(
             request_id=request_id,
-            status=request_data["status"],
-            code=request_data.get("code"),
-            timestamp=request_data.get("completed_at"),
-            error_message=request_data.get("error_message"),
+            status=(
+                "pending" if request_data.status == "waiting" else request_data.status
+            ),
+            code=request_data.otp_code,
+            timestamp=request_data.completed_at,
+            error_message=None,
         )
 
     except HTTPException:
@@ -202,7 +213,14 @@ async def complete_sms_verification(
             )
             raise HTTPException(status_code=401, detail="Device authentication failed")
 
-        if request_id not in verification_requests:
+        request_data = (
+            await db.execute(
+                select(SmsOtpRequest)
+                .where(SmsOtpRequest.request_id == request_id)
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        if request_data is None:
             log_security_event(
                 "infra_sms_complete_unknown_request",
                 details={"device_id": device_id, "request_id": request_id},
@@ -211,10 +229,8 @@ async def complete_sms_verification(
                 status_code=404, detail="Verification request not found"
             )
 
-        request_data = verification_requests[request_id]
-
         # 2) Require an existing authorized request <-> device assignment.
-        assigned_device = request_data.get("assigned_device_id")
+        assigned_device = request_data.assigned_device_id
         if not isinstance(assigned_device, str) or not assigned_device:
             log_security_event(
                 "infra_sms_complete_unassigned",
@@ -238,31 +254,29 @@ async def complete_sms_verification(
                 detail="Device is not assigned to this request",
             )
 
-        if request_data.get("status") != "pending":
+        if request_data.status != "waiting":
             raise HTTPException(
                 status_code=409,
                 detail="Verification request is not pending",
             )
 
-        timeout_at = request_data.get("timeout_at")
+        timeout_at = request_data.timeout_at
         if isinstance(timeout_at, datetime) and timeout_at.tzinfo is None:
             timeout_at = timeout_at.replace(tzinfo=timezone.utc)
         if isinstance(timeout_at, datetime) and datetime.now(timezone.utc) > timeout_at:
-            request_data["status"] = "timeout"
+            request_data.status = "timeout"
+            await db.commit()
             raise HTTPException(status_code=410, detail="Verification request expired")
 
         normalized_code = (code or "").strip()
         if not normalized_code.isdigit() or not 4 <= len(normalized_code) <= 10:
             raise HTTPException(status_code=400, detail="Invalid verification code")
 
-        request_data.update(
-            {
-                "status": "completed",
-                "code": normalized_code,
-                "device_id": device_id,
-                "completed_at": datetime.now(timezone.utc),
-            }
-        )
+        request_data.status = "completed"
+        request_data.otp_code = normalized_code
+        request_data.device_id = device_id
+        request_data.completed_at = datetime.now(timezone.utc)
+        await db.commit()
 
         # SECURITY: do not log the verification code itself.
         log_security_event(

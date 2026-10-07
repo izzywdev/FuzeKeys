@@ -283,13 +283,16 @@ subject/tenant ownership and Security instance policies/grants remain
 unprovisioned, so the mounted-route inventory continues to classify these paths
 as platform-mapping gaps rather than production-complete authorization.
 
-The parallel infrastructure verification callback now has the same containment:
-unassigned requests are not broadcast and cannot be claimed on completion, expired
-or already-completed requests fail closed, and the mobile-command WebSocket proves
-the device id/key pair before acceptance. Verification timestamps are UTC-aware.
-Mobile commands still lack an owner-authorized target-device resource contract, so
-the operator command route remains a platform-policy design gap rather than being
-treated as production-complete authorization.
+The parallel infrastructure verification API now reuses the same durable
+SmsOtpRequest custody, creator binding and assignment lifecycle. Its target phone
+number is persisted with the request and projected only to the exact authenticated
+assigned device. Unassigned requests are not broadcast and cannot be claimed on
+completion; expired or already-completed requests fail closed, and completed codes
+survive process restarts for creator-only reads. The mobile-command WebSocket proves
+the device id/key pair before acceptance. Mobile commands still lack an
+owner-authorized target-device resource contract, so the operator command route
+remains a platform-policy design gap rather than being treated as
+production-complete authorization.
 
 As an additional containment boundary, a mobile command now names one connected,
 device-key-authenticated target instead of broadcasting its parameters to every
@@ -300,12 +303,12 @@ is still process-local, and a local user is not yet mapped to ownership of the
 selected device. Durable device principals, tenant/owner mapping and an explicit
 `FuzeKeysInfrastructure:{device_id}:operate` decision therefore remain required.
 
-OTP requests now persist their authenticated local creator and exact device
-assignment. Sensitive OTP results survive process restarts and are returned only
-to that creator; foreign, unknown and legacy unbound identifiers share a 404
-response. Infrastructure SMS verification requests and email monitors remain
-process-local but retain the same creator-only read containment. None of these
-local bindings substitutes for immutable platform subject/tenant mapping or
+OTP and infrastructure SMS verification requests now persist their authenticated
+local creator, target context and exact device assignment. Sensitive OTP results
+survive process restarts and are returned only to that creator; foreign, unknown
+and legacy unbound identifiers share a 404 response. Email monitors remain
+process-local but retain creator-only read containment. None of these local
+bindings substitutes for immutable platform subject/tenant mapping or
 instance-scoped Security grants.
 
 Device registration no longer relies on ingress reachability as its bootstrap

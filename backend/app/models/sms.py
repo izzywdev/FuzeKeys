@@ -43,6 +43,7 @@ class SmsOtpRequest(Base):
     id = Column(Integer, primary_key=True, index=True)
     request_id = Column(String(255), unique=True, index=True, nullable=False)
     service = Column(String(255), nullable=False)  # Which service the OTP is for
+    target_phone_number = Column(String(64), nullable=True)
     status = Column(
         String(50), default="waiting"
     )  # waiting, completed, timeout, failed

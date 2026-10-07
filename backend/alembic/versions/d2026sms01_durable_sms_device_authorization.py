@@ -63,6 +63,7 @@ def upgrade():
             sa.Column("id", sa.Integer(), primary_key=True),
             sa.Column("request_id", sa.String(255), nullable=False),
             sa.Column("service", sa.String(255), nullable=False),
+            sa.Column("target_phone_number", sa.String(64), nullable=True),
             sa.Column("status", sa.String(50), nullable=True),
             sa.Column("otp_code", sa.String(20), nullable=True),
             sa.Column("created_at", sa.DateTime(timezone=True), nullable=True),
@@ -99,6 +100,10 @@ def upgrade():
     else:
         columns = _columns(inspector, "sms_otp_requests")
         with op.batch_alter_table("sms_otp_requests") as batch:
+            if "target_phone_number" not in columns:
+                batch.add_column(
+                    sa.Column("target_phone_number", sa.String(64), nullable=True)
+                )
             if "owner_user_id" not in columns:
                 batch.add_column(
                     sa.Column("owner_user_id", sa.Integer(), nullable=True)

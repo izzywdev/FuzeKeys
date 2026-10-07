@@ -47,7 +47,11 @@ def test_revision_chain_and_fresh_schema():
         request_columns = {
             column["name"] for column in inspector.get_columns("sms_otp_requests")
         }
-        assert {"owner_user_id", "assigned_device_id"}.issubset(request_columns)
+        assert {
+            "owner_user_id",
+            "assigned_device_id",
+            "target_phone_number",
+        }.issubset(request_columns)
 
 
 def test_downgrade_refuses_to_drop_live_authority_rows():
@@ -107,6 +111,10 @@ def test_upgrade_adds_authority_columns_to_legacy_sms_tables():
         assert {"device_key_hash", "key_rotated_at"}.issubset(
             {column["name"] for column in inspector.get_columns("sms_devices")}
         )
-        assert {"owner_user_id", "assigned_device_id"}.issubset(
+        assert {
+            "owner_user_id",
+            "assigned_device_id",
+            "target_phone_number",
+        }.issubset(
             {column["name"] for column in inspector.get_columns("sms_otp_requests")}
         )

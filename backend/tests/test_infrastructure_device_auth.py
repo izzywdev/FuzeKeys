@@ -7,9 +7,10 @@ from unittest.mock import AsyncMock
 import pytest
 import pytest_asyncio
 from fastapi import HTTPException
+from sqlalchemy import select
 from starlette.websockets import WebSocketDisconnect
 
-from app.models.sms import SmsDevice
+from app.models.sms import SmsDevice, SmsOtpRequest
 from app.routers import infrastructure, sms
 
 
@@ -46,12 +47,10 @@ class FakeWebSocket:
 
 @pytest_asyncio.fixture(autouse=True)
 async def isolated_device_state(db_session):
-    original_requests = dict(infrastructure.verification_requests)
     original_monitors = dict(infrastructure.email_monitors)
     original_active = list(infrastructure.mobile_manager.active_connections)
     original_devices = dict(infrastructure.mobile_manager.device_connections)
     original_commands = dict(infrastructure.mobile_commands)
-    infrastructure.verification_requests.clear()
     infrastructure.email_monitors.clear()
     infrastructure.mobile_manager.active_connections.clear()
     infrastructure.mobile_manager.device_connections.clear()
@@ -76,8 +75,6 @@ async def isolated_device_state(db_session):
     )
     await db_session.commit()
     yield
-    infrastructure.verification_requests.clear()
-    infrastructure.verification_requests.update(original_requests)
     infrastructure.email_monitors.clear()
     infrastructure.email_monitors.update(original_monitors)
     infrastructure.mobile_manager.active_connections[:] = original_active
@@ -87,17 +84,19 @@ async def isolated_device_state(db_session):
     infrastructure.mobile_commands.update(original_commands)
 
 
-def pending_request(**overrides):
+def pending_request(request_id, **overrides):
     value = {
-        "status": "pending",
+        "request_id": request_id,
+        "service": "example",
+        "status": "waiting",
         "timeout_at": datetime.now(timezone.utc) + timedelta(minutes=5),
     }
     value.update(overrides)
-    return value
+    return SmsOtpRequest(**value)
 
 
 @pytest.mark.asyncio
-async def test_request_is_withheld_until_authorized_assignment(monkeypatch):
+async def test_request_is_withheld_until_authorized_assignment(monkeypatch, db_session):
     broadcast = AsyncMock()
     monkeypatch.setattr(infrastructure.sms_manager, "broadcast", broadcast)
     result = await infrastructure.request_sms_verification(
@@ -105,35 +104,71 @@ async def test_request_is_withheld_until_authorized_assignment(monkeypatch):
             site="example",
             phone_number="+15555550100",
         ),
-        db=None,
+        db=db_session,
         current_user=User(7),
     )
     assert result["status"] == "pending"
     assert "sent" not in result["message"].lower()
     broadcast.assert_not_awaited()
-    stored = infrastructure.verification_requests[result["request_id"]]
-    assert stored["owner_user_id"] == 7
-    assert "assigned_device_id" not in stored
+    stored = (
+        await db_session.execute(
+            select(SmsOtpRequest).where(
+                SmsOtpRequest.request_id == result["request_id"]
+            )
+        )
+    ).scalar_one()
+    assert stored.owner_user_id == 7
+    assert stored.target_phone_number == "+15555550100"
+    assert stored.assigned_device_id is None
 
 
 @pytest.mark.asyncio
-async def test_verification_code_is_visible_only_to_request_creator():
-    infrastructure.verification_requests["owned"] = pending_request(
-        owner_user_id=7,
-        status="completed",
-        code="123456",
+async def test_verification_code_is_visible_only_to_request_creator(db_session):
+    db_session.add(
+        pending_request(
+            "owned",
+            owner_user_id=7,
+            status="completed",
+            otp_code="123456",
+        )
     )
-    result = await infrastructure.get_sms_verification("owned", current_user=User(7))
+    db_session.add(
+        pending_request(
+            "legacy",
+            owner_user_id=None,
+            status="completed",
+            otp_code="654321",
+        )
+    )
+    await db_session.commit()
+    result = await infrastructure.get_sms_verification(
+        "owned", db=db_session, current_user=User(7)
+    )
     assert result.code == "123456"
 
     for request_id in ("owned", "legacy", "missing"):
-        if request_id == "legacy":
-            infrastructure.verification_requests[request_id] = pending_request(
-                status="completed", code="654321"
-            )
         with pytest.raises(HTTPException) as hidden:
-            await infrastructure.get_sms_verification(request_id, current_user=User(8))
+            await infrastructure.get_sms_verification(
+                request_id, db=db_session, current_user=User(8)
+            )
         assert hidden.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_verification_timeout_is_persisted(db_session):
+    request = pending_request(
+        "expired-owner-read",
+        owner_user_id=7,
+        timeout_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+    )
+    db_session.add(request)
+    await db_session.commit()
+    result = await infrastructure.get_sms_verification(
+        request.request_id, db=db_session, current_user=User(7)
+    )
+    assert result.status == "timeout"
+    await db_session.refresh(request)
+    assert request.status == "timeout"
 
 
 @pytest.mark.asyncio
@@ -161,21 +196,24 @@ async def test_email_monitor_is_visible_only_to_request_creator():
 
 @pytest.mark.asyncio
 async def test_authenticated_device_cannot_claim_unassigned_request(db_session):
-    infrastructure.verification_requests["req"] = pending_request()
-    before = dict(infrastructure.verification_requests["req"])
+    request = pending_request("req")
+    db_session.add(request)
+    await db_session.commit()
     with pytest.raises(HTTPException) as denied:
         await infrastructure.complete_sms_verification(
             "req", "123456", "device-a", x_device_key="key-a", db=db_session
         )
     assert denied.value.status_code == 409
-    assert infrastructure.verification_requests["req"] == before
+    await db_session.refresh(request)
+    assert request.status == "waiting"
+    assert request.otp_code is None
 
 
 @pytest.mark.asyncio
 async def test_only_assigned_device_can_complete_pending_request(db_session):
-    infrastructure.verification_requests["req"] = pending_request(
-        assigned_device_id="device-a"
-    )
+    request = pending_request("req", assigned_device_id="device-a")
+    db_session.add(request)
+    await db_session.commit()
     with pytest.raises(HTTPException) as denied:
         await infrastructure.complete_sms_verification(
             "req", "123456", "device-b", x_device_key="key-b", db=db_session
@@ -186,34 +224,39 @@ async def test_only_assigned_device_can_complete_pending_request(db_session):
         "req", " 123456 ", "device-a", x_device_key="key-a", db=db_session
     )
     assert result["status"] == "success"
-    stored = infrastructure.verification_requests["req"]
-    assert stored["status"] == "completed"
-    assert stored["code"] == "123456"
+    await db_session.refresh(request)
+    assert request.status == "completed"
+    assert request.otp_code == "123456"
 
 
 @pytest.mark.asyncio
 async def test_expired_and_invalid_codes_fail_before_completion(db_session):
-    infrastructure.verification_requests["expired"] = pending_request(
+    expired_request = pending_request(
+        "expired",
         assigned_device_id="device-a",
         timeout_at=datetime.now(timezone.utc) - timedelta(seconds=1),
     )
+    db_session.add(expired_request)
+    await db_session.commit()
     with pytest.raises(HTTPException) as expired:
         await infrastructure.complete_sms_verification(
             "expired", "123456", "device-a", x_device_key="key-a", db=db_session
         )
     assert expired.value.status_code == 410
-    assert infrastructure.verification_requests["expired"]["status"] == "timeout"
-    assert "code" not in infrastructure.verification_requests["expired"]
+    await db_session.refresh(expired_request)
+    assert expired_request.status == "timeout"
+    assert expired_request.otp_code is None
 
-    infrastructure.verification_requests["invalid"] = pending_request(
-        assigned_device_id="device-a"
-    )
+    invalid_request = pending_request("invalid", assigned_device_id="device-a")
+    db_session.add(invalid_request)
+    await db_session.commit()
     with pytest.raises(HTTPException) as invalid:
         await infrastructure.complete_sms_verification(
             "invalid", "not-an-otp", "device-a", x_device_key="key-a", db=db_session
         )
     assert invalid.value.status_code == 400
-    assert infrastructure.verification_requests["invalid"]["status"] == "pending"
+    await db_session.refresh(invalid_request)
+    assert invalid_request.status == "waiting"
 
 
 @pytest.mark.asyncio

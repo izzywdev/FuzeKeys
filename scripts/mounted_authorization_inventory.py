@@ -125,6 +125,14 @@ def assess(module, endpoint, method, helpers):
             "device_proof_platform_migration_gap",
             "Durable active-device proof precedes socket acceptance or callback mutation, and callbacks require prior assignment; verified tenant mapping and platform instance policy remain.",
         )
+    if module == "app.routers.infrastructure" and endpoint in {
+        "request_sms_verification",
+        "get_sms_verification",
+    }:
+        return (
+            "durable_local_owner_platform_mapping_gap",
+            "Infrastructure SMS requests reuse durable creator-owned OTP custody and exact device assignments. Immutable platform subject/tenant mapping and exact Security grants remain.",
+        )
     if module == "app.routers.sms" and endpoint == "register_device":
         return (
             "enrollment_token_platform_mapping_gap",
