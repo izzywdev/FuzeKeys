@@ -1,0 +1,29 @@
+name: Vault storage upgrade safety
+
+on:
+  pull_request:
+    paths:
+      - 'deploy/helm/fuzekeys/**'
+      - 'scripts/__tests__/test_vault_claim_metadata.py'
+      - '.github/workflows/vault-storage-validation.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'deploy/helm/fuzekeys/**'
+      - 'scripts/__tests__/test_vault_claim_metadata.py'
+      - '.github/workflows/vault-storage-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  immutable-claims:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4
+        with:
+          version: v3.16.4
+      - run: python3 -m pip install PyYAML==6.0.2
+      - run: python3 scripts/__tests__/test_vault_claim_metadata.py

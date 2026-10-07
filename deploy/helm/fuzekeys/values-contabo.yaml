@@ -116,6 +116,17 @@ vault:
   enabled: true
   persistence:
     storageClass: local-path
+    # Preserve the existing Vault StatefulSet's immutable claim metadata.
+    # Verified by read-only cluster query 37613914971 on 2026-10-07.
+    # These are creation-time labels, NOT current image/chart versions.
+    claimLabels:
+      app.kubernetes.io/instance: fuzekeys
+      app.kubernetes.io/managed-by: Helm
+      app.kubernetes.io/name: fuzekeys
+      app.kubernetes.io/part-of: fuzekeys
+      app.kubernetes.io/version: "0.1.12"
+      fuzekeys.io/environment: prod
+      helm.sh/chart: fuzekeys-0.1.15
 ollama:
   enabled: false
   persistence:

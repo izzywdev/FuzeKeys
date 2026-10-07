@@ -314,6 +314,10 @@ vault:
     storageClass: ""
     accessMode: ReadWriteOnce
     size: 1Gi
+    # Immutable creation-time metadata. For an existing StatefulSet, copy its
+    # exact spec.volumeClaimTemplates[0].metadata.labels before upgrading.
+    # Empty uses stable identity labels for NEW installations only.
+    claimLabels: {}
   resources:
     requests: { cpu: 100m, memory: 128Mi }
     limits: { cpu: 500m, memory: 512Mi }
