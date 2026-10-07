@@ -43,7 +43,7 @@ def isolated_device_state():
     sms.registered_device_keys.clear()
     sms.sms_manager.active_connections.clear()
     sms.sms_manager.device_connections.clear()
-    sms.registered_device_keys["device-a"] = "key-a"
+    sms.registered_device_keys["device-a"] = sms._device_key_digest("key-a")
     yield
     sms.registered_device_keys.clear()
     sms.registered_device_keys.update(original_keys)

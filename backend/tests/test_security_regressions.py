@@ -472,7 +472,9 @@ class TestOtpDeviceAuthAndBinding:
 
     def test_registered_device_wrong_key_rejected_401(self):
         """A registered device but the WRONG key -> 401."""
-        sms_mod.registered_device_keys["dev-1"] = "correct-key"
+        sms_mod.registered_device_keys["dev-1"] = sms_mod._device_key_digest(
+            "correct-key"
+        )
         sms_mod.pending_otp_requests["req-1"] = {
             "status": "waiting",
             "timeout": self._future_ts(),
@@ -486,7 +488,9 @@ class TestOtpDeviceAuthAndBinding:
 
     def test_unknown_request_id_yields_404(self):
         """Authenticated device, but the request_id isn't pending -> 404."""
-        sms_mod.registered_device_keys["dev-1"] = "correct-key"
+        sms_mod.registered_device_keys["dev-1"] = sms_mod._device_key_digest(
+            "correct-key"
+        )
         # No pending_otp_requests entries.
         req = self._make_request(device_id="dev-1", request_id="does-not-exist")
         with pytest.raises(HTTPException) as exc:
@@ -500,7 +504,9 @@ class TestOtpDeviceAuthAndBinding:
     def test_invalid_otp_format_yields_400(self):
         """Authenticated device + valid request, but a non-numeric / out-of-bounds
         OTP -> 400 (format validation)."""
-        sms_mod.registered_device_keys["dev-1"] = "correct-key"
+        sms_mod.registered_device_keys["dev-1"] = sms_mod._device_key_digest(
+            "correct-key"
+        )
         sms_mod.pending_otp_requests["req-1"] = {
             "status": "waiting",
             "timeout": self._future_ts(),
@@ -518,8 +524,8 @@ class TestOtpDeviceAuthAndBinding:
     def test_device_not_assigned_to_request_yields_403(self):
         """A request pre-assigned to dev-1 cannot be completed by a different
         (also authenticated) device dev-2 -> 403."""
-        sms_mod.registered_device_keys["dev-1"] = "key-1"
-        sms_mod.registered_device_keys["dev-2"] = "key-2"
+        sms_mod.registered_device_keys["dev-1"] = sms_mod._device_key_digest("key-1")
+        sms_mod.registered_device_keys["dev-2"] = sms_mod._device_key_digest("key-2")
         sms_mod.pending_otp_requests["req-1"] = {
             "status": "waiting",
             "timeout": self._future_ts(),
@@ -533,7 +539,7 @@ class TestOtpDeviceAuthAndBinding:
     def test_bound_device_succeeds_and_completes_request(self):
         """Happy path: the assigned, authenticated device with a valid OTP for an
         open request succeeds and the request is marked completed."""
-        sms_mod.registered_device_keys["dev-1"] = "key-1"
+        sms_mod.registered_device_keys["dev-1"] = sms_mod._device_key_digest("key-1")
         sms_mod.pending_otp_requests["req-1"] = {
             "status": "waiting",
             "timeout": self._future_ts(),
@@ -551,7 +557,7 @@ class TestOtpDeviceAuthAndBinding:
 
     def test_unassigned_request_cannot_be_claimed_by_authenticated_device(self):
         """Knowing an unassigned request id is not assignment authority."""
-        sms_mod.registered_device_keys["dev-1"] = "key-1"
+        sms_mod.registered_device_keys["dev-1"] = sms_mod._device_key_digest("key-1")
         sms_mod.pending_otp_requests["req-1"] = {
             "status": "waiting",
             "timeout": self._future_ts(),
@@ -602,7 +608,10 @@ class TestOtpDeviceAuthAndBinding:
         issued = result["api_key"]
         assert issued == captured["value"]
         # Persisted and verifiable.
-        assert sms_mod.registered_device_keys["dev-new"] == issued
+        assert sms_mod.registered_device_keys["dev-new"] == sms_mod._device_key_digest(
+            issued
+        )
+        assert issued.encode("utf-8") not in sms_mod.registered_device_keys.values()
         assert sms_mod._verify_device("dev-new", issued) is True
         assert sms_mod._verify_device("dev-new", "not-the-key") is False
 
@@ -645,7 +654,8 @@ class TestOtpDeviceAuthAndBinding:
             os_version="14",
             app_version="1.0.0",
         )
-        sms_mod.registered_device_keys["dev-existing"] = "current-device-key"
+        current_digest = sms_mod._device_key_digest("current-device-key")
+        sms_mod.registered_device_keys["dev-existing"] = current_digest
         db = _FakeDbSession()
         with pytest.raises(HTTPException) as denied:
             _run(
@@ -658,7 +668,7 @@ class TestOtpDeviceAuthAndBinding:
         assert denied.value.status_code == 401
         assert db.added == []
         assert db.commits == 0
-        assert sms_mod.registered_device_keys["dev-existing"] == "current-device-key"
+        assert sms_mod.registered_device_keys["dev-existing"] == current_digest
 
 
 # ===========================================================================

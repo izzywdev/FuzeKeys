@@ -20,14 +20,13 @@ mint routes still require complete workload and owned secret/capability policy
 migration. It is not clearance of the broker platform authorization gate.
 
 SMS/device migration has additional concrete schema blockers: its models declare
-a separate Base outside app Alembic metadata, sync Session handlers receive
-the app AsyncSession, device keys live in process memory, device records and OTP
-requests have no immutable verified tenant/owner mapping, public registration can
-rotate device IDs, polls enumerate unowned pending requests and callbacks bind
-an unassigned request to its first responding device. No static enrollment
-credential or inferred Identity/VaultAsset grant substitutes for fixing those
-boundaries. Required next work is explicit verified enrollment ownership, managed
-schema/durable custody and per-request owner/device binding before platform grants.
+a separate Base outside app Alembic metadata, sync Session handlers receive the
+app AsyncSession, device-key digests live in process memory, and device records
+and OTP requests have no immutable verified tenant/owner mapping. Registration is
+now protected by a strong out-of-band enrollment proof, polling withholds unowned
+pending requests, and callbacks refuse unassigned work. Those containment controls
+do not substitute for explicit verified enrollment ownership, managed schema,
+durable digest custody and per-request owner/device binding before platform grants.
 
 ## Actual mounted route inventory
 
@@ -275,10 +274,11 @@ requests instead of binding the first authenticated device. WebSocket clients mu
 prove the same device id/key pair before acceptance, and completion notices target
 only that assigned device.
 
-Enrollment is still public, keys and requests are still process-local, and the
-server-side assignment lifecycle, durable verified device principals, owner/tenant
-bindings and instance policies/grants remain unprovisioned. The mounted-route
-inventory therefore continues to classify these paths as authorization gaps.
+Enrollment now requires the out-of-band proof described below. Device-key digests
+and requests are still process-local, and the server-side assignment lifecycle,
+durable verified device principals, owner/tenant bindings and instance
+policies/grants remain unprovisioned. The mounted-route inventory therefore
+continues to classify these paths as authorization gaps.
 
 The parallel infrastructure verification callback now has the same containment:
 unassigned requests are not broadcast and cannot be claimed on completion, expired
@@ -314,3 +314,8 @@ cannot rotate an existing device ID. Production must add
 `SMS_DEVICE_ENROLLMENT_TOKEN` to the existing FuzeKeys-owned SealedSecret; no
 credential value is committed here. This is still an enrollment containment
 mechanism, not durable device-key custody, attestation or platform ownership.
+The generated bearer key is returned once to the enrolling device and only its
+SHA-256 digest remains in process memory; subsequent verification uses a
+constant-time digest comparison. Durable managed storage, rotation metadata and
+restart-safe revocation remain required before this becomes production-grade
+device identity custody.

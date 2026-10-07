@@ -1,3 +1,4 @@
+import hashlib
 import hmac
 import json
 import logging
@@ -44,16 +45,16 @@ sms_manager = ConnectionManager()
 # In-memory storage for pending OTP requests (in production, use Redis or database)
 pending_otp_requests: Dict[str, Dict] = {}
 
-# SECURITY: Module-level store mapping device_id -> issued API key.
+# SECURITY: Module-level store mapping device_id -> one-way API-key digest.
 # The SmsDevice ORM model (app/models/sms.py) has no column to persist the
-# per-device API key, and this fix is scoped to sms.py only, so the key is
+# per-device API key, and this fix is scoped to sms.py only, so the digest is
 # persisted here. This is consistent with the file's existing in-memory
 # approach (see pending_otp_requests above).
 # PRODUCTION NOTE: replace with a persistent, hashed key store (e.g. a
-# `device_api_key_hash` column on SmsDevice or a Redis/secret store) so keys
-# survive restarts and are never stored in plaintext. Keys here are kept in
-# memory only and compared with a constant-time comparison.
-registered_device_keys: Dict[str, str] = {}
+# `device_api_key_hash` column on SmsDevice or a Redis/secret store) so digests
+# survive restarts. The issued bearer key exists only in the registration
+# response; process memory retains only its SHA-256 digest.
+registered_device_keys: Dict[str, bytes] = {}
 
 # Minimum / maximum accepted OTP length and the allowed character set.
 OTP_MIN_LEN = 4
@@ -76,15 +77,21 @@ def _require_device_enrollment_token(presented: Optional[str]) -> None:
         raise HTTPException(status_code=401, detail="Device enrollment denied")
 
 
+def _device_key_digest(api_key: str) -> bytes:
+    """Return the fixed-length one-way digest retained for device authentication."""
+    return hashlib.sha256(api_key.encode("utf-8")).digest()
+
+
 def _verify_device(device_id: str, api_key: Optional[str]) -> bool:
-    """Constant-time verification that the supplied api_key was issued to device_id."""
+    """Constant-time verification against the retained device-key digest."""
     if not device_id or not api_key:
         return False
-    expected = registered_device_keys.get(device_id)
-    if not expected:
+    expected_digest = registered_device_keys.get(device_id)
+    if not expected_digest:
         return False
-    # hmac.compare_digest guards against timing attacks on the key comparison.
-    return hmac.compare_digest(expected, api_key)
+    # Fixed-length digest comparison avoids retaining or comparing the plaintext
+    # bearer key after its one-time issuance response.
+    return hmac.compare_digest(expected_digest, _device_key_digest(api_key))
 
 
 class OtpRequest(BaseModel):
@@ -154,14 +161,15 @@ async def register_device(
 
         db.commit()
 
-        # SECURITY: Generate a cryptographically strong API key and PERSIST it
+        # SECURITY: Generate a cryptographically strong API key and retain only
+        # its one-way digest
         # so it can actually be verified on subsequent device-authenticated
         # calls (previously a uuid was returned but never stored or checked,
         # leaving /otp completely unauthenticated).
-        # PRODUCTION NOTE: store a hash of this key, not the plaintext, in a
-        # durable store; also support rotation/expiry.
+        # PRODUCTION NOTE: move this digest to a durable store and support
+        # rotation/expiry. Process-local custody does not survive restarts.
         api_key = secrets.token_urlsafe(32)
-        registered_device_keys[request.device_id] = api_key
+        registered_device_keys[request.device_id] = _device_key_digest(api_key)
 
         log_security_event(
             "sms_device_registered",

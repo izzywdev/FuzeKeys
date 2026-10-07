@@ -34,7 +34,12 @@ def isolated_device_state():
     original_requests = dict(sms.pending_otp_requests)
     sms.registered_device_keys.clear()
     sms.pending_otp_requests.clear()
-    sms.registered_device_keys.update({"device-a": "key-a", "device-b": "key-b"})
+    sms.registered_device_keys.update(
+        {
+            "device-a": sms._device_key_digest("key-a"),
+            "device-b": sms._device_key_digest("key-b"),
+        }
+    )
     yield
     sms.registered_device_keys.clear()
     sms.registered_device_keys.update(original_keys)

@@ -56,7 +56,12 @@ def isolated_device_state():
     infrastructure.mobile_manager.active_connections.clear()
     infrastructure.mobile_manager.device_connections.clear()
     infrastructure.mobile_commands.clear()
-    sms.registered_device_keys.update({"device-a": "key-a", "device-b": "key-b"})
+    sms.registered_device_keys.update(
+        {
+            "device-a": sms._device_key_digest("key-a"),
+            "device-b": sms._device_key_digest("key-b"),
+        }
+    )
     yield
     sms.registered_device_keys.clear()
     sms.registered_device_keys.update(original_keys)
