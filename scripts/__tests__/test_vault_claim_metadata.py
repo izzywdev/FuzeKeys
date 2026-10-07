@@ -1,6 +1,5 @@
 """Render the real chart: Vault upgrades must preserve immutable claim metadata."""
 
-import os
 import shutil
 import subprocess
 import tempfile
@@ -10,7 +9,7 @@ from pathlib import Path
 import yaml
 
 CHART = Path(__file__).resolve().parents[2] / "deploy/helm/fuzekeys"
-HELM = os.environ.get("HELM_BINARY", "helm")
+HELM = shutil.which("helm")
 LIVE_LABELS = {
     "app.kubernetes.io/instance": "fuzekeys",
     "app.kubernetes.io/managed-by": "Helm",
@@ -23,6 +22,8 @@ LIVE_LABELS = {
 
 
 def render(chart=CHART, production=False, extra=()):
+    if HELM is None:
+        raise RuntimeError("helm is required to validate Vault claim metadata")
     args = [HELM, "template", "fuzekeys", str(chart)]
     if production:
         args += ["-f", str(chart / "values-contabo.yaml")]
