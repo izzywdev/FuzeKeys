@@ -19,6 +19,17 @@ async def require_permission(*args, **kwargs) -> None:
 
 
 def connector_tenant(identity):
+    subject = identity.subject
+    # Personal custody has no tenant grant, so the verified subject becomes
+    # the whole owner boundary. Validate it before handling either scope.
+    if (
+        not isinstance(subject, str)
+        or not subject
+        or subject.strip() != subject
+        or len(subject) > 255
+    ):
+        raise HTTPException(403, "Verified connector subject required")
+
     tenant = identity.tenant_id
     if tenant is None:
         return None
@@ -29,14 +40,6 @@ def connector_tenant(identity):
         or len(tenant) > 255
     ):
         raise HTTPException(403, "Verified connector tenant required")
-    subject = identity.subject
-    if (
-        not isinstance(subject, str)
-        or not subject
-        or subject.strip() != subject
-        or len(subject) > 255
-    ):
-        raise HTTPException(403, "Verified connector subject required")
     return tenant
 
 

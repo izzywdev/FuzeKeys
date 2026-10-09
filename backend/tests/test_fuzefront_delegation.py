@@ -60,6 +60,16 @@ async def test_personal_delegation_uses_only_the_verified_subject(monkeypatch):
     await require_connector_permission(identity, "google-gmail", "read")
 
 
+def test_personal_delegation_rejects_an_invalid_subject():
+    identity = fuzefront_auth.Identity(
+        subject=" ", scopes=frozenset({"connectors:metadata"}),
+        audience="service:fuzekeys", actor={"sub": "svc:caller"},
+        token_kind="fuze-delegation", tenant_id=None,
+    )
+    with pytest.raises(HTTPException, match="Verified connector subject required"):
+        connector_tenant(identity)
+
+
 class DelegationVerifierTests(TestCase):
     def setUp(self):
         self.original_verifier = fuzefront_auth._verifier
