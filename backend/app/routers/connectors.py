@@ -69,7 +69,7 @@ class CredentialUpdate(BaseModel):
 
 
 def _connector_ref(tenant: Optional[str], owner: str, provider: str) -> str:
-    owner_ref = urllib.parse.quote(owner, safe='')
+    owner_ref = urllib.parse.quote(owner, safe="")
     if tenant is None:
         return f"connectors/users/{owner_ref}/{provider}"
     return f"connectors/tenants/{urllib.parse.quote(tenant, safe='')}/{owner_ref}/{provider}"

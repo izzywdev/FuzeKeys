@@ -26,4 +26,6 @@ def upgrade():
 
 
 def downgrade():
-    op.drop_index("uq_connector_personal_owner_provider", table_name="connector_credentials")
+    op.drop_index(
+        "uq_connector_personal_owner_provider", table_name="connector_credentials"
+    )

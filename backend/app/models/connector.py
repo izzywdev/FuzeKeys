@@ -1,4 +1,13 @@
-from sqlalchemy import JSON, Column, DateTime, Index, Integer, String, UniqueConstraint, text
+from sqlalchemy import (
+    JSON,
+    Column,
+    DateTime,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.sql import func
 
 from app.database import Base

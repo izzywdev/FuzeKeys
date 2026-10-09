@@ -9,7 +9,11 @@ from fastapi import HTTPException
 from fuzefront_service_auth import TokenVerificationError
 
 from app.security import fuzefront_auth
-from app.security.connector_authz import connector_resource_key, connector_tenant, require_connector_permission
+from app.security.connector_authz import (
+    connector_resource_key,
+    connector_tenant,
+    require_connector_permission,
+)
 
 
 @pytest.mark.asyncio
