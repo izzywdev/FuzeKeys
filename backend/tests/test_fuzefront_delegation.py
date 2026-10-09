@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from fuzefront_service_auth import TokenVerificationError
 
 from app.security import fuzefront_auth
+from app.security.connector_authz import connector_resource_key, connector_tenant, require_connector_permission
 
 
 @pytest.mark.asyncio
@@ -36,6 +37,23 @@ async def test_delegation_keeps_verified_tenant_in_request_state(monkeypatch):
     assert result.tenant_id == "verified-tenant"
     assert request.state.delegated_identity is delegated
     assert request.state.machine_identity.tenant_id is None
+
+
+@pytest.mark.asyncio
+async def test_personal_delegation_uses_only_the_verified_subject(monkeypatch):
+    identity = fuzefront_auth.Identity(
+        subject="owner",
+        scopes=frozenset({"connectors:metadata"}),
+        audience="service:fuzekeys",
+        actor={"sub": "svc:caller"},
+        token_kind="fuze-delegation",
+        tenant_id=None,
+    )
+    assert connector_tenant(identity) is None
+    assert connector_resource_key(None, "owner", "google-gmail")
+    # Personal custody is authorized by the verified delegation subject, so it
+    # does not call a tenant-scoped platform decision service.
+    await require_connector_permission(identity, "google-gmail", "read")
 
 
 class DelegationVerifierTests(TestCase):
