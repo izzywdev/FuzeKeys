@@ -1,4 +1,13 @@
-from sqlalchemy import JSON, Column, DateTime, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    Column,
+    DateTime,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.sql import func
 
 from app.database import Base
@@ -14,6 +23,17 @@ class ConnectorCredential(Base):
             "owner_subject",
             "provider",
             name="uq_connector_tenant_owner_provider",
+        ),
+        # SQL NULLs are distinct in a normal unique constraint. Personal
+        # credentials deliberately use a NULL organization, so enforce their
+        # owner/provider uniqueness with a partial unique index as well.
+        Index(
+            "uq_connector_personal_owner_provider",
+            "owner_subject",
+            "provider",
+            unique=True,
+            postgresql_where=text("tenant_id IS NULL"),
+            sqlite_where=text("tenant_id IS NULL"),
         ),
     )
 

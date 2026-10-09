@@ -68,15 +68,18 @@ class CredentialUpdate(BaseModel):
     google_identity: Optional[GoogleIdentity] = None
 
 
-def _connector_ref(tenant: str, owner: str, provider: str) -> str:
-    return f"connectors/tenants/{urllib.parse.quote(tenant, safe='')}/{urllib.parse.quote(owner, safe='')}/{provider}"
+def _connector_ref(tenant: Optional[str], owner: str, provider: str) -> str:
+    owner_ref = urllib.parse.quote(owner, safe="")
+    if tenant is None:
+        return f"connectors/users/{owner_ref}/{provider}"
+    return f"connectors/tenants/{urllib.parse.quote(tenant, safe='')}/{owner_ref}/{provider}"
 
 
-def _canonical_google_ref(tenant: str, owner: str) -> str:
+def _canonical_google_ref(tenant: Optional[str], owner: str) -> str:
     return _connector_ref(tenant, owner, GMAIL)
 
 
-async def _lock_google(db: AsyncSession, tenant: str, owner: str) -> None:
+async def _lock_google(db: AsyncSession, tenant: Optional[str], owner: str) -> None:
     # Transaction-scoped, cross-replica serialization. A process lock is not enough.
     # SQLite tests have one writer; production uses PostgreSQL.
     if db.get_bind().dialect.name == "postgresql":
@@ -90,7 +93,7 @@ async def _lock_google(db: AsyncSession, tenant: str, owner: str) -> None:
         await db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": key})
 
 
-async def _google_records(db: AsyncSession, tenant: str, owner: str):
+async def _google_records(db: AsyncSession, tenant: Optional[str], owner: str):
     result = await db.execute(
         select(ConnectorCredential).where(
             ConnectorCredential.tenant_id == tenant,
@@ -146,7 +149,7 @@ def _vault() -> MutableSecretVault:
 
 
 async def _record(
-    db: AsyncSession, tenant: str, owner: str, provider: str
+    db: AsyncSession, tenant: Optional[str], owner: str, provider: str
 ) -> Optional[ConnectorCredential]:
     result = await db.execute(
         select(ConnectorCredential).where(
@@ -160,6 +163,10 @@ async def _record(
 
 async def _grant_intent(db, identity, provider, desired_state):
     tenant = connector_tenant(identity)
+    # Personal credentials have no organization grant to reconcile. Their
+    # signed delegation and owner-only query are the authorization boundary.
+    if tenant is None:
+        return
     key = connector_resource_key(tenant, identity.subject, provider)
     result = await db.execute(
         select(ConnectorGrantIntent).where(

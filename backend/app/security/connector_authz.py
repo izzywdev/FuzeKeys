@@ -19,15 +19,9 @@ async def require_permission(*args, **kwargs) -> None:
 
 
 def connector_tenant(identity):
-    tenant = identity.tenant_id
-    if (
-        not isinstance(tenant, str)
-        or not tenant
-        or tenant.strip() != tenant
-        or len(tenant) > 255
-    ):
-        raise HTTPException(403, "Verified connector tenant required")
     subject = identity.subject
+    # Personal custody has no tenant grant, so the verified subject becomes
+    # the whole owner boundary. Validate it before handling either scope.
     if (
         not isinstance(subject, str)
         or not subject
@@ -35,6 +29,17 @@ def connector_tenant(identity):
         or len(subject) > 255
     ):
         raise HTTPException(403, "Verified connector subject required")
+
+    tenant = identity.tenant_id
+    if tenant is None:
+        return None
+    if (
+        not isinstance(tenant, str)
+        or not tenant
+        or tenant.strip() != tenant
+        or len(tenant) > 255
+    ):
+        raise HTTPException(403, "Verified connector tenant required")
     return tenant
 
 
@@ -57,6 +62,11 @@ async def require_connector_permission(identity, provider, action):
         "write_credential",
     }:
         raise HTTPException(403, "Invalid connector action")
+    # A verified delegation with no selected organization is a personal
+    # credential scope. The signed subject is the owner and no tenant grant
+    # exists to evaluate; every data query below remains subject-scoped.
+    if tenant is None:
+        return
     try:
         await require_permission(
             identity.subject,
