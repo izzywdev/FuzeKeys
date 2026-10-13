@@ -69,8 +69,30 @@ class TestIdentitiesAPI:
 
         # IdentityListResponse deliberately carries no PII. Guard that, so a
         # future widening of the list model is a failing test rather than a
-        # silent broadening of what a list call leaks.
-        assert set(item) == {"id", "name", "description", "created_at"}
+        # silent broadening of what a list call leaks. `accounts_count` is a
+        # non-PII aggregate the Identities page needs for its card badge.
+        assert set(item) == {
+            "id",
+            "name",
+            "description",
+            "created_at",
+            "accounts_count",
+        }
+        assert item["accounts_count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_list_identities_accounts_count(
+        self,
+        authed_client: AsyncClient,
+        sample_identity: Identity,
+        sample_account,
+    ):
+        """The list reports how many accounts hang off each identity."""
+        response = await authed_client.get(f"{BASE}/")
+        assert response.status_code == 200
+        item = response.json()["items"][0]
+        assert item["id"] == sample_identity.id
+        assert item["accounts_count"] == 1
 
     @pytest.mark.asyncio
     async def test_list_identities_page_boundaries(

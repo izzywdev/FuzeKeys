@@ -3579,6 +3579,10 @@ components:
           type: string
           format: date-time
           title: Created At
+        accounts_count:
+          type: integer
+          title: Accounts Count
+          default: 0
       type: object
       required:
       - id
