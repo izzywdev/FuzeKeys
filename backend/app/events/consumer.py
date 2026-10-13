@@ -1,7 +1,7 @@
-"""Consumer interface + single dispatch stub for FuzeFront events (FKY-9).
+"""Consumer runtime + single dispatch for FuzeFront events (FKY-9 / FKY-10).
 
-Scope: the INTERFACE and the dispatch/reject/ignore semantics only. NO handler
-bodies exist -- ``HANDLERS`` is empty and the five handlers land in FKY-10.
+FKY-9 defined the dispatch/reject/ignore semantics; FKY-10 registers the five
+handlers (``app/events/handlers.py``) in ``HANDLERS``.
 
 Dispatch contract (``dispatch``):
 
@@ -10,7 +10,7 @@ Dispatch contract (``dispatch``):
   3. known type, payload violates its schema       -> dead-letter, no state change
   4. duplicate ``eventId`` (inbox)                 -> DUPLICATE, no-op
   5. ``aggregateVersion`` <= last applied          -> STALE, no-op (out-of-order)
-  6. no handler registered (current state)         -> UNHANDLED, nothing written
+  6. no handler registered for a known type        -> UNHANDLED, nothing written
   7. handler registered: handler + inbox row + version bump run in ONE savepoint,
      so a handler failure leaves NO partial state -> RETRY (transient)
 
@@ -33,6 +33,7 @@ from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.events.handlers import FUZEFRONT_HANDLERS
 from app.events.schemas import (
     ConsumedEvent,
     EventContractError,
@@ -52,8 +53,8 @@ _SAFE_TOKEN = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 # It must be idempotent and must NOT commit (dispatch owns the savepoint).
 EventHandler = Callable[[Session, ConsumedEvent], None]
 
-# FKY-10 registers the five handlers here. Empty by design in FKY-9.
-HANDLERS: Dict[EventType, EventHandler] = {}
+# The five FuzeFront handlers (FKY-10). ``dispatch(handlers=...)`` can override.
+HANDLERS: Dict[EventType, EventHandler] = dict(FUZEFRONT_HANDLERS)
 
 
 class Outcome(str, Enum):
@@ -62,7 +63,7 @@ class Outcome(str, Enum):
     STALE = "stale"
     IGNORED_UNKNOWN_TYPE = "ignored_unknown_type"
     DEAD_LETTERED = "dead_lettered"
-    UNHANDLED = "unhandled"  # valid event, no handler registered yet (FKY-9)
+    UNHANDLED = "unhandled"  # valid event, no handler registered for its type
     RETRY = "retry"  # handler failed; nothing applied; redeliver
 
 
@@ -190,7 +191,7 @@ def dispatch(
         logger.info("event stale: older than applied version", extra=meta)
         return Outcome.STALE
 
-    # 6. no handler yet (FKY-9): write NOTHING so FKY-10 can apply it on redelivery
+    # 6. no handler registered: write NOTHING so it can be applied on redelivery
     handler = registry.get(event.event_type)
     if handler is None:
         logger.info("event valid but no handler registered", extra=meta)
@@ -222,9 +223,16 @@ def dispatch(
                 last.last_version = event.aggregate_version  # type: ignore[assignment]
             session.flush()
     except IntegrityError:
-        # A concurrent delivery of the same event won the unique(event_id) race.
-        logger.info("event duplicate: lost insert race", extra=meta)
-        return Outcome.DUPLICATE
+        # Either a concurrent delivery of the same event won the unique(event_id)
+        # race (a true duplicate: ack), or a DIFFERENT event raced us on the same
+        # row (nothing of ours was applied: do NOT ack, redeliver).
+        if session.query(EventInbox.id).filter_by(event_id=event.event_id).first():
+            logger.info("event duplicate: lost insert race", extra=meta)
+            return Outcome.DUPLICATE
+        logger.warning(
+            "event conflicted with concurrent write; rolled back", extra=meta
+        )
+        return Outcome.RETRY
     except Exception as exc:  # noqa: BLE001 - never leak exc text (may hold PII)
         logger.error(
             "event handler failed; rolled back",
