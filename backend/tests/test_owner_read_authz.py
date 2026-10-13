@@ -24,7 +24,10 @@ async def test_read_requires_exact_allow_before_response(monkeypatch, family, de
     count = SimpleNamespace(scalar_one=lambda: 1)
     page = SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [row]))
     linked = SimpleNamespace(
-        scalar_one_or_none=lambda: None if decision == "unlinked" else binding
+        scalar_one_or_none=lambda: None if decision == "unlinked" else binding,
+        # list_identities now runs one grouped accounts-count query after the
+        # authz loop; its result is consumed via .all() (empty here -> count 0).
+        all=lambda: [],
     )
     db = SimpleNamespace(
         execute=AsyncMock(
