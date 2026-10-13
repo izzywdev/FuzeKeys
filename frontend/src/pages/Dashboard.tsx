@@ -1,7 +1,74 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import apiClient from '../services/apiClient';
+
+/** Mirrors the backend DashboardStats model (GET /api/v1/dashboard/stats). */
+interface DashboardStats {
+  identities: number;
+  accounts: number;
+  /** Percent, 0-100. 0 when no automation job has finished yet. */
+  successRate: number;
+}
+
+type LoadState =
+  | { status: 'loading' }
+  | { status: 'error' }
+  | { status: 'ready'; stats: DashboardStats };
+
+const isValidStats = (data: unknown): data is DashboardStats => {
+  if (typeof data !== 'object' || data === null) return false;
+  const d = data as Record<string, unknown>;
+  return (
+    Number.isFinite(d.identities) &&
+    Number.isFinite(d.accounts) &&
+    Number.isFinite(d.successRate)
+  );
+};
+
+const formatRate = (rate: number): string => `${Number(rate.toFixed(1))}%`;
+
+const UNAVAILABLE = 'Unavailable';
 
 const Dashboard: React.FC = () => {
+  const [state, setState] = useState<LoadState>({ status: 'loading' });
+
+  useEffect(() => {
+    let cancelled = false;
+    apiClient
+      .get<DashboardStats>('/dashboard/stats')
+      .then((response) => {
+        if (cancelled) return;
+        setState(
+          isValidStats(response.data)
+            ? { status: 'ready', stats: response.data }
+            : { status: 'error' }
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setState({ status: 'error' });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const countValue = (pick: (s: DashboardStats) => number): string => {
+    if (state.status === 'loading') return '…';
+    if (state.status === 'error') return UNAVAILABLE;
+    return String(pick(state.stats));
+  };
+
+  const rateValue = (): string => {
+    if (state.status === 'loading') return '…';
+    if (state.status === 'error') return UNAVAILABLE;
+    return formatRate(state.stats.successRate);
+  };
+
+  const errorNote =
+    state.status === 'error' ? (
+      <p className="text-sm text-red-600 mb-2">Could not load dashboard statistics.</p>
+    ) : null;
+
   return (
     <div className="px-4 py-6 sm:px-0">
       <div className="mb-8">
@@ -13,25 +80,32 @@ const Dashboard: React.FC = () => {
         {/* Quick Stats */}
         <Link to="/identities" className="card hover:shadow-lg transition-shadow duration-200 cursor-pointer group">
           <h3 className="text-lg font-semibold text-gray-900 mb-2 group-hover:text-primary-600">Identities</h3>
-          <p className="text-3xl font-bold text-primary-600 mb-2">2</p>
+          {errorNote}
+          <p className="text-3xl font-bold text-primary-600 mb-2">
+            {countValue((s) => s.identities)}
+          </p>
           <p className="text-gray-600 text-sm">Digital identities ready to use</p>
           <div className="mt-2 text-xs text-primary-600 opacity-0 group-hover:opacity-100 transition-opacity">
             Click to view all identities →
           </div>
         </Link>
-        
+
         <Link to="/accounts" className="card hover:shadow-lg transition-shadow duration-200 cursor-pointer group">
           <h3 className="text-lg font-semibold text-gray-900 mb-2 group-hover:text-primary-600">Accounts</h3>
-          <p className="text-3xl font-bold text-primary-600 mb-2">2</p>
+          {errorNote}
+          <p className="text-3xl font-bold text-primary-600 mb-2">
+            {countValue((s) => s.accounts)}
+          </p>
           <p className="text-gray-600 text-sm">Automated accounts created</p>
           <div className="mt-2 text-xs text-primary-600 opacity-0 group-hover:opacity-100 transition-opacity">
             Click to view all accounts →
           </div>
         </Link>
-        
+
         <div className="card">
           <h3 className="text-lg font-semibold text-gray-900 mb-2">Success Rate</h3>
-          <p className="text-3xl font-bold text-green-600 mb-2">95%</p>
+          {errorNote}
+          <p className="text-3xl font-bold text-green-600 mb-2">{rateValue()}</p>
           <p className="text-gray-600 text-sm">Automation success rate</p>
         </div>
       </div>
@@ -47,7 +121,7 @@ const Dashboard: React.FC = () => {
             Try Chat Assistant
           </Link>
         </div>
-        
+
         <div className="card">
           <h3 className="text-xl font-semibold text-gray-900 mb-4">🔐 Secure Identity Management</h3>
           <p className="text-gray-600 mb-4">
@@ -58,22 +132,8 @@ const Dashboard: React.FC = () => {
           </Link>
         </div>
       </div>
-
-      {/* Demo Notice */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-blue-900 mb-2">🎮 Demo Mode</h3>
-        <p className="text-blue-800 mb-4">
-          You're currently viewing a demonstration of FuzeKeys. In the full version, you would:
-        </p>
-        <ul className="list-disc list-inside text-blue-800 space-y-1">
-          <li>Set up secure authentication with master key encryption</li>
-          <li>Create real automation scripts for website signups</li>
-          <li>Store encrypted account credentials and API keys</li>
-          <li>Use AI-powered web scraping for signup analysis</li>
-        </ul>
-      </div>
     </div>
   );
 };
 
-export default Dashboard; 
+export default Dashboard;

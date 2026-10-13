@@ -17,6 +17,7 @@ from app.routers import (
     chat,
     connectors,
     credentials,
+    dashboard,
     google_integration,
     identities,
     infrastructure,
@@ -493,6 +494,7 @@ app.include_router(
 )
 app.include_router(identities.router, prefix="/api/v1/identities", tags=["Identities"])
 app.include_router(accounts.router, prefix="/api/v1/accounts", tags=["Accounts"])
+app.include_router(dashboard.router, prefix="/api/v1/dashboard", tags=["Dashboard"])
 app.include_router(automation.router, prefix="/api/v1/automation", tags=["Automation"])
 app.include_router(chat.router, prefix="/api/v1/chat", tags=["Chat"])
 app.include_router(sms.router, tags=["SMS"])

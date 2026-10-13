@@ -1,7 +1,7 @@
 {
   "source": "actual app.main FastAPI mounts; startup/deployment not executed",
   "production_verified": false,
-  "route_method_count": 93,
+  "route_method_count": 94,
   "mutating_http_count": 47,
   "assessment_counts": {
     "broker_platform_mapping_gap": 3,
@@ -14,7 +14,7 @@
     "instance_enforced_with_staged_registration": 10,
     "local_session_profile": 1,
     "parent_instance_enforced_child_lifecycle_gap": 2,
-    "platform_policy_design_gap": 22,
+    "platform_policy_design_gap": 23,
     "public_catalog_or_health": 3,
     "public_framework_documentation": 8,
     "public_health": 2,
@@ -296,6 +296,20 @@
       ],
       "assessment": "instance_enforced",
       "reason": "SQL ownership and immutable verified mapping plus exact instance allow precede response, decryption or mutation. Live mappings/grants remain required."
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/dashboard/stats",
+      "endpoint": "app.routers.dashboard.get_dashboard_stats",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
     },
     {
       "method": "POST",
