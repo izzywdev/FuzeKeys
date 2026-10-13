@@ -144,7 +144,7 @@ def dispatch(
         else:
             body = dict(raw)
         envelope = EventEnvelope.model_validate(body)
-    except (ValueError, TypeError) as exc:  # JSONDecodeError/ValidationError
+    except (ValidationError, ValueError, TypeError) as exc:  # JSONDecodeError/ValidationError
         return _dead_letter(session, raw, "malformed_envelope", exc)
 
     # 2. unknown type: ignore (forward compatible with new producer events)
@@ -161,7 +161,7 @@ def dispatch(
     # 3. payload schema
     try:
         event = validate_event(envelope)
-    except (ValueError, TypeError) as exc:
+    except (ValidationError, ValueError, TypeError) as exc:
         return _dead_letter(
             session,
             raw,
