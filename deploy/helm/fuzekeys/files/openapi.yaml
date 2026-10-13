@@ -360,6 +360,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/dashboard/stats:
+    get:
+      tags:
+      - Dashboard
+      summary: Dashboard statistics
+      description: Counts of the current user's identities and accounts, and the automation success rate.
+        See DashboardStats.successRate for the exact window and semantics.
+      operationId: get_dashboard_stats
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardStats'
+      security:
+      - HTTPBearer: []
+      x-pagination: exempt
   /api/v1/automation/analyze:
     post:
       tags:
@@ -3233,6 +3251,31 @@ components:
           account_type: free
           signup_date: '2024-01-01T12:00:00Z'
           verification_method: email
+    DashboardStats:
+      properties:
+        identities:
+          type: integer
+          title: Identities
+          description: Identities owned by the current user
+        accounts:
+          type: integer
+          title: Accounts
+          description: Accounts under the current user's identities
+        successRate:
+          type: number
+          maximum: 100.0
+          minimum: 0.0
+          title: Successrate
+          description: 'Percent (0-100) of the current user''s finished automation jobs that completed,
+            out of jobs that completed or failed. 0 when there are none. Window: every job the background
+            manager currently retains (no time window). Each job counts once by its final status, so a
+            job that failed and was later retried to completion counts as completed.'
+      type: object
+      required:
+      - identities
+      - accounts
+      - successRate
+      title: DashboardStats
     DeviceRegistrationRequest:
       properties:
         device_id:
