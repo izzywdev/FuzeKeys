@@ -1,0 +1,938 @@
+openapi: 3.1.0
+# STUB. Design-spike artefact for FKY-13; NOT the frozen contract and NOT generated from code.
+# contracts/openapi.yaml is generated from the FastAPI app and must not be hand-edited, so this
+# stub lives under docs/. FKY-4 turns it into the real contract PR (api-contract-first: contract
+# alone, merged first), after which the implementation must reproduce it from the routers.
+# Design context: docs/collect-agent/adr-003-device-pairing-and-upload-token.md
+# Threat model:   docs/collect-agent/threat-model-data-path.md
+# All example values are synthetic.
+info:
+  title: FuzeKeys Collect-Import API (stub)
+  version: 1.0.0-stub
+  contact:
+    name: FuzeKeys security
+    url: https://github.com/izzywdev/FuzeKeys/security
+  summary: Device pairing, scoped short-lived upload tokens, and idempotent bulk import of sealed credential items.
+  description: |
+    The server in this contract is **blind**: it never receives a plaintext secret and holds no key
+    that can open one. Items are sealed on the device to a per-user inbox public key (`fk-seal-v1`,
+    RSA-OAEP-256 + AES-256-GCM, the scheme in backend/app/broker/envelope.py with an added AAD) and are
+    decrypted, reviewed and written to the personal vault only by a user client that holds the vault key.
+
+    Invariants every implementation of this contract MUST keep (see the threat model):
+    * INV-1 tokenize-before-send: no collected plaintext is reachable by any LLM-calling component.
+    * INV-2 Vault encryption: at rest only ciphertext; the personal-vault write uses client-side
+      encryption; the backend never calls the Fernet global manager for collect data.
+    * INV-3 No raw PII or secret material in logs, traces, error bodies or audit rows.
+  license:
+    name: MIT
+    identifier: MIT
+servers:
+  - url: https://api.keys.prod.fuzefront.com
+    description: Production (informational)
+tags:
+  - name: Collect Pairing
+  - name: Collect Devices
+  - name: Collect Runs
+  - name: Collect Import
+  - name: Collect Inbox
+security: []
+paths:
+  /api/v1/collect/pairings:
+    post:
+      tags: [Collect Pairing]
+      operationId: createCollectPairing
+      summary: Portal creates a pairing and receives a one-time pairing code
+      description: |
+        Requires an authenticated user session. The pairing code is returned once, TTL 10 minutes,
+        single use, stored server-side only as a peppered hash.
+      security: [{ sessionBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreatePairingRequest' }
+      responses:
+        '201':
+          description: Pairing created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreatePairingResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/v1/collect/pairings/redeem:
+    post:
+      tags: [Collect Pairing]
+      operationId: redeemCollectPairing
+      summary: Device redeems a pairing code and registers its public keys
+      description: |
+        Unauthenticated by session; protected by the code, a proof-of-possession of the submitted
+        signing key, and rate limits. The response never distinguishes unknown, expired, burned or
+        already-used codes. Moves the pairing to `awaiting_confirmation`; no token or bundle is issued.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RedeemPairingRequest' }
+      responses:
+        '202':
+          description: Awaiting user confirmation in the portal
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RedeemPairingResponse' }
+        '400': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/v1/collect/pairings/{pairing_id}:
+    get:
+      tags: [Collect Pairing]
+      operationId: getCollectPairing
+      description: "Owner-scoped. Returns only what the portal needs: state, device details, and the two public keys from which it recomputes the SAS."
+      summary: Portal reads a pairing to show device details and the keys needed to recompute the SAS
+      x-pagination: exempt
+      security: [{ sessionBearer: [] }]
+      parameters:
+        - $ref: '#/components/parameters/PairingId'
+      responses:
+        '200':
+          description: Pairing state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PairingView' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/collect/pairings/{pairing_id}/confirm:
+    post:
+      tags: [Collect Pairing]
+      operationId: confirmCollectPairing
+      summary: Portal confirms the SAS and supplies the sealed pairing bundle
+      description: |
+        The browser, holding the vault key, seals `{inbox_pub, kid, tag_key, policy}` to the device's
+        `dev_bundle_pub` (the SAS binds that key). The server relays it and cannot read it.
+      security: [{ sessionBearer: [] }]
+      parameters:
+        - $ref: '#/components/parameters/PairingId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConfirmPairingRequest' }
+      responses:
+        '204': { description: Confirmed }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+
+  /api/v1/collect/pairings/{pairing_id}/complete:
+    post:
+      tags: [Collect Pairing]
+      operationId: completeCollectPairing
+      summary: Device collects its device identity and the sealed bundle (once)
+      description: |
+        Authenticated only by a DPoP proof signed with the key submitted at redeem. Retrievable once;
+        later calls return 410. No bearer secret is issued to the device.
+      security: [{ devicePoP: [] }]
+      parameters:
+        - $ref: '#/components/parameters/PairingId'
+        - $ref: '#/components/parameters/DPoPProof'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmptyObject' }
+      responses:
+        '200':
+          description: Device registered
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CompletePairingResponse' }
+        '202': { description: Not confirmed yet; retry after `Retry-After` }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '410': { $ref: '#/components/responses/Problem' }
+
+  /api/v1/collect/devices:
+    get:
+      tags: [Collect Devices]
+      operationId: listCollectDevices
+      description: Owner-scoped, cursor-paginated. Never returns key material beyond public keys.
+      summary: List the caller's paired devices
+      security: [{ sessionBearer: [] }]
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, maxLength: 256 }
+      responses:
+        '200':
+          description: A page of devices
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DevicePage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/v1/collect/devices/{device_id}:
+    delete:
+      tags: [Collect Devices]
+      operationId: revokeCollectDevice
+      summary: Revoke a device (portal) or self-revoke (device)
+      description: |
+        Idempotent. Effect is immediate: open runs closed, tokens dead. Staged items from the device are
+        retained and flagged `from_revoked_device` unless `purge_staged=true`.
+      security: [{ sessionBearer: [] }, { devicePoP: [] }]
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+        - name: purge_staged
+          in: query
+          required: false
+          schema: { type: boolean, default: false }
+        - $ref: '#/components/parameters/DPoPProofOptional'
+      responses:
+        '204': { description: Revoked (or already revoked) }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/v1/collect/devices/{device_id}/arm:
+    post:
+      tags: [Collect Devices]
+      operationId: armCollectDevice
+      description: Sets a bounded authorisation window (default and maximum 15 minutes) for the named sources. Rate limited; may require step-up.
+      summary: Portal authorises one collection window for a device
+      security: [{ sessionBearer: [] }]
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ArmRequest' }
+      responses:
+        '200':
+          description: Armed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ArmResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/v1/collect/devices/{device_id}/commands:
+    get:
+      tags: [Collect Devices]
+      operationId: getCollectDeviceCommands
+      description: Device-authenticated by proof of possession. Also returns the current device policy and `min_agent_version`.
+      summary: Device polls for an armed window and policy (jittered ~60 s)
+      x-pagination: exempt
+      security: [{ devicePoP: [] }]
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/DPoPProof'
+      responses:
+        '200':
+          description: Current command state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceCommands' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '426': { $ref: '#/components/responses/UpgradeRequired' }
+
+  /api/v1/collect/runs:
+    post:
+      tags: [Collect Runs]
+      operationId: openCollectRun
+      summary: Device opens a run and receives a scoped, short-lived upload token
+      description: |
+        Requires the device to be `active` and (for `portal_armed`) armed for the requested source.
+        Enforces source frequency limits and the server-authoritative cool-down / circuit breaker for
+        `gpm_web` (429 with Retry-After).
+      security: [{ devicePoP: [] }]
+      parameters:
+        - $ref: '#/components/parameters/DPoPProof'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OpenRunRequest' }
+      responses:
+        '201':
+          description: Run opened
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OpenRunResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '426': { $ref: '#/components/responses/UpgradeRequired' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/v1/collect/runs/{run_id}/tokens:
+    post:
+      tags: [Collect Runs]
+      operationId: renewCollectUploadToken
+      description: At most 12 renewals per run and never beyond the run deadline. The previous token is invalidated.
+      summary: Renew the upload token (device key proof; invalidates the previous token)
+      security: [{ devicePoP: [] }]
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+        - $ref: '#/components/parameters/DPoPProof'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmptyObject' }
+      responses:
+        '200':
+          description: New token
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UploadToken' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/v1/collect/runs/{run_id}/imports:
+    post:
+      tags: [Collect Import]
+      operationId: importCollectItems
+      summary: Bulk-import a batch of sealed items (idempotent, de-duplicated)
+      description: |
+        Idempotent per `Idempotency-Key` (24 h). The same key with the same body returns the stored
+        response and applies nothing twice; the same key with a different body is `409`.
+        Expiry is checked at admission: an expired token applies nothing (401); an admitted batch
+        completes atomically. The user scope of every row comes from the token, never the body.
+
+        Per-item outcomes: `created` (new tag), `unchanged` (same tag and revision: de-duplicated),
+        `updated` (same tag, new revision: restaged for the user to accept), `rejected` (with a reason).
+        A tag repeated inside a batch rejects the later occurrence (`duplicate_in_batch`).
+        Envelope-level problems (bad JSON, oversize, unknown field) reject the whole batch before
+        any item is applied. The server validates envelope SHAPE only; it cannot validate plaintext.
+      security: [{ uploadToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+        - $ref: '#/components/parameters/DPoPProof'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ImportBatchRequest' }
+      responses:
+        '200':
+          description: Per-item results
+          headers:
+            Idempotent-Replay:
+              description: '`true` when this is a stored replay of an earlier identical request'
+              schema: { type: string, enum: ['true', 'false'] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ImportBatchResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '413': { $ref: '#/components/responses/Problem' }
+        '415': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '426': { $ref: '#/components/responses/UpgradeRequired' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/v1/collect/runs/{run_id}/close:
+    post:
+      tags: [Collect Runs]
+      operationId: closeCollectRun
+      description: Counters and reason codes only; never item data. Idempotent.
+      summary: Close a run and report the outcome (counters and reason codes only)
+      security: [{ uploadToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/RunId'
+        - $ref: '#/components/parameters/DPoPProof'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CloseRunRequest' }
+      responses:
+        '204': { description: Closed (idempotent) }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Problem' }
+
+  /api/v1/collect/inbox:
+    get:
+      tags: [Collect Inbox]
+      operationId: listCollectInbox
+      description: Owner-scoped, cursor-paginated. Returns ciphertext only; only a user client holding the vault key can open it.
+      summary: Page through the caller's staged sealed items (ciphertext only)
+      security: [{ sessionBearer: [] }]
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string, maxLength: 256 }
+        - name: state
+          in: query
+          required: false
+          schema: { type: string, enum: [staged, committed, dismissed] }
+      responses:
+        '200':
+          description: A page of staged items
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InboxPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/v1/collect/inbox/commits:
+    post:
+      tags: [Collect Inbox]
+      operationId: ackCollectInboxCommits
+      summary: Acknowledge items the user client wrote to (or dismissed from) the personal vault
+      description: |
+        VAULT SEAM. The user client decrypts and reviews staged items, then writes them to the user's
+        personal Vaultwarden vault using client-side encryption under the vault key (FuzeKeys implements
+        no field-level crypto). It then calls this endpoint with only the resulting handle. The server
+        purges the ciphertext and keeps a tombstone (tags, state, `vault_item_ref`). Idempotent per tag.
+        The backend never receives plaintext or the vault key; it MUST NOT use the Fernet global manager.
+      security: [{ sessionBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AckCommitsRequest' }
+      responses:
+        '200':
+          description: Per-tag acknowledgement
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AckCommitsResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Problem' }
+
+components:
+  securitySchemes:
+    sessionBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Existing interactive user session (see backend/app/routers/auth.py). Collect upload tokens are never accepted here and session tokens are never accepted on device routes.
+    devicePoP:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: |
+        `Device <device_id>` plus a DPoP proof (RFC 9449) signed by the device's registered ES256 key.
+        No bearer secret is stored on the device.
+    uploadToken:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: |
+        `DPoP <upload_token>` plus a DPoP proof with `ath`. Opaque token, SHA-256 at rest, bound to
+        run_id + device + key thumbprint, TTL 10 min, valid only on the run's /imports and /close.
+
+  parameters:
+    PairingId:
+      name: pairing_id
+      in: path
+      required: true
+      description: Server-minted identifier
+      schema: { type: string, minLength: 8, maxLength: 64, pattern: '^[A-Za-z0-9_-]+$' }
+    DeviceId:
+      name: device_id
+      in: path
+      required: true
+      description: Server-minted identifier
+      schema: { type: string, minLength: 8, maxLength: 64, pattern: '^[A-Za-z0-9_-]+$' }
+    RunId:
+      name: run_id
+      in: path
+      required: true
+      description: Server-minted identifier
+      schema: { type: string, minLength: 8, maxLength: 64, pattern: '^[A-Za-z0-9_-]+$' }
+    DPoPProof:
+      name: DPoP
+      in: header
+      required: true
+      description: RFC 9449 proof JWS (ES256). `htm`,`htu`,`iat` (+/-60 s),`jti`,`nonce`, and `ath` when a token is presented.
+      schema: { type: string, maxLength: 2048 }
+    DPoPProofOptional:
+      name: DPoP
+      in: header
+      required: false
+      description: Required when the caller is a device; omitted for portal sessions.
+      schema: { type: string, maxLength: 2048 }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Device-generated random value (>=128 bits, base64url). A retry token, not a resource identifier.
+      schema: { type: string, minLength: 22, maxLength: 64, pattern: '^[A-Za-z0-9_-]+$' }
+
+  responses:
+    Unauthorized:
+      description: Missing, expired, revoked, replayed or wrongly-bound credentials. Non-disclosing; the body never says which.
+      headers:
+        WWW-Authenticate:
+          schema: { type: string }
+          description: 'e.g. `DPoP error="invalid_token"`; may carry a fresh `DPoP-Nonce`'
+        DPoP-Nonce:
+          schema: { type: string }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Unknown, or not owned by the caller (indistinguishable).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    TooManyRequests:
+      description: Rate limited or in server-enforced cool-down.
+      headers:
+        Retry-After:
+          schema: { type: integer, minimum: 1 }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    UpgradeRequired:
+      description: Agent version is below the server `min_agent_version`; update before retrying.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Problem:
+      description: Error (RFC 9457). Bodies and `detail` MUST NOT contain submitted item data, tags, ciphertext, tokens or codes.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    EmptyObject:
+      type: object
+      additionalProperties: false
+      properties: {}
+
+    Problem:
+      type: object
+      additionalProperties: false
+      required: [type, title, status]
+      properties:
+        type: { type: string, maxLength: 200, description: 'Stable code URI/slug, e.g. `collect/invalid-envelope`.' }
+        title: { type: string, maxLength: 200 }
+        status: { type: integer }
+        detail: { type: string, maxLength: 300 }
+
+    Source:
+      type: string
+      enum: [gpm_web, wincred]
+
+    Kind:
+      type: string
+      enum: [login, generic_credential]
+
+    Jwk:
+      type: object
+      description: Public key only. A private member (`d`,`p`,`q`,`dp`,`dq`,`qi`) MUST be rejected.
+      additionalProperties: false
+      required: [kty]
+      properties:
+        kty: { type: string, enum: [EC, RSA] }
+        crv: { type: string, enum: [P-256] }
+        x: { type: string, maxLength: 64 }
+        y: { type: string, maxLength: 64 }
+        'n': { type: string, maxLength: 700 }
+        e: { type: string, maxLength: 16 }
+        alg: { type: string, enum: [ES256, RSA-OAEP-256] }
+        use: { type: string, enum: [sig, enc] }
+
+    SealedEnvelope:
+      type: object
+      description: |
+        `fk-seal-v1`. AES-256-GCM over the canonical item JSON; DEK wrapped RSA-OAEP-SHA-256 to the inbox
+        public key. AAD = "fk-collect-v1|" + device_id + "|" + dedupe_tag + "|" + revision_tag + "|" + kid + "|" + kind,
+        recomputed by the recipient, so it is not transmitted.
+      additionalProperties: false
+      required: [v, alg, kid, wrapped_dek, nonce, ct]
+      properties:
+        v: { type: integer, const: 1 }
+        alg: { type: string, enum: ['RSA-OAEP-256+A256GCM'], description: 'Allow-list; a future HPKE value is added by contract revision.' }
+        kid: { type: string, minLength: 8, maxLength: 64, pattern: '^[A-Za-z0-9_-]+$' }
+        wrapped_dek: { type: string, minLength: 300, maxLength: 700, pattern: '^[A-Za-z0-9_-]+$' }
+        nonce: { type: string, minLength: 16, maxLength: 16, pattern: '^[A-Za-z0-9_-]+$' }
+        ct: { type: string, minLength: 24, maxLength: 22000, pattern: '^[A-Za-z0-9_-]+$' }
+
+    CreatePairingRequest:
+      type: object
+      additionalProperties: false
+      required: [sources, run_policy]
+      properties:
+        sources:
+          type: array
+          minItems: 1
+          maxItems: 2
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/Source' }
+        run_policy:
+          type: string
+          enum: [portal_armed, device_initiated]
+          default: portal_armed
+        expected_google_account:
+          type: string
+          format: email
+          maxLength: 254
+          description: Required when `gpm_web` is requested. Compared in memory by the agent; never logged.
+        gpm_consent_accepted:
+          type: boolean
+          description: Must be true when `gpm_web` is requested (own account, throttling, Google ToS risk).
+        workspace_attestation:
+          type: boolean
+          description: Required for non-consumer Google accounts.
+        replaces_device_id:
+          type: string
+          maxLength: 64
+          description: Server-minted id of the device this pairing supersedes (revoked atomically on completion).
+
+    CreatePairingResponse:
+      type: object
+      additionalProperties: false
+      required: [pairing_id, pairing_code, expires_at]
+      properties:
+        pairing_id: { type: string }
+        pairing_code: { type: string, pattern: '^[0-9A-HJKMNP-TV-Z]{5}-[0-9A-HJKMNP-TV-Z]{5}$', description: Shown once. Never logged. }
+        expires_at: { type: string, format: date-time }
+
+    RedeemPairingRequest:
+      type: object
+      additionalProperties: false
+      required: [pairing_code, dev_sig_pub, dev_bundle_pub, label, platform, agent_version, proof]
+      properties:
+        pairing_code: { type: string, pattern: '^[0-9A-HJKMNP-TV-Z]{5}-[0-9A-HJKMNP-TV-Z]{5}$' }
+        dev_sig_pub: { $ref: '#/components/schemas/Jwk' }
+        dev_bundle_pub: { $ref: '#/components/schemas/Jwk' }
+        label: { type: string, minLength: 1, maxLength: 80 }
+        platform: { type: string, enum: [windows-amd64, windows-arm64] }
+        agent_version: { type: string, maxLength: 32, pattern: '^[0-9A-Za-z.+-]+$' }
+        proof: { type: string, maxLength: 2048, description: 'JWS over {htm, htu, iat, jti, code_hash} signed with dev_sig.' }
+
+    RedeemPairingResponse:
+      type: object
+      additionalProperties: false
+      required: [pairing_id, state]
+      properties:
+        pairing_id: { type: string }
+        state: { type: string, enum: [awaiting_confirmation] }
+        poll_after_seconds: { type: integer, minimum: 1, maximum: 60 }
+
+    PairingView:
+      type: object
+      additionalProperties: false
+      required: [pairing_id, state, expires_at]
+      properties:
+        pairing_id: { type: string }
+        state: { type: string, enum: [pending, awaiting_confirmation, confirmed, completed, expired, cancelled] }
+        expires_at: { type: string, format: date-time }
+        device:
+          type: object
+          additionalProperties: false
+          properties:
+            label: { type: string }
+            platform: { type: string }
+            agent_version: { type: string }
+            observed_ip: { type: string }
+            observed_at: { type: string, format: date-time }
+            dev_sig_pub: { $ref: '#/components/schemas/Jwk' }
+            dev_bundle_pub: { $ref: '#/components/schemas/Jwk' }
+          description: The portal recomputes the SAS from these two keys; a mismatch with the device screen means abort.
+
+    ConfirmPairingRequest:
+      type: object
+      additionalProperties: false
+      required: [sealed_bundle, sas_confirmed]
+      properties:
+        sealed_bundle:
+          $ref: '#/components/schemas/SealedEnvelope'
+        sas_confirmed:
+          type: boolean
+          const: true
+          description: The user typed the SAS words shown on the device. Checked client-side; recorded for audit.
+
+    CompletePairingResponse:
+      type: object
+      additionalProperties: false
+      required: [device_id, sealed_bundle, device_expires_at, policy]
+      properties:
+        device_id: { type: string }
+        sealed_bundle: { $ref: '#/components/schemas/SealedEnvelope' }
+        device_expires_at: { type: string, format: date-time }
+        policy: { $ref: '#/components/schemas/DevicePolicy' }
+
+    DevicePolicy:
+      type: object
+      additionalProperties: false
+      required: [min_agent_version, throttle]
+      properties:
+        min_agent_version: { type: string }
+        throttle:
+          type: object
+          additionalProperties: false
+          description: Server policy may only be slower or lower than the ADR-001 defaults.
+          properties:
+            median_action_seconds: { type: integer, minimum: 8 }
+            max_actions_per_minute: { type: integer, minimum: 1, maximum: 12 }
+            rest_every_entries: { type: integer, minimum: 1, maximum: 25 }
+            max_entries_per_run: { type: integer, minimum: 1, maximum: 2000 }
+
+    Device:
+      type: object
+      additionalProperties: false
+      required: [device_id, label, state, created_at, expires_at]
+      properties:
+        device_id: { type: string }
+        label: { type: string }
+        platform: { type: string }
+        agent_version: { type: string }
+        state: { type: string, enum: [active, suspended, revoked, expired] }
+        run_policy: { type: string, enum: [portal_armed, device_initiated] }
+        armed_until: { type: [string, 'null'], format: date-time }
+        cooldown_until: { type: [string, 'null'], format: date-time }
+        last_seen_at: { type: [string, 'null'], format: date-time }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+
+    Page:
+      type: object
+      additionalProperties: false
+      required: [next_cursor, limit]
+      properties:
+        next_cursor: { type: [string, 'null'] }
+        limit: { type: integer }
+
+    DevicePage:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Device' } }
+        page: { $ref: '#/components/schemas/Page' }
+
+    ArmRequest:
+      type: object
+      additionalProperties: false
+      required: [sources]
+      properties:
+        sources:
+          type: array
+          minItems: 1
+          maxItems: 2
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/Source' }
+        window_seconds: { type: integer, minimum: 60, maximum: 900, default: 900 }
+
+    ArmResponse:
+      type: object
+      additionalProperties: false
+      required: [armed_until]
+      properties:
+        armed_until: { type: string, format: date-time }
+
+    DeviceCommands:
+      type: object
+      additionalProperties: false
+      required: [armed, poll_after_seconds, policy]
+      properties:
+        armed: { type: boolean }
+        armed_until: { type: [string, 'null'], format: date-time }
+        armed_sources:
+          type: array
+          items: { $ref: '#/components/schemas/Source' }
+        poll_after_seconds: { type: integer, minimum: 30, maximum: 600 }
+        expected_google_account:
+          type: [string, 'null']
+          description: Delivered per run to the agent over TLS; the agent compares it in memory.
+        policy: { $ref: '#/components/schemas/DevicePolicy' }
+
+    OpenRunRequest:
+      type: object
+      additionalProperties: false
+      required: [source, agent_version]
+      properties:
+        source: { $ref: '#/components/schemas/Source' }
+        agent_version: { type: string, maxLength: 32, pattern: '^[0-9A-Za-z.+-]+$' }
+
+    UploadToken:
+      type: object
+      additionalProperties: false
+      required: [upload_token, token_expires_at, caps]
+      properties:
+        upload_token: { type: string, minLength: 43, maxLength: 64, description: 'Opaque, shown once. Never logged.' }
+        token_expires_at: { type: string, format: date-time }
+        renewals_remaining: { type: integer, minimum: 0, maximum: 12 }
+        caps: { $ref: '#/components/schemas/RunCaps' }
+
+    RunCaps:
+      type: object
+      additionalProperties: false
+      properties:
+        max_items: { type: integer, example: 2000 }
+        max_batches: { type: integer, example: 100 }
+        max_total_bytes: { type: integer, example: 16777216 }
+        max_batch_items: { type: integer, example: 100 }
+        max_batch_bytes: { type: integer, example: 2097152 }
+        max_item_bytes: { type: integer, example: 16384 }
+        run_deadline: { type: string, format: date-time }
+
+    OpenRunResponse:
+      type: object
+      additionalProperties: false
+      required: [run_id, upload_token, token_expires_at, caps]
+      properties:
+        run_id: { type: string }
+        upload_token: { type: string }
+        token_expires_at: { type: string, format: date-time }
+        caps: { $ref: '#/components/schemas/RunCaps' }
+        expected_google_account: { type: [string, 'null'] }
+
+    ImportItem:
+      type: object
+      additionalProperties: false
+      required: [dedupe_tag, revision_tag, kind, sealed]
+      properties:
+        dedupe_tag:
+          type: string
+          minLength: 22
+          maxLength: 22
+          pattern: '^[A-Za-z0-9_-]+$'
+          description: Blind index. base64url(HMAC-SHA256(tag_key, "tag"||0x00||origin_host||0x00||username)) truncated to 16 bytes.
+        revision_tag:
+          type: string
+          minLength: 22
+          maxLength: 22
+          pattern: '^[A-Za-z0-9_-]+$'
+          description: base64url(HMAC-SHA256(tag_key, "rev"||0x00||canonical_plaintext)) truncated to 16 bytes.
+        kind: { $ref: '#/components/schemas/Kind' }
+        sealed: { $ref: '#/components/schemas/SealedEnvelope' }
+
+    ImportBatchRequest:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: '#/components/schemas/ImportItem' }
+
+    ImportResult:
+      type: object
+      additionalProperties: false
+      required: [dedupe_tag, status]
+      properties:
+        dedupe_tag: { type: string, description: 'Echo of the pseudonymous tag only.' }
+        status: { type: string, enum: [created, unchanged, updated, rejected] }
+        reason:
+          type: string
+          enum: [bad_envelope, unknown_kid, alg_unsupported, too_large, quota_exceeded, duplicate_in_batch, kind_mismatch]
+          description: Present only when status is `rejected`.
+
+    ImportBatchResponse:
+      type: object
+      additionalProperties: false
+      required: [results, counts]
+      properties:
+        results:
+          type: array
+          items: { $ref: '#/components/schemas/ImportResult' }
+        counts:
+          type: object
+          additionalProperties: false
+          required: [created, unchanged, updated, rejected]
+          properties:
+            created: { type: integer }
+            unchanged: { type: integer }
+            updated: { type: integer }
+            rejected: { type: integer }
+
+    CloseRunRequest:
+      type: object
+      additionalProperties: false
+      required: [outcome, counters]
+      properties:
+        outcome:
+          type: string
+          enum: [completed, partial, aborted, blocked, account_mismatch, recipe_mismatch, signin_timeout, suspended, browser_refused]
+        block_reason:
+          type: string
+          enum: [rate_limited, challenge, reauth_loop, stall, none]
+          default: none
+        counters:
+          type: object
+          additionalProperties: false
+          required: [read, uploaded]
+          properties:
+            read: { type: integer, minimum: 0 }
+            uploaded: { type: integer, minimum: 0 }
+            skipped: { type: integer, minimum: 0 }
+
+    InboxItem:
+      type: object
+      additionalProperties: false
+      required: [dedupe_tag, revision_tag, source, kind, sealed, device_id, state, created_at]
+      properties:
+        dedupe_tag: { type: string }
+        revision_tag: { type: string }
+        source: { $ref: '#/components/schemas/Source' }
+        kind: { $ref: '#/components/schemas/Kind' }
+        sealed: { $ref: '#/components/schemas/SealedEnvelope' }
+        device_id: { type: string, description: 'Needed to recompute the AAD.' }
+        run_id: { type: string }
+        state: { type: string, enum: [staged, committed, dismissed] }
+        from_revoked_device: { type: boolean }
+        created_at: { type: string, format: date-time }
+
+    InboxPage:
+      type: object
+      additionalProperties: false
+      required: [items, page]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/InboxItem' } }
+        page: { $ref: '#/components/schemas/Page' }
+
+    AckCommit:
+      type: object
+      additionalProperties: false
+      required: [dedupe_tag, revision_tag, source, outcome]
+      properties:
+        dedupe_tag: { type: string, minLength: 22, maxLength: 22 }
+        revision_tag: { type: string, minLength: 22, maxLength: 22 }
+        source: { $ref: '#/components/schemas/Source' }
+        outcome: { type: string, enum: [committed, dismissed] }
+        vault_item_ref:
+          type: string
+          maxLength: 255
+          description: Opaque Vaultwarden handle; required for `committed`. Same convention as Account.vault_item_ref.
+
+    AckCommitsRequest:
+      type: object
+      additionalProperties: false
+      required: [commits]
+      properties:
+        commits:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: '#/components/schemas/AckCommit' }
+
+    AckCommitsResponse:
+      type: object
+      additionalProperties: false
+      required: [acknowledged]
+      properties:
+        acknowledged: { type: integer, minimum: 0 }
