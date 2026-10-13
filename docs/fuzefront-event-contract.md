@@ -2,7 +2,7 @@
 
 Story: FKY-9 (design + scaffold). Machine-readable contract: [`data-contract.json`](../data-contract.json).
 Schemas: `backend/app/events/schemas.py`. Consumer interface: `backend/app/events/consumer.py`.
-Handlers: **FKY-10** (not implemented here).
+Handlers: `backend/app/events/handlers.py` (FKY-10).
 
 ## Ownership
 
@@ -78,3 +78,20 @@ standardizes on Kafka. The broker and topic are then delegated to FuzeInfra via
    `fuzefront_identity.assert_ref` when that package is adopted.
 4. `governance/data-contract.schema.json` (FuzeSDLC) was unreachable; re-validate
    `data-contract.json` against it.
+
+## Handlers (FKY-10)
+
+Handlers write FuzeKeys' local read-only reference index -- `ref_users`, `ref_orgs`,
+`ref_org_members` (migration `e2026evt02`; bare ids, no PII, no cross-aggregate FKs).
+They do not reuse the legacy local-auth `users`/`organizations` tables: those have
+integer keys and NOT NULL credential columns an id-only event cannot populate.
+
+`user.deleted` (soft and hard) applies the `cascade` policy: the `ref_users` row is kept
+as a tombstone (`inactive` for soft, `deleted` for hard), `platform_identities` bindings
+and `ref_org_members` rows are deleted, `connector_credentials` are set to
+`owner_deleted` (leasing requires `connected`) with `identity_email` cleared, and
+`connector_grant_intents` are set to `absent`.
+
+**Residual (open item 5):** Vault secrets behind `owner_deleted` credentials are not
+deleted inline -- Vault I/O cannot run inside the DB savepoint, and dropping `vault_ref`
+would orphan the secret. A reconciler must purge Vault material for `owner_deleted` rows.

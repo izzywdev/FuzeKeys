@@ -74,7 +74,7 @@
       "aggregateType": "user",
       "schema": "backend/app/events/schemas.py#UserCreatedPayload",
       "purpose": "Register the user in the local ref_index so L1 validation can resolve it.",
-      "handlerStatus": "scaffold-only (FKY-10)"
+      "handlerStatus": "implemented (FKY-10): backend/app/events/handlers.py"
     },
     {
       "eventType": "user.deleted",
@@ -82,7 +82,7 @@
       "aggregateType": "user",
       "schema": "backend/app/events/schemas.py#UserDeletedPayload",
       "purpose": "Apply the user onDelete policy for soft and hard delete.",
-      "handlerStatus": "scaffold-only (FKY-10)"
+      "handlerStatus": "implemented (FKY-10): backend/app/events/handlers.py"
     },
     {
       "eventType": "org.created",
@@ -90,7 +90,7 @@
       "aggregateType": "org",
       "schema": "backend/app/events/schemas.py#OrgCreatedPayload",
       "purpose": "Register the org in the local ref_index.",
-      "handlerStatus": "scaffold-only (FKY-10)"
+      "handlerStatus": "implemented (FKY-10): backend/app/events/handlers.py"
     },
     {
       "eventType": "org.member.added",
@@ -98,7 +98,7 @@
       "aggregateType": "org",
       "schema": "backend/app/events/schemas.py#OrgMemberAddedPayload",
       "purpose": "Maintain the user-in-org relationship used for tenant-scoped access.",
-      "handlerStatus": "scaffold-only (FKY-10)"
+      "handlerStatus": "implemented (FKY-10): backend/app/events/handlers.py"
     },
     {
       "eventType": "org.member.removed",
@@ -106,7 +106,7 @@
       "aggregateType": "org",
       "schema": "backend/app/events/schemas.py#OrgMemberRemovedPayload",
       "purpose": "Revoke the user's org-scoped access.",
-      "handlerStatus": "scaffold-only (FKY-10)"
+      "handlerStatus": "implemented (FKY-10): backend/app/events/handlers.py"
     }
   ],
   "consumerRuntime": {

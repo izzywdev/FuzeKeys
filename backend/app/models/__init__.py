@@ -13,6 +13,7 @@ from .event_runtime import (
     EventInbox,
     EventOutbox,
 )
+from .fuzefront_refs import RefOrg, RefOrgMember, RefUser
 from .grant import Grant
 from .identity import Identity
 from .organization import Organization, OrganizationMember
@@ -45,6 +46,9 @@ __all__ = [
     "EventAggregateVersion",
     "EventDeadLetter",
     "EventOutbox",
+    "RefUser",
+    "RefOrg",
+    "RefOrgMember",
     "SmsDevice",
     "SmsOtpRequest",
     "SmsOtpReceived",

@@ -81,11 +81,14 @@ def test_all_five_event_types_validate_and_route(session, handlers, calls, event
     assert calls == [EventType(event_type)]
 
 
-def test_no_handlers_registered_writes_nothing(session):
-    """FKY-9 state: valid event, empty registry -> UNHANDLED, no partial state."""
-    assert consumer.HANDLERS == {}
+def test_all_five_handlers_are_registered():
+    assert set(consumer.HANDLERS) == set(EventType)
+
+
+def test_no_handler_for_known_type_writes_nothing(session):
+    """Known type with an empty registry -> UNHANDLED, no partial state."""
     payload, agg = VALID["user.created"]
-    assert dispatch(session, envelope("user.created", payload, agg)) is (
+    assert dispatch(session, envelope("user.created", payload, agg), {}) is (
         Outcome.UNHANDLED
     )
     assert session.query(EventInbox).count() == 0
