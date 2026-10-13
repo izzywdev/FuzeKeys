@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.database import get_db
+from app.models.account import Account
 from app.models.identity import Identity
 from app.models.user import User
 from app.routers.auth import get_current_user
@@ -92,6 +93,7 @@ class IdentityListResponse(BaseModel):
     name: str
     description: Optional[str]
     created_at: datetime
+    accounts_count: int = 0
 
 
 def decrypt_identity_data(identity: Identity) -> IdentityResponse:
@@ -229,12 +231,23 @@ async def list_identities(
                 db, current_user.id, "Identity", identity.id, "read"
             )
 
+        # One grouped COUNT for the whole page (not one query per identity).
+        counts: Dict[int, int] = {}
+        if identities:
+            count_rows = await db.execute(
+                select(Account.identity_id, func.count(Account.id))
+                .where(Account.identity_id.in_([i.id for i in identities]))
+                .group_by(Account.identity_id)
+            )
+            counts = {identity_id: n for identity_id, n in count_rows.all()}
+
         items = [
             IdentityListResponse(
                 id=identity.id,
                 name=identity.name,
                 description=identity.description,
                 created_at=identity.created_at,
+                accounts_count=counts.get(identity.id, 0),
             )
             for identity in identities
         ]
