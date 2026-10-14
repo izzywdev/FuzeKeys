@@ -1,4 +1,4 @@
-# fuze:managed template=fuze-ci-autofix.yml baseline=v1 digest=sha256:c9894c073f0d04ba46f4c082c3a18dbcf72de8ee2d29035ff6082d83517ff0c8
+# fuze:managed template=fuze-ci-autofix.yml baseline=v1 digest=sha256:7a18f4bac1385350ddca7a7951674d7d431fed8f69a114ef4b11e9f6624d8424
 name: Fuze Auto-Fix CI
 
 # RENAMED from claude-ci-autofix.yml (the claude-* -> fuze-* fleet rename; see
@@ -378,6 +378,9 @@ jobs:
             const pull_number = Number(process.env.PR_NUMBER);
             const HEADER = "fuze-code-review — automated verdict";
             const ABSTAIN = "No verdict was reached";
+            // Every outage body (passing or blocking) carries this marker: no review was
+            // performed, so there are no findings to act on.
+            const OUTAGE = "<!-- fuze-code-review-outage -->";
             // Reviews (request_changes / commented) carry the findings; the abstain path
             // posts an issue COMMENT instead. Look at both, newest first.
             const reviews = await github.rest.pulls.listReviews({
@@ -402,7 +405,7 @@ jobs:
             }
             // A genuine abstain / deferral / outage is NOT a set of fixes — there is
             // nothing in the PR to change, so do not thrash the loop on it.
-            const actionable = !latest.body.includes(ABSTAIN);
+            const actionable = !latest.body.includes(ABSTAIN) && !latest.body.includes(OUTAGE);
             core.setOutput("actionable", actionable ? "true" : "false");
             core.setOutput("findings", latest.body.slice(0, 8000));
 
@@ -412,7 +415,7 @@ jobs:
           GH_TOKEN: ${{ steps.identity.outputs.token }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
         run: |
-          gh pr comment "$PR_NUMBER" --body "🤖 fuze-code-review auto-fix loop: the latest review did not produce actionable findings (it abstained — no review could be produced, so there is nothing to auto-fix). A human is needed."
+          gh pr comment "$PR_NUMBER" --body "🤖 fuze-code-review auto-fix loop: the latest review did not produce actionable findings (it abstained, or NO REVIEW WAS PERFORMED on a provider outage — there is nothing to auto-fix). A human is needed."
           echo "::notice::latest review is a genuine abstain — no auto-fix attempted."
 
       # Fix ONLY what the reviewer flagged. No git/gh in the tool allow-list: the commit +

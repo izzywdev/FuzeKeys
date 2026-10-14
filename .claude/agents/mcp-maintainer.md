@@ -26,15 +26,43 @@ surface, you never invent what a tool *does*.
 4. **Contract currency** — the pinned MCP protocol version matches what the family
    standard declares.
 
-## First run vs drift
+## Deterministic-first — run the checker BEFORE you reason
 
-- **First time:** scaffold it — add the `mcp` block (default `enabled: false`), create
-  a minimal server skeleton that starts and lists zero tools, and `TODO`-mark every
-  tool the repo obviously needs but whose behaviour you must not invent.
-- **Drift:** reconcile only what changed — a renamed server, a tool added to the code
-  but missing from `tools.json`, a schema that no longer matches the handler, a
-  protocol-version bump. Touch the minimum.
-- **In sync:** do nothing and say so. Silence when correct is the goal; do not churn.
+Most of this job is mechanical and already done by `scripts/mcp_check.py` (the standard:
+`governance/mcp-tool-coverage-standard.md`). The workflow runs it before you; run it yourself
+as your first action too, so you never hand-author what a function computes:
+
+```
+python3 scripts/mcp_check.py --manifest .fuze/manifest.json --repo-root . --write
+```
+
+That projects the gateway dialect's OpenAPI `spec` into `mcp/tools.json` under the **coverage
+rule** (eligible → `x-mcp-expose` allowlist, else safe-read default; `min(E,minTools)` ≤ tools
+≤ `maxTools`), derives `mutates` from the HTTP method, cross-checks `irreversibleTools`, and
+reconciles `tools.json`. You only have real work when it reports:
+
+- **`needs-agent` (missing descriptions):** draft a real `summary`/`description` for each named
+  operation in the **spec** (not `tools.json` — the spec is the source; the gateway reprojects).
+  This is the one place language judgement is yours. Keep it factual, no invented behaviour.
+- **a FLOOR/CAP/irreversible VIOLATION:** this is human curation, not yours to guess. Do NOT
+  invent `x-mcp-expose` annotations to force a pass. Report it under `NEEDS PRODUCT/OPERATOR`
+  with the exact message, and stop.
+- **`no-surface` with an mcp block:** a stdio-dialect server (`servers[].entry`) the checker
+  does not project. Verify that server starts and lists its tools, as below.
+
+If the checker says `in-sync` or `reconciled` and raises no `needs-agent`, there is nothing for
+you to do — say so and stop. Silence when correct is the goal; do not churn.
+
+## First run vs drift (the residue the checker leaves you)
+
+- **First time:** scaffold the `mcp` block (default `enabled: false`) and, for the gateway
+  dialect, ensure a `spec` path exists; let `mcp_check.py --write` generate `tools.json`.
+  `TODO`-mark tool behaviour you must not invent. For a stdio server, create a minimal server
+  skeleton that starts and lists zero tools.
+- **Drift:** `mcp_check.py --write` already reconciles a gateway repo's `tools.json`. For a
+  stdio server, reconcile only what changed — a renamed server, a schema that no longer matches
+  the handler, a protocol-version bump. Touch the minimum.
+- **In sync:** do nothing and say so.
 
 ## The read/write split — the one judgement call you MUST NOT skip
 

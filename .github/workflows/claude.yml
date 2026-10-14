@@ -1,4 +1,4 @@
-# fuze:managed template=claude.yml baseline=v1 digest=sha256:dbdbe420083667d5842e0c5f35791b8941c6e6766d08ac097a6c696939842d89
+# fuze:managed template=claude.yml baseline=v1 digest=sha256:514cd27df255a79f6aaa9a8f180e83765324800e8bd98075478c0eda6e6bbaff
 name: Claude
 
 # Lets maintainers delegate work to Claude by mentioning @claude in an issue,
@@ -68,6 +68,36 @@ jobs:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
 
+      # CODER IDENTITY (docs/identity-and-roles.md). Prefer the least-privilege `fuzeoneagent`
+      # collaborator token as the coding/commit/push credential when provisioned; fall back to
+      # today's GITHUB_TOKEN with a ::warning:: when unset, so an un-provisioned repo degrades
+      # rather than breaks (passing GITHUB_TOKEN explicitly is behaviourally identical to the
+      # prior default of letting claude-code-action read it from the environment). When the
+      # token IS set, stamp the git author as fuzeoneagent — repo-local `git config` persists
+      # into the fuze-code-action composite steps in this same job. Least privilege: @claude
+      # coding must never run as the admin `izzywdev` identity.
+      # fuze:secret-sourcing FUZEONEAGENT_TOKEN=fleet — provision-secrets.yml (FLEET_SOURCED); least-privilege coder identity
+      - name: Resolve coding identity (fuzeoneagent when its token is set)
+        id: coder
+        env:
+          CODER_TOKEN: ${{ secrets.FUZEONEAGENT_TOKEN }}
+          GH_DEFAULT: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          if [ -n "${CODER_TOKEN:-}" ]; then
+            tok="$CODER_TOKEN"
+            who="fuzeoneagent (FUZEONEAGENT_TOKEN — least-privilege coder)"
+            git config user.name "fuzeoneagent"
+            git config user.email "330369996+fuzeoneagent@users.noreply.github.com"
+          else
+            tok="$GH_DEFAULT"
+            who="GITHUB_TOKEN (default — FUZEONEAGENT_TOKEN unset)"
+            echo "::warning title=coder-identity::FUZEONEAGENT_TOKEN is unset on this repo — @claude codes/commits/pushes under the default GITHUB_TOKEN identity, exactly as before. Set FUZEONEAGENT_TOKEN to author as the least-privilege coder account (docs/identity-and-roles.md)."
+          fi
+          echo "::add-mask::$tok"
+          echo "token=$tok" >> "$GITHUB_OUTPUT"
+          echo "Coding identity: $who"
+
       - name: Resolve LLM endpoint (LiteLLM in-cluster, vendor fallback)
         id: llm
         uses: ./.github/actions/llm-endpoint
@@ -81,6 +111,9 @@ jobs:
       - name: Run Claude
         uses: ./.github/actions/fuze-code-action
         with:
+          # Coder credential: fuzeoneagent when provisioned, else GITHUB_TOKEN (see the
+          # Resolve coding identity step — default-safe when FUZEONEAGENT_TOKEN is unset).
+          github-token: ${{ steps.coder.outputs.token }}
           anthropic-api-key: ${{ steps.llm.outputs.auth-token }}
           claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           show-full-output: true
