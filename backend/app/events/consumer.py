@@ -144,7 +144,11 @@ def dispatch(
         else:
             body = dict(raw)
         envelope = EventEnvelope.model_validate(body)
-    except (ValidationError, ValueError, TypeError) as exc:  # JSONDecodeError/ValidationError
+    except (
+        ValidationError,
+        ValueError,
+        TypeError,
+    ) as exc:  # JSONDecodeError/ValidationError
         return _dead_letter(session, raw, "malformed_envelope", exc)
 
     # 2. unknown type: ignore (forward compatible with new producer events)
