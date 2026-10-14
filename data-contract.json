@@ -1,0 +1,140 @@
+{
+  "$comment": "FuzeKeys data contract (FKY-9). Authored against the data-consistency skill (.claude/skills/data-consistency); governance/data-contract.schema.json (FuzeSDLC) was not reachable when this was written, so field names follow the skill's vocabulary and must be re-validated against that schema when it is available. Event schemas: backend/app/events/schemas.py. Narrative + transport decision: docs/fuzefront-event-contract.md.",
+  "service": "fuzekeys",
+  "contractVersion": 1,
+  "owns": [],
+  "ownership": {
+    "note": "FuzeKeys is a CONSUMER of FuzeFront's user and org entities. It never creates, mutates or deletes them and has no write path to them. FuzeFront is the single writer. FuzeKeys' own entities (keys_* namespace) are out of scope for this contract revision."
+  },
+  "idConventions": {
+    "spinePrefixes": {
+      "usr": "FuzeFront",
+      "org": "FuzeFront"
+    },
+    "storage": "bare",
+    "note": "usr_ and org_ are RESERVED spine prefixes (scripts/gate_identifier.py SPINE_PREFIXES). They are stored and carried BARE, exactly as FuzeFront issued them (e.g. usr_<uuid>); never re-prefixed as keys_usr_. A FuzeKeys row holding one is holding FuzeFront's id. An id is never a capability: authorization comes from the authenticated transport and policy engine, not from possessing an id."
+  },
+  "references": [
+    {
+      "name": "user",
+      "targetService": "fuzefront",
+      "targetEntity": "user",
+      "idPrefix": "usr",
+      "singleWriter": "fuzefront",
+      "storedIn": [
+        { "table": "platform_identities", "column": "subject", "status": "existing" },
+        { "table": "connector_credentials", "column": "owner_subject", "status": "existing" },
+        { "table": "connector_grant_intents", "column": "owner_subject", "status": "existing" }
+      ],
+      "validation": {
+        "level": "L1",
+        "mode": "warn",
+        "check": "assertRef('usr', id) at the boundary, then existence against the local ref_index fed by user.created / user.deleted",
+        "promoteToEnforceWhen": "projection lag is reliably inside its budget (FKY-10 exports the lag metric)",
+        "reason": "Default level. L2 verify-on-write is not warranted: a stale user reference does not by itself move money or grant access (authorization is re-checked per request against the live token)."
+      },
+      "onDelete": {
+        "policy": "cascade",
+        "modes": ["soft", "hard"],
+        "deletedTopic": "user.deleted",
+        "rationale": "FuzeKeys credential/connector/identity rows owned by a deleted user have no meaning without that user and hold encrypted secrets that must not outlive their owner. Soft and hard delete both revoke access and purge custody material; the handler is implemented in FKY-10 and must be idempotent and version-guarded."
+      }
+    },
+    {
+      "name": "org",
+      "targetService": "fuzefront",
+      "targetEntity": "org",
+      "idPrefix": "org",
+      "singleWriter": "fuzefront",
+      "storedIn": [
+        { "table": "platform_identities", "column": "tenant", "status": "existing", "note": "assumed to carry the org id; verify in FKY-10 before enforcing" },
+        { "table": "connector_credentials", "column": "tenant_id", "status": "existing", "note": "assumed to carry the org id; verify in FKY-10 before enforcing" },
+        { "table": "connector_grant_intents", "column": "tenant_id", "status": "existing", "note": "assumed to carry the org id; verify in FKY-10 before enforcing" }
+      ],
+      "validation": {
+        "level": "L1",
+        "mode": "warn",
+        "check": "assertRef('org', id) at the boundary, then existence against the local ref_index fed by org.created",
+        "promoteToEnforceWhen": "projection lag is reliably inside its budget",
+        "reason": "Default level; same reasoning as user."
+      },
+      "onDelete": {
+        "policy": "cascade",
+        "modes": ["soft", "hard"],
+        "deletedTopic": "org.deleted",
+        "rationale": "Tenant-scoped connector custody has no meaning without its org. OPEN GAP: org.deleted is NOT among the five events in scope for FKY-9/FKY-10, so this policy cannot yet be triggered. FuzeFront must add org.deleted (or the policy must be re-decided) before this reference can be promoted to mode=enforce. Until then org deletion leaves orphaned tenant rows, detectable by the L3 reconciler.",
+        "status": "blocked-on-event"
+      }
+    }
+  ],
+  "consumes": [
+    {
+      "eventType": "user.created",
+      "producer": "fuzefront",
+      "aggregateType": "user",
+      "schema": "backend/app/events/schemas.py#UserCreatedPayload",
+      "purpose": "Register the user in the local ref_index so L1 validation can resolve it.",
+      "handlerStatus": "scaffold-only (FKY-10)"
+    },
+    {
+      "eventType": "user.deleted",
+      "producer": "fuzefront",
+      "aggregateType": "user",
+      "schema": "backend/app/events/schemas.py#UserDeletedPayload",
+      "purpose": "Apply the user onDelete policy for soft and hard delete.",
+      "handlerStatus": "scaffold-only (FKY-10)"
+    },
+    {
+      "eventType": "org.created",
+      "producer": "fuzefront",
+      "aggregateType": "org",
+      "schema": "backend/app/events/schemas.py#OrgCreatedPayload",
+      "purpose": "Register the org in the local ref_index.",
+      "handlerStatus": "scaffold-only (FKY-10)"
+    },
+    {
+      "eventType": "org.member.added",
+      "producer": "fuzefront",
+      "aggregateType": "org",
+      "schema": "backend/app/events/schemas.py#OrgMemberAddedPayload",
+      "purpose": "Maintain the user-in-org relationship used for tenant-scoped access.",
+      "handlerStatus": "scaffold-only (FKY-10)"
+    },
+    {
+      "eventType": "org.member.removed",
+      "producer": "fuzefront",
+      "aggregateType": "org",
+      "schema": "backend/app/events/schemas.py#OrgMemberRemovedPayload",
+      "purpose": "Revoke the user's org-scoped access.",
+      "handlerStatus": "scaffold-only (FKY-10)"
+    }
+  ],
+  "consumerRuntime": {
+    "envelope": "v2",
+    "schemaVersion": 2,
+    "idempotency": "event_inbox, unique(event_id); duplicate delivery is a no-op",
+    "ordering": "event_aggregate_versions version guard on (aggregateType, aggregateId); aggregateVersion <= last applied is skipped (stale)",
+    "failureHandling": {
+      "unknownEventType": "log metadata only (no PII) and ignore; forward compatible",
+      "malformedOrSchemaViolating": "reject and dead-letter (event_dead_letters: reason code, field locations, payload SHA-256; raw body never stored); no state applied",
+      "handlerFailure": "savepoint rollback, no partial state, outcome RETRY so the transport redelivers"
+    },
+    "entrypoint": "backend/app/events/consumer.py#dispatch",
+    "tables": ["event_inbox", "event_aggregate_versions", "event_dead_letters", "event_outbox"],
+    "migration": "backend/alembic/versions/e2026evt01_event_consumer_runtime.py",
+    "piiPolicy": "Payloads carry ids and a role label only. Handlers log eventId, eventType, aggregateVersion and outcome only; never payload values."
+  },
+  "emits": [],
+  "outbox": {
+    "table": "event_outbox",
+    "note": "Provisioned for the first FuzeKeys-emitted event. emits is empty today, so nothing is published and no relay exists. Any future event MUST be written to this table in the same transaction as its state change; never call a producer directly."
+  },
+  "projections": [],
+  "transport": {
+    "decision": "webhook-rest-ingress",
+    "status": "decided",
+    "summary": "FuzeFront delivers events by POSTing envelope v2 JSON to an authenticated FuzeKeys ingress endpoint; FuzeKeys verifies the caller as a FuzeFront workload via MachineTokenVerifier. At-least-once delivery with retry on non-2xx; idempotency/ordering are handled by the consumer runtime above.",
+    "alternative": "Kafka consumer group on a FuzeFront-owned topic. Adopt only if the platform standardizes on Kafka; the broker/topic provisioning is then delegated to FuzeInfra via @claude and is NOT built from this repo.",
+    "details": "docs/fuzefront-event-contract.md"
+  }
+}

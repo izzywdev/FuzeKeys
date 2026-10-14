@@ -7,6 +7,12 @@ from .agent import Agent, AgentScope
 from .api_key import ApiKey
 from .approval import ApprovalRequest, AuditLog
 from .connector import ConnectorCredential
+from .event_runtime import (
+    EventAggregateVersion,
+    EventDeadLetter,
+    EventInbox,
+    EventOutbox,
+)
 from .grant import Grant
 from .identity import Identity
 from .organization import Organization, OrganizationMember
@@ -35,6 +41,10 @@ __all__ = [
     "ApprovalRequest",
     "AuditLog",
     "Grant",
+    "EventInbox",
+    "EventAggregateVersion",
+    "EventDeadLetter",
+    "EventOutbox",
     "SmsDevice",
     "SmsOtpRequest",
     "SmsOtpReceived",
