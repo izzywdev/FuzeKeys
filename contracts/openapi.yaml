@@ -2818,6 +2818,517 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/secrets/environments:
+    post:
+      tags:
+      - Secrets
+      summary: Create Environment
+      operationId: post_secrets_environments
+      security:
+      - HTTPBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnvironmentCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvironmentResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Secrets
+      summary: List Environments
+      operationId: get_secrets_environments
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_EnvironmentResponse_'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/secrets/environments/{env_id}:
+    get:
+      tags:
+      - Secrets
+      summary: Get Environment
+      operationId: get_secrets_environments_by_env_id
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: env_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Env Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvironmentResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Secrets
+      summary: Delete Environment
+      operationId: delete_secrets_environments_by_env_id
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: env_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Env Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/secrets/environments/{env_id}/snapshots:
+    get:
+      tags:
+      - Secrets
+      summary: List Snapshots
+      operationId: get_secrets_environments_by_env_id_snapshots
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: env_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Env Id
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_SnapshotResponse_'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/secrets/environments/{env_id}/rollback:
+    post:
+      tags:
+      - Secrets
+      summary: Rollback Environment
+      operationId: post_secrets_environments_by_env_id_rollback
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: env_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Env Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RollbackEnvRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnvironmentResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/secrets/environments/{env_id}/export:
+    get:
+      tags:
+      - Secrets
+      summary: Export Environment
+      operationId: get_secrets_environments_by_env_id_export
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: env_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Env Id
+      - name: snapshot
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+            minimum: 1
+          - type: 'null'
+          title: Snapshot
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      x-pagination: exempt
+  /api/v1/secrets/environments/{env_id}/secrets:
+    post:
+      tags:
+      - Secrets
+      summary: Create Secret
+      operationId: post_secrets_environments_by_env_id_secrets
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: env_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Env Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecretCreate'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecretResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - Secrets
+      summary: List Secrets
+      operationId: get_secrets_environments_by_env_id_secrets
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: env_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Env Id
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_SecretResponse_'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/secrets/environments/{env_id}/secrets/{secret_id}:
+    put:
+      tags:
+      - Secrets
+      summary: Update Secret
+      operationId: put_secrets_environments_by_env_id_secrets_by_secret_id
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: env_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Env Id
+      - name: secret_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Secret Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecretUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecretResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Secrets
+      summary: Delete Secret
+      operationId: delete_secrets_environments_by_env_id_secrets_by_secret_id
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: env_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Env Id
+      - name: secret_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Secret Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/secrets/environments/{env_id}/secrets/{secret_id}/versions:
+    get:
+      tags:
+      - Secrets
+      summary: List Versions
+      operationId: get_secrets_environments_by_env_id_secrets_by_secret_id_versions
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: env_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Env Id
+      - name: secret_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Secret Id
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Page_VersionResponse_'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/secrets/environments/{env_id}/secrets/{secret_id}/reveal:
+    post:
+      tags:
+      - Secrets
+      summary: Reveal Secret
+      operationId: post_secrets_environments_by_env_id_secrets_by_secret_id_reveal
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: env_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Env Id
+      - name: secret_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Secret Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevealRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevealResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/secrets/environments/{env_id}/secrets/{secret_id}/rollback:
+    post:
+      tags:
+      - Secrets
+      summary: Rollback Secret
+      operationId: post_secrets_environments_by_env_id_secrets_by_secret_id_rollbac
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: env_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Env Id
+      - name: secret_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          title: Secret Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RollbackSecretRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecretResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
 components:
   schemas:
     AccountCreate:
@@ -4593,6 +5104,362 @@ components:
       - first_name
       - last_name
       title: SignupRequest
+    EnvironmentCreate:
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          minLength: 1
+          pattern: ^[A-Za-z0-9][A-Za-z0-9 _-]*$
+          title: Name
+        description:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Description
+      additionalProperties: false
+      type: object
+      required:
+      - name
+      title: EnvironmentCreate
+    EnvironmentResponse:
+      properties:
+        id:
+          type: integer
+          title: Id
+        name:
+          type: string
+          title: Name
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        current_snapshot_version:
+          type: integer
+          title: Current Snapshot Version
+        snapshot_count:
+          type: integer
+          title: Snapshot Count
+        secret_count:
+          type: integer
+          title: Secret Count
+        created_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Created At
+        updated_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Updated At
+      type: object
+      required:
+      - id
+      - name
+      - description
+      - current_snapshot_version
+      - snapshot_count
+      - secret_count
+      - created_at
+      - updated_at
+      title: EnvironmentResponse
+    ExportResponse:
+      properties:
+        environment_id:
+          type: integer
+          title: Environment Id
+        snapshot_version:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Snapshot Version
+        values:
+          additionalProperties:
+            type: string
+          type: object
+          title: Values
+      type: object
+      required:
+      - environment_id
+      - snapshot_version
+      - values
+      title: ExportResponse
+    Page_EnvironmentResponse_:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/EnvironmentResponse'
+          type: array
+          title: Items
+        page:
+          $ref: '#/components/schemas/PageInfo'
+      type: object
+      required:
+      - items
+      - page
+      title: Page[EnvironmentResponse]
+    Page_SecretResponse_:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/SecretResponse'
+          type: array
+          title: Items
+        page:
+          $ref: '#/components/schemas/PageInfo'
+      type: object
+      required:
+      - items
+      - page
+      title: Page[SecretResponse]
+    Page_SnapshotResponse_:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/SnapshotResponse'
+          type: array
+          title: Items
+        page:
+          $ref: '#/components/schemas/PageInfo'
+      type: object
+      required:
+      - items
+      - page
+      title: Page[SnapshotResponse]
+    Page_VersionResponse_:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/VersionResponse'
+          type: array
+          title: Items
+        page:
+          $ref: '#/components/schemas/PageInfo'
+      type: object
+      required:
+      - items
+      - page
+      title: Page[VersionResponse]
+    RevealRequest:
+      properties:
+        version:
+          anyOf:
+          - type: integer
+            minimum: 1.0
+          - type: 'null'
+          title: Version
+      additionalProperties: false
+      type: object
+      title: RevealRequest
+    RevealResponse:
+      properties:
+        secret_id:
+          type: integer
+          title: Secret Id
+        version:
+          type: integer
+          title: Version
+        value:
+          type: string
+          title: Value
+      type: object
+      required:
+      - secret_id
+      - version
+      - value
+      title: RevealResponse
+    RollbackEnvRequest:
+      properties:
+        snapshot_version:
+          type: integer
+          minimum: 1.0
+          title: Snapshot Version
+      additionalProperties: false
+      type: object
+      required:
+      - snapshot_version
+      title: RollbackEnvRequest
+    RollbackSecretRequest:
+      properties:
+        version:
+          type: integer
+          minimum: 1.0
+          title: Version
+      additionalProperties: false
+      type: object
+      required:
+      - version
+      title: RollbackSecretRequest
+    SecretCreate:
+      properties:
+        key:
+          type: string
+          maxLength: 255
+          minLength: 1
+          pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+          title: Key
+        value:
+          type: string
+          maxLength: 65536
+          minLength: 1
+          title: Value
+        description:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Description
+        comment:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Comment
+      additionalProperties: false
+      type: object
+      required:
+      - key
+      - value
+      title: SecretCreate
+    SecretResponse:
+      properties:
+        id:
+          type: integer
+          title: Id
+        environment_id:
+          type: integer
+          title: Environment Id
+        key:
+          type: string
+          title: Key
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        current_version:
+          type: integer
+          title: Current Version
+        is_deleted:
+          type: boolean
+          title: Is Deleted
+        created_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Created At
+        updated_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Updated At
+      type: object
+      required:
+      - id
+      - environment_id
+      - key
+      - description
+      - current_version
+      - is_deleted
+      - created_at
+      - updated_at
+      title: SecretResponse
+    SecretUpdate:
+      properties:
+        value:
+          type: string
+          maxLength: 65536
+          minLength: 1
+          title: Value
+        comment:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Comment
+      additionalProperties: false
+      type: object
+      required:
+      - value
+      title: SecretUpdate
+    SnapshotResponse:
+      properties:
+        snapshot_version:
+          type: integer
+          title: Snapshot Version
+        label:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Label
+        is_rollback:
+          type: boolean
+          title: Is Rollback
+        rolled_back_from_snapshot:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Rolled Back From Snapshot
+        created_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Created At
+      type: object
+      required:
+      - snapshot_version
+      - label
+      - is_rollback
+      - rolled_back_from_snapshot
+      - created_at
+      title: SnapshotResponse
+    VersionResponse:
+      properties:
+        version:
+          type: integer
+          title: Version
+        change_comment:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Change Comment
+        is_rollback:
+          type: boolean
+          title: Is Rollback
+        rolled_back_from_version:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Rolled Back From Version
+        created_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Created At
+        created_by_user_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Created By User Id
+      type: object
+      required:
+      - version
+      - change_comment
+      - is_rollback
+      - rolled_back_from_version
+      - created_at
+      - created_by_user_id
+      title: VersionResponse
+      description: Version metadata — never includes the decrypted value.
   securitySchemes:
     HTTPBearer:
       type: http

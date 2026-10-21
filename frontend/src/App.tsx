@@ -5,6 +5,8 @@ import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Identities from './pages/Identities';
 import Accounts from './pages/Accounts';
+import Secrets from './pages/Secrets';
+import EnvironmentDetail from './pages/EnvironmentDetail';
 import Chat from './pages/Chat';
 import SitesDatabase from './components/SitesDatabase';
 import { GoogleIntegrationPage } from './integrations/google';
@@ -32,6 +34,8 @@ function App() {
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="identities" element={<Identities />} />
             <Route path="accounts" element={<Accounts />} />
+            <Route path="secrets" element={<Secrets />} />
+            <Route path="secrets/:envId" element={<EnvironmentDetail />} />
             <Route path="sites" element={<SitesDatabase />} />
             <Route path="chat" element={<Chat />} />
             <Route path="integrations/google" element={<GoogleIntegrationPage />} />

@@ -1,4 +1,4 @@
-# fuze:managed template=claude.yml baseline=v1 digest=sha256:dbdbe420083667d5842e0c5f35791b8941c6e6766d08ac097a6c696939842d89
+# fuze:managed template=claude.yml baseline=v1 digest=sha256:a3a78c68c9e63a14a3db56bd0ac7c70cc683a0c64f1443f9721281a895cf74de
 name: Claude
 
 # Lets maintainers delegate work to Claude by mentioning @claude in an issue,
@@ -39,6 +39,23 @@ jobs:
         with:
           fetch-depth: 1
 
+      # SECURITY — pin the EXECUTED action code to this TRUSTED checkout, before the next
+      # step replaces the working tree with a PR head that can be a fork's. `uses:
+      # ./.github/actions/...` below resolves against whatever is on disk at that point, not
+      # against any ref or pin in this file — so without this step, a fork PR that edits
+      # fuze-code-action/llm-endpoint executes its OWN version the moment a trusted
+      # collaborator comments `@claude` on it, with this job's FUZEONEAGENT_TOKEN,
+      # LITELLM_FUZE_KEY, ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN, OPENAI_API_KEY and
+      # GEMINI_API_KEY all in scope. That is a credential-exfiltration path a comment alone
+      # can trigger — the `if:` gate above authenticates nothing about the PR HEAD's content.
+      # Copying the whole `.github/actions/` tree out of the repo now, then restoring it
+      # verbatim after the PR-head checkout below, means every `uses: ./...` step in this job
+      # always executes what THIS commit (the trusted trigger ref) shipped, regardless of
+      # what the PR head contains. Everything else about the PR head — its code, its
+      # task-prompt context — is still the real thing; only the action DEFINITIONS are pinned.
+      - name: Preserve trusted local actions (before any PR-head checkout)
+        run: cp -a .github/actions "${RUNNER_TEMP}/trusted-fuze-actions"
+
       - name: Checkout PR branch (when triggered from a PR)
         if: |
           (github.event_name == 'issue_comment' && github.event.issue.pull_request != null) ||
@@ -68,6 +85,58 @@ jobs:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
 
+      # SECURITY — restore the TRUSTED action code over whatever the just-checked-out PR head
+      # (possibly a fork) put at these paths. Same `if:` as the checkout above: a no-op copy
+      # when that step didn't run. See "Preserve trusted local actions" for the threat.
+      - name: Restore trusted local actions (never execute PR-head-controlled action code)
+        if: |
+          (github.event_name == 'issue_comment' && github.event.issue.pull_request != null) ||
+          github.event_name == 'pull_request_review_comment' ||
+          github.event_name == 'pull_request_review'
+        run: |
+          rm -rf .github/actions
+          cp -a "${RUNNER_TEMP}/trusted-fuze-actions" .github/actions
+
+      # CODER IDENTITY (docs/identity-and-roles.md). The coder is the org-wide `fuze-agent`
+      # GitHub App — a durable App identity, NOT the retired `fuzeoneagent` user account
+      # (suspended by GitHub 2026-10-14). Mint a short-lived App installation token and use it
+      # as the coding/commit/push credential, stamping the git author as the App's bot so
+      # commits this run pushes are attributed to `fuze-agent[bot]`, not the admin `izzywdev`;
+      # author ≠ reviewer is preserved (the App bot authors, izzywdev/FuzeApprover reviews).
+      # When the App secrets are absent the resolve step falls back to GITHUB_TOKEN with a
+      # ::warning::, byte-for-byte default-safe so an un-provisioned repo degrades rather than
+      # breaks. Signing note: an App-token `git push` is NOT signed — `required_signatures` on
+      # the default branch is satisfied by the server-signed squash-merge, exactly as before.
+      # fuze:secret-sourcing FUZE_AGENT_APP_ID=fleet — provision-secrets.yml (FLEET_SOURCED); durable coder identity
+      # fuze:secret-sourcing FUZE_AGENT_APP_PRIVATE_KEY=fleet — provision-secrets.yml (FLEET_SOURCED); durable coder identity
+      - name: Mint fuze-agent App token (coder identity)
+        id: coder_app
+        continue-on-error: true
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.FUZE_AGENT_APP_ID }}
+          private-key: ${{ secrets.FUZE_AGENT_APP_PRIVATE_KEY }}
+      - name: Resolve coding identity (fuze-agent App; GITHUB_TOKEN fallback)
+        id: coder
+        env:
+          APP_TOKEN: ${{ steps.coder_app.outputs.token }}
+          GH_DEFAULT: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          if [ -n "${APP_TOKEN:-}" ]; then
+            tok="$APP_TOKEN"
+            who="fuze-agent[bot] (fuze-agent App installation token — durable coder)"
+            git config user.name "fuze-agent[bot]"
+            git config user.email "fuze-agent[bot]@users.noreply.github.com"
+          else
+            tok="$GH_DEFAULT"
+            who="GITHUB_TOKEN (default — fuze-agent App secrets unset)"
+            echo "::warning title=coder-identity::FUZE_AGENT_APP_ID / FUZE_AGENT_APP_PRIVATE_KEY are unset on this repo — @claude codes/commits/pushes under the default GITHUB_TOKEN identity, exactly as before. Set the fuze-agent App secrets to author as the durable coder identity (docs/identity-and-roles.md). The retired fuzeoneagent user account is no longer the coder."
+          fi
+          echo "::add-mask::$tok"
+          echo "token=$tok" >> "$GITHUB_OUTPUT"
+          echo "Coding identity: $who"
+
       - name: Resolve LLM endpoint (LiteLLM in-cluster, vendor fallback)
         id: llm
         uses: ./.github/actions/llm-endpoint
@@ -81,6 +150,9 @@ jobs:
       - name: Run Claude
         uses: ./.github/actions/fuze-code-action
         with:
+          # Coder credential: fuze-agent App token when provisioned, else GITHUB_TOKEN (see the
+          # Resolve coding identity step — default-safe when the App secrets are unset).
+          github-token: ${{ steps.coder.outputs.token }}
           anthropic-api-key: ${{ steps.llm.outputs.auth-token }}
           claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           show-full-output: true

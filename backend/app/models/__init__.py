@@ -11,6 +11,13 @@ from .grant import Grant
 from .identity import Identity
 from .organization import Organization, OrganizationMember
 from .platform_identity import PlatformIdentity
+from .secret import (
+    EnvironmentSnapshot,
+    Secret,
+    SecretEnvironment,
+    SecretSnapshotEntry,
+    SecretVersion,
+)
 from .signup_script import SignupScript
 from .site import DifficultyLevel, ImplementationStatus, Site
 from .sms import SmsDevice, SmsOtpReceived, SmsOtpRequest, SmsStatistics
@@ -35,6 +42,11 @@ __all__ = [
     "ApprovalRequest",
     "AuditLog",
     "Grant",
+    "SecretEnvironment",
+    "Secret",
+    "SecretVersion",
+    "EnvironmentSnapshot",
+    "SecretSnapshotEntry",
     "SmsDevice",
     "SmsOtpRequest",
     "SmsOtpReceived",

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FuzeKeys — Export .env</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com/3.4.16"></script>
+  <script src="./ds.js"></script>
+</head>
+<body class="font-sans bg-secondary-50 text-secondary-900 min-h-screen">
+  <div class="fixed inset-0 bg-secondary-900/40"></div>
+
+  <div class="fixed inset-0 flex items-center justify-center p-4">
+    <div class="w-full max-w-lg rounded-lg bg-white shadow-xl border border-secondary-200">
+      <header class="px-6 py-4 border-b border-secondary-200 flex items-start justify-between">
+        <div>
+          <h2 class="text-lg font-semibold text-secondary-900">Export Dev as .env</h2>
+          <p class="text-sm text-secondary-500">Current values (snapshot v8)</p>
+        </div>
+        <a href="./02-environment-detail.html" class="text-secondary-400 hover:text-secondary-700 text-xl leading-none" aria-label="Close">&times;</a>
+      </header>
+
+      <div class="px-6 py-4">
+        <label class="flex items-center gap-2 mb-3 text-sm text-secondary-600">
+          <input type="checkbox" class="rounded border-secondary-300 text-primary-600" />
+          Reveal values (recorded in the audit log)
+        </label>
+        <pre class="rounded-md bg-secondary-900 p-4 text-xs text-primary-100 overflow-x-auto"><code>DATABASE_URL=••••••••••••
+STRIPE_SECRET_KEY=••••••••••••
+SMTP_PASSWORD=••••••••••••</code></pre>
+        <p class="mt-2 text-xs text-secondary-400">Choose a snapshot to export its historical values instead of the current set.</p>
+      </div>
+
+      <footer class="px-6 py-4 border-t border-secondary-200 bg-secondary-50 flex items-center justify-end gap-2">
+        <button class="rounded-md border border-secondary-300 px-3 py-2 text-sm font-medium text-secondary-700 hover:bg-secondary-50">Copy</button>
+        <button class="rounded-md bg-primary-600 px-3 py-2 text-sm font-medium text-white hover:bg-primary-700">Download .env</button>
+      </footer>
+    </div>
+  </div>
+</body>
+</html>

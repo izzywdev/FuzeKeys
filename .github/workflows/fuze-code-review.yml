@@ -1,4 +1,4 @@
-# fuze:managed template=fuze-code-review.yml baseline=v1 digest=sha256:31aa61eb76060cce55113bdd32b07af7dc24f73c98473fdf463e7fc4820ff298
+# fuze:managed template=fuze-code-review.yml baseline=v1 digest=sha256:525ec7e089ced11ced5da69dcb4394e0c4220c0bfc5a9bc681554d4eee030a03
 name: Fuze Code Review
 
 # THE CANONICAL LLM CODE REVIEW + APPROVAL GATE — now a MANDATORY approve-or-fail check.
@@ -44,19 +44,26 @@ name: Fuze Code Review
 #          PR that touches CI/governance (the check keys on the MODEL verdict, not on
 #          which gh command ran — keying it on the downgrade would deadlock every
 #          governance PR); a self-modification-guard DEFERRAL; a credit/quota
-#          AVAILABILITY OUTAGE (the owner's exception); or an environmental SKIP (no
+#          AVAILABILITY OUTAGE on a PR touching NO sensitive path (the owner's exception,
+#          announced as "NO REVIEW WAS PERFORMED"); or an environmental SKIP (no
 #          credential / no reviewable diff).
 #   FAIL — `request_changes`; a model `comment` verdict on a non-sensitive PR (not an
 #          approval — this is what triggers the bounded auto-fix loop); or a genuine
 #          ABSTAIN (unparseable / self-contradictory output, or a non-success
-#          conclusion that is neither an availability outage nor the deferral).
+#          conclusion that is neither an availability outage nor the deferral); or an
+#          OUTAGE_BLOCKING — an availability outage on a PR touching the CI/governance
+#          surface or the deploy surface (charts, Dockerfiles, release workflow, DB
+#          migrations): no review happened where an unreviewed change costs most.
 #          Unparseable is NOT clean; a genuine abstain does NOT trigger a code
 #          auto-fix — there is nothing to fix — it blocks and comments for a human.
 #
 # THE CREDIT-OUTAGE EXCEPTION distinguishes a vendor outage from a real failure using
 # fuze-code-action's `availability` output (derived from classify.sh's exit code), NOT
 # `conclusion` alone — a task failure and an exhaustion BOTH report conclusion=failure.
-# An outage PASSES, so fuze-ci-autofix never fires on it.
+# An outage on a non-sensitive PR PASSES; on a sensitive one it FAILS (outage_blocking).
+# Neither carries findings, so fuze-ci-autofix never tries to "fix" either. Outage comments
+# carry `<!-- fuze-code-review-outage -->` and are PATCHed in place on a re-run.
+# (Narrowing mirrored from izzywdev/FuzeFront#1266.)
 #
 # SAFETY PROPERTIES PRESERVED VERBATIM from the pre-mandatory version:
 #   - `gh pr review --approve` fires ONLY on a schema-valid, self-consistent
@@ -232,6 +239,7 @@ jobs:
       reason: ${{ steps.context.outputs.reason }}
       nonce: ${{ steps.prompt.outputs.nonce }}
       sensitive_files: ${{ steps.context.outputs.sensitive_files }}
+      deploy_sensitive_files: ${{ steps.context.outputs.deploy_sensitive_files }}
       conclusion: ${{ steps.review.outputs.conclusion }}
       # GitHub can suppress raw JSON job outputs when CODEX_AUTH_JSON is registered,
       # because its structured-secret masker treats JSON punctuation as secret-bearing.
@@ -241,7 +249,27 @@ jobs:
       vendor: ${{ steps.review.outputs.vendor }}
       availability: ${{ steps.review.outputs.availability }}
     steps:
+      # A job can dequeue after its PR merged and the head branch was deleted; checkout then
+      # fails with "A branch or tag with the name '...' could not be found". Ask the API
+      # BEFORE checkout and gate every later step on the answer -- a real conditional, not a
+      # swallowed failure: if the API call itself errors this step fails loudly.
+      - name: Check PR is still open
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          STATE=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq .state)
+          if [ "$STATE" = "open" ]; then
+            echo "open=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "open=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=fuze-code-review::skipped because PR #${PR_NUMBER} is no longer open (state=${STATE})"
+          fi
+
       - name: Checkout
+        if: steps.pr.outputs.open == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
@@ -249,6 +277,7 @@ jobs:
 
       - name: Gather PR context — diff, changed files, sensitive-path check, credential check
         id: context
+        if: steps.pr.outputs.open == 'true'
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
           HAS_LITELLM: ${{ secrets.LITELLM_FUZE_KEY != '' }}
@@ -276,13 +305,28 @@ jobs:
             echo "::error title=fuze-code-review::cannot compute the review diff against origin/$BASE_REF"
             exit 1
           fi
-          DIFF=$(head -c 80000 /tmp/fulldiff.txt)
+          # Cap the diff handed to the model. The review action runs with the 1M-token
+          # context window on (CLAUDE_CODE_DISABLE_1M_CONTEXT=0 below), so the cap is
+          # generous instead of the old 80k that silently dropped most of a large-but-clean
+          # PR and pushed the model into a low-confidence "comment" — which the verdict
+          # script scores as a FAIL, red-flagging large PRs that had no real findings.
+          DIFF_CAP=600000
+          FULL_BYTES=$(wc -c < /tmp/fulldiff.txt)
+          DIFF=$(head -c "$DIFF_CAP" /tmp/fulldiff.txt)
+          if [ "$FULL_BYTES" -gt "$DIFF_CAP" ]; then
+            DIFF="${DIFF}"$'\n'"[diff truncated at ${DIFF_CAP} of ${FULL_BYTES} bytes -- judge only what is visible above. Truncation is NOT a finding: do NOT emit request_changes or comment, and do NOT withhold approval, solely because the diff was cut off. The remaining hunks are covered by the other required CI gates.]"
+          fi
 
           # The approval machinery and the org governance surface. Matched against
           # the ACTUAL changed-file list — never against anything an LLM claims —
           # because this feeds the self-approval defense in the verdict script.
           SENSITIVE_PATTERN='^(\.github/workflows/|\.github/actions/|workflow-templates/|governance/|scripts/apply_ruleset\.sh$|scripts/bootstrap/)'
           SENSITIVE=$(grep -E "$SENSITIVE_PATTERN" /tmp/changed_files.txt || true)
+          # The deploy surface: charts, Dockerfiles, the release workflow and DB migrations
+          # (any `migrations/` directory). A provider outage on a PR touching these BLOCKS
+          # (outage_blocking) instead of passing. Same actual-diff source as above.
+          DEPLOY_SENSITIVE_PATTERN='^(deploy/|helm/|charts/|.*Dockerfile.*|\.github/workflows/release\.yml$|(.*/)?migrations/)'
+          DEPLOY_SENSITIVE=$(grep -E "$DEPLOY_SENSITIVE_PATTERN" /tmp/changed_files.txt || true)
 
           READY=true
           REASON=""
@@ -312,13 +356,16 @@ jobs:
             echo "sensitive_files<<FUZE_SENSITIVE_EOF_${NONCE}"
             echo "$SENSITIVE"
             echo "FUZE_SENSITIVE_EOF_${NONCE}"
+            echo "deploy_sensitive_files<<FUZE_DEPLOY_SENSITIVE_EOF_${NONCE}"
+            echo "$DEPLOY_SENSITIVE"
+            echo "FUZE_DEPLOY_SENSITIVE_EOF_${NONCE}"
             echo "diff<<FUZE_DIFF_EOF_${NONCE}"
             echo "$DIFF"
             echo "FUZE_DIFF_EOF_${NONCE}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Not reviewing this run
-        if: steps.context.outputs.ready != 'true'
+        if: steps.pr.outputs.open == 'true' && steps.context.outputs.ready != 'true'
         env:
           REASON: ${{ steps.context.outputs.reason }}
         run: echo "::notice title=fuze-code-review::skipping -- ${REASON}"
@@ -353,7 +400,10 @@ jobs:
             echo 'Rules for the JSON, followed exactly:'
             echo '- "approve" is allowed ONLY when findings is an empty array -- no blocking issues found.'
             echo '- "request_changes" when you found one or more blocking issues -- list every one in findings.'
-            echo '- "comment" when you have non-blocking observations, or are not confident enough to approve.'
+            echo '- "comment" when you have genuine non-blocking observations about the code itself.'
+            echo '- Low confidence from a TRUNCATED or very large diff is NOT a reason to choose "comment"'
+            echo '  or "request_changes": if nothing visible is a blocking issue, choose "approve". The'
+            echo '  other required CI gates cover whatever the diff window does not show.'
             echo "- Valid, single-line JSON. Use exactly this nonce in both sentinel lines: ${NONCE}"
             echo '- verdict=approve must always carry findings as an empty array, never omitted.'
             if [ -n "${SENSITIVE_FILES:-}" ]; then
@@ -400,6 +450,28 @@ jobs:
           # fuze:secret-sourcing CODEX_AUTH_JSON=fleet — provision-llm-vendor-keys.yml; optional ChatGPT subscription auth
           codex-auth-json: ${{ secrets.CODEX_AUTH_JSON }}
           claude-args: '--allowedTools "Read,Grep,Glob"'
+          # Pin the review model and enable the 1M-token context window. Passed via
+          # extra-env (not a step `env:`) because fuze-code-action is a composite and its
+          # inner steps do not reliably inherit caller-step env — see that input's docs.
+          # claude-opus-4-8 is the family's primary Anthropic model (governance/model-registry.md);
+          # on the LiteLLM path the endpoint's "*" catch-all maps any model name to the head
+          # vendor, so the pin is safe on every rung (direct Anthropic honours it literally).
+          # The ladder opus-4.8 → opus-5 → opus-5.5 → fable-5.1 (then the cross-vendor rungs)
+          # is the follow-up; starting here plus the larger diff window resolves the
+          # large-PR false-fail on its own.
+          extra-env: |
+            ANTHROPIC_MODEL=claude-opus-4-8
+            CLAUDE_CODE_DISABLE_1M_CONTEXT=0
+          # REVIEW-ONLY SWITCH. Set the repository VARIABLE FUZE_CODE_REVIEW_ONLY=true to
+          # review PRs on the Anthropic rungs ONLY: no codex/gemini vendor-CLI install on the
+          # runner, no multi-vendor LiteLLM container, and -- the point -- the read-only
+          # tools above are the tools that actually apply (the `--allowedTools` restriction
+          # reaches only claude-code-action; the codex fallover rung runs `danger-full-access`).
+          # An Anthropic outage then ends as an availability failure, which the verdict job's
+          # credit-outage exception already passes -- it never becomes a green by retrying a
+          # vendor. A repo VARIABLE (admin-set), never a PR label or PR-controlled input.
+          # Unset/anything-but-'true' = the full ladder, exactly as before.
+          review-only: ${{ vars.FUZE_CODE_REVIEW_ONLY == 'true' && 'true' || 'false' }}
           task-prompt: ${{ steps.prompt.outputs.text }}
 
       - name: Encode review result for cross-job transfer
@@ -439,11 +511,31 @@ jobs:
     if: always() && github.event.pull_request.draft == false
     runs-on: ${{ needs.pick-runner.outputs.runner }}
     steps:
+      # Same closed-PR check as the review job, asked again here because this job also checks
+      # out and comments: a PR merged (branch deleted) or closed meanwhile is skipped with a
+      # notice, not abstained on. An API error fails the step, and so the check, loudly.
+      - name: Check PR is still open
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          STATE=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq .state)
+          if [ "$STATE" = "open" ]; then
+            echo "open=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "open=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=fuze-code-review::skipped because PR #${PR_NUMBER} is no longer open (state=${STATE})"
+          fi
+
       - name: Checkout
+        if: steps.pr.outputs.open == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
-      - name: Decide verdict (approve / request_changes / comment / outage / abstain / skip / superseded)
+      - name: Decide verdict (approve / request_changes / comment / outage / outage_blocking / abstain / skip / superseded)
         id: verdict
+        if: steps.pr.outputs.open == 'true'
         env:
           FUZE_ACTION_CONCLUSION: ${{ needs.review.outputs.conclusion }}
           FUZE_RESULT_TEXT_B64: ${{ needs.review.outputs.result-text-b64 }}
@@ -460,9 +552,11 @@ jobs:
           # overtaken by the author's own next push.
           FUZE_REVIEW_JOB_RESULT: ${{ needs.review.result }}
           FUZE_SENSITIVE_FILES: ${{ needs.review.outputs.sensitive_files }}
+          FUZE_DEPLOY_SENSITIVE_FILES: ${{ needs.review.outputs.deploy_sensitive_files }}
         run: python3 scripts/fuze_code_review_verdict.py
 
-      - name: Submit GitHub review (approve-or-fail; outage/skip/superseded pass, non-approve fails)
+      - name: Submit GitHub review (approve-or-fail; non-sensitive outage/skip/superseded pass, non-approve fails)
+        if: steps.pr.outputs.open == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -484,8 +578,33 @@ jobs:
             comment)
               gh pr review "$PR_NUMBER" --comment --body-file "$BODY_FILE"
               ;;
-            outage)
-              gh pr comment "$PR_NUMBER" --body-file "$BODY_FILE"
+            outage|outage_blocking)
+              # NO REVIEW WAS PERFORMED. Upsert ONE comment, found by its marker and authored by
+              # this workflow's own identity, so a re-run PATCHes it instead of stacking another.
+              # The id list is taken whole and its first line used: `--paginate` applies --jq
+              # per page, so a `first` inside the filter could yield one id per page.
+              OUTAGE_MARKER='<!-- fuze-code-review-outage -->'
+              IDS=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --paginate \
+                --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | contains(\"${OUTAGE_MARKER}\"))) | .id")
+              EXISTING=${IDS%%$'\n'*}
+              if [ -n "$EXISTING" ]; then
+                gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${EXISTING}" -F body=@"$BODY_FILE" >/dev/null
+              else
+                gh pr comment "$PR_NUMBER" --body-file "$BODY_FILE"
+              fi
+              if [ "$DECISION" = "outage_blocking" ]; then
+                echo "::error title=fuze-code-review::NO REVIEW WAS PERFORMED (provider outage) and this PR touches sensitive paths (CI/governance, deploy or DB migrations) -- failing. Re-run once a provider recovers."
+                {
+                  echo "### fuze-code-review: NO REVIEW WAS PERFORMED (BLOCKING)"
+                  echo "Provider outage on a PR touching sensitive paths; the check fails until a real review runs."
+                } >> "$GITHUB_STEP_SUMMARY"
+              else
+                echo "::warning title=fuze-code-review::NO REVIEW WAS PERFORMED -- provider availability/credit outage; passing only because no sensitive path is touched. Re-run once a provider recovers."
+                {
+                  echo "### fuze-code-review: NO REVIEW WAS PERFORMED"
+                  echo "Provider outage; the check passes only because no sensitive path is touched. This is not a review or an approval."
+                } >> "$GITHUB_STEP_SUMMARY"
+              fi
               ;;
             skip)
               echo "::notice title=fuze-code-review::not reviewed this run (see the review job) -- passing, this is environmental."
@@ -514,6 +633,10 @@ jobs:
           # merge; fuze-ci-autofix.yml then runs the bounded review<->fix loop. This exit
           # code genuinely propagates: the decisive step carries no exit-masking shortcut,
           # which is what lets required-checks.json claim can_fail:true honestly (gate C5).
+          if [ "$CHECK" = "fail" ] && [ "$DECISION" = "outage_blocking" ]; then
+            # Annotated above. No auto-fix: there are no findings, only a missing review.
+            exit 1
+          fi
           if [ "$CHECK" = "fail" ]; then
             echo "::error title=fuze-code-review::this run is NOT an approval (decision=${DECISION}). The required check fails and stops; fuze-ci-autofix will attempt a bounded fix loop until the review approves."
             exit 1

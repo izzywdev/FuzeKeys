@@ -1,4 +1,4 @@
-# fuze:managed template=a2a-maintain.yml baseline=v1 digest=sha256:0d39ca6fecd99bce1f9edd18aab69fbfd74e8d4909c835bc540ccc4ca1c63d2f
+# fuze:managed template=a2a-maintain.yml baseline=v1 digest=sha256:98362f450d33913117f7a933666351c4564ebefc1300b8551a26bfe9c906b60d
 name: A2A Maintain
 
 # Keeps this repo's agent-to-agent (A2A) surface current, as part of CI. On every PR it
@@ -113,10 +113,32 @@ jobs:
     outputs:
       declared: ${{ steps.check.outputs.declared }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+      # The job can dequeue after the PR merged and its branch was deleted, which makes
+      # checkout fail ("A branch or tag with the name '...' could not be found"). Ask the API
+      # first; every later step is gated on the answer (a real conditional, not a swallowed
+      # failure -- an API error here fails the step loudly).
+      - name: Check PR is still open
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          STATE=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq .state)
+          if [ "$STATE" = "open" ]; then
+            echo "open=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "open=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=a2a-maintain::skipped because PR #${PR_NUMBER} is no longer open (state=${STATE})"
+          fi
 
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        if: steps.pr.outputs.open == 'true'
+
+      # A closed PR leaves `declared` unset, so the maintainer job below is skipped too.
       - name: Is a2a-maintain declared?
         id: check
+        if: steps.pr.outputs.open == 'true'
         shell: bash
         run: |
           set -uo pipefail
@@ -198,7 +220,27 @@ jobs:
           echo "token=$tok" >> "$GITHUB_OUTPUT"
           echo "Agent-PR identity: $who"
 
+      # Re-checked here, not only in preflight: the PR may have merged (head branch deleted)
+      # since preflight ran, which makes the writable checkout below fail. Every later step is
+      # gated on the answer (a real conditional, not a swallowed failure -- an API error here
+      # fails the step loudly).
+      - name: Check PR is still open
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          STATE=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq .state)
+          if [ "$STATE" = "open" ]; then
+            echo "open=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "open=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=a2a-maintain::skipped because PR #${PR_NUMBER} is no longer open (state=${STATE})"
+          fi
+
       - name: Checkout PR head (writable, same-repo only)
+        if: steps.pr.outputs.open == 'true'
         # Pinned to a full commit SHA, not a mutable tag: a tag can be silently
         # repointed by the action owner (cf. the trivy-action / kics-github-action
         # compromises). This workflow holds `contents: write` on the PR branch, so a
@@ -221,6 +263,7 @@ jobs:
       # resolution cannot legitimately fail here.
       - name: Resolve LLM endpoint (LiteLLM in-cluster, vendor fallback)
         id: llm
+        if: steps.pr.outputs.open == 'true'
         uses: ./.github/actions/llm-endpoint
         with:
           litellm-key: ${{ secrets.LITELLM_FUZE_KEY }}
@@ -229,8 +272,10 @@ jobs:
           fallback-openai-key: ${{ secrets.OPENAI_API_KEY }}
           fallback-gemini-key: ${{ secrets.GEMINI_API_KEY }}
 
+      # Skipped on a closed PR, which leaves `run` unset and so skips every step after it.
       - name: Skip on last-commit marker
         id: marker
+        if: steps.pr.outputs.open == 'true'
         run: |
           if git log -1 --pretty=%B | grep -q '\[skip a2a\]'; then
             echo "::notice::last commit marked [skip a2a] — skipping to avoid a self-trigger loop."
@@ -251,6 +296,19 @@ jobs:
         continue-on-error: true
         uses: ./.github/actions/fuze-code-action
         with:
+          # GitHub token for claude-code-action's git/PR work AND rung 1a's token
+          # setup. Reuse the collaborator-backed identity resolved above
+          # (fuze-agent App -> GH_RELEASE_PAT -> GITHUB_TOKEN) — the SAME token this
+          # job's checkout already persists so the commit-back triggers CI. Without
+          # it, fuze-code-action forwards an empty github_token and claude-code-action
+          # falls back to minting its OWN token via the Claude GitHub App, whose
+          # exchange fails `401 Unauthorized - User does not have write access on this
+          # repository` and sinks rung 1a (the Anthropic SUBSCRIPTION OAuth path) as an
+          # availability failure — the chain then needlessly drops to the metered rungs
+          # (LiteLLM / API key / Codex / Gemini), so a subscription-billed run both
+          # costs per token and goes red whenever those providers are out of credit.
+          # Same fix as mcp-maintain.yml (#515); this is the sibling maintainer.
+          github-token: ${{ steps.identity.outputs.token }}
           # Same shape as gate-code-review in harden-gate.yml: the CLI reads
           # ANTHROPIC_AUTH_TOKEN, some SDK paths still read ANTHROPIC_API_KEY, so
           # both carry the resolved credential — whichever endpoint won the probe.
