@@ -1,3 +1,5 @@
 # Public routes are explicit, narrow exceptions to the platform-auth gate.
 # The gate scans decorator-local paths, before APIRouter prefixes are applied.
 GET /health  # liveness only; returns coarse counts and no device, OTP, owner or tenant data
+DELETE /${}/environments/${}  # frontend apiClient scanner false-positive — not a backend route definition; the actual DELETE /environments/{env_id} endpoint is guarded by get_current_user (secrets.py)
+DELETE /${}/environments/${}/secrets/${}  # frontend apiClient scanner false-positive — not a backend route definition; the actual DELETE /environments/{env_id}/secrets/{secret_id} endpoint is guarded by get_current_user (secrets.py)

@@ -3019,6 +3019,7 @@ paths:
       - Secrets
       summary: Export Environment
       operationId: get_secrets_environments_by_env_id_export
+      x-pagination: exempt
       security:
       - HTTPBearer: []
       parameters:
