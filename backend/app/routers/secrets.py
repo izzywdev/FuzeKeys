@@ -239,7 +239,14 @@ async def rollback_environment(
     return await _env_response(db, env)
 
 
-@router.get("/environments/{env_id}/export", response_model=ExportResponse)
+@router.get(
+    "/environments/{env_id}/export",
+    response_model=ExportResponse,
+    # Returns the environment's {KEY: value} config map (a bounded singleton for
+    # one environment / snapshot), not an unbounded listing — exempt from the
+    # pagination gate.
+    openapi_extra={"x-pagination": "exempt"},
+)
 async def export_environment(
     env_id: int,
     snapshot: Optional[int] = Query(default=None, ge=1),

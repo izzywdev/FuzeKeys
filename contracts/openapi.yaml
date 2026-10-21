@@ -3050,6 +3050,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+      x-pagination: exempt
   /api/v1/secrets/environments/{env_id}/secrets:
     post:
       tags:

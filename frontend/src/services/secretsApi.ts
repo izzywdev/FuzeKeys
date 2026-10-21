@@ -86,7 +86,7 @@ export const secretsApi = {
       .post<Environment>(`${base}/environments`, { name, description })
       .then((r) => r.data),
   deleteEnvironment: (envId: number) =>
-    apiClient.delete(`${base}/environments/${envId}`).then((r) => r.data),
+    apiClient.delete<void>(`${base}/environments/${envId}`).then((r) => r.data),
 
   // secrets
   listSecrets: (envId: number, offset = 0, limit = 100) =>
@@ -119,7 +119,7 @@ export const secretsApi = {
       .then((r) => r.data),
   deleteSecret: (envId: number, secretId: number) =>
     apiClient
-      .delete(`${base}/environments/${envId}/secrets/${secretId}`)
+      .delete<void>(`${base}/environments/${envId}/secrets/${secretId}`)
       .then((r) => r.data),
 
   // versions / reveal / rollback
