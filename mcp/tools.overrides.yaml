@@ -126,3 +126,34 @@ tools:
     reason: >-
       Removes the generated scraper. The version history endpoint does not expose
       a restore operation, so this is not recoverable through the API
+
+  # --- 5. Secret versioning & environment management (PR #228) --------------
+
+  # GET returning ExportResponse.values = {key_name: plaintext_value} for every
+  # secret in the environment. Bulk disclosure: cannot be un-disclosed.
+  get_secrets_environments_by_env_id_export:
+    mutates: true
+    reason: >-
+      Returns ExportResponse.values — a plaintext dict of every secret in the
+      environment. Bulk secret disclosure is permanent and must never be
+      reachable from a read-only context
+
+  # POST already defaults to a write; reason recorded so the "this POST only
+  # reads a value" refactor can never quietly downgrade the classification.
+  post_secrets_environments_by_env_id_secrets_by_secret_id_reveal:
+    mutates: true
+    reason: >-
+      Returns RevealResponse.value — the decrypted plaintext of a single secret
+      version. Disclosure is permanent; classify as write so it can never be
+      reached by a client that auto-approves reads
+
+  # DELETEs cascade through the version and snapshot history — no undelete.
+  delete_secrets_environments_by_env_id:
+    reversibility: irreversible
+    reason: >-
+      Deletes the environment and all its secrets, versions, and snapshots;
+      there is no restore endpoint
+  delete_secrets_environments_by_env_id_secrets_by_secret_id:
+    reversibility: irreversible
+    reason: >-
+      Deletes the secret and its entire version history; there is no undelete
