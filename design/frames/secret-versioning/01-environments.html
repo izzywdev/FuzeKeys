@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FuzeKeys — Environments</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com/3.4.16"></script>
+  <script src="./ds.js"></script>
+</head>
+<body class="font-sans bg-secondary-50 text-secondary-900 min-h-screen">
+  <div class="flex min-h-screen">
+    <!-- Sidebar -->
+    <aside class="w-56 shrink-0 bg-secondary-900 text-secondary-100 hidden md:flex md:flex-col">
+      <div class="px-5 py-4 text-lg font-bold text-white">FuzeKeys</div>
+      <nav class="flex-1 px-2 space-y-1 text-sm">
+        <a class="block px-3 py-2 rounded-md text-secondary-300 hover:bg-secondary-800" href="#">Dashboard</a>
+        <a class="block px-3 py-2 rounded-md text-secondary-300 hover:bg-secondary-800" href="#">Identities</a>
+        <a class="block px-3 py-2 rounded-md text-secondary-300 hover:bg-secondary-800" href="#">Accounts</a>
+        <a class="block px-3 py-2 rounded-md bg-primary-600 text-white font-medium" href="#" aria-current="page">Secrets</a>
+        <a class="block px-3 py-2 rounded-md text-secondary-300 hover:bg-secondary-800" href="#">Automation</a>
+      </nav>
+    </aside>
+
+    <!-- Main -->
+    <main class="flex-1">
+      <header class="bg-white border-b border-secondary-200 px-6 py-4 flex items-center justify-between">
+        <div>
+          <h1 class="text-xl font-semibold text-secondary-900">Environments</h1>
+          <p class="text-sm text-secondary-500">Grouped secret lists. Each environment keeps a full snapshot history you can roll back to.</p>
+        </div>
+        <button class="inline-flex items-center gap-2 rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700">
+          <span aria-hidden="true" class="text-base leading-none">+</span> New environment
+        </button>
+      </header>
+
+      <section class="p-6">
+        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <!-- Dev -->
+          <a href="./02-environment-detail.html" class="block rounded-lg border border-secondary-200 bg-white p-5 hover:border-primary-400 hover:shadow-sm transition">
+            <div class="flex items-center justify-between">
+              <h2 class="text-base font-semibold text-secondary-900">Dev</h2>
+              <span class="rounded-full bg-primary-50 px-2.5 py-0.5 text-xs font-medium text-primary-700">v8</span>
+            </div>
+            <p class="mt-1 text-sm text-secondary-500">Development environment variables</p>
+            <dl class="mt-4 flex items-center gap-6 text-sm">
+              <div><dt class="text-secondary-400">Secrets</dt><dd class="font-semibold text-secondary-800">14</dd></div>
+              <div><dt class="text-secondary-400">Snapshots</dt><dd class="font-semibold text-secondary-800">8</dd></div>
+            </dl>
+            <p class="mt-4 text-xs text-secondary-400">Updated 2h ago by Izzy</p>
+          </a>
+          <!-- Prod -->
+          <a href="./02-environment-detail.html" class="block rounded-lg border border-secondary-200 bg-white p-5 hover:border-primary-400 hover:shadow-sm transition">
+            <div class="flex items-center justify-between">
+              <h2 class="text-base font-semibold text-secondary-900">Prod</h2>
+              <span class="rounded-full bg-primary-50 px-2.5 py-0.5 text-xs font-medium text-primary-700">v23</span>
+            </div>
+            <p class="mt-1 text-sm text-secondary-500">Production environment variables</p>
+            <dl class="mt-4 flex items-center gap-6 text-sm">
+              <div><dt class="text-secondary-400">Secrets</dt><dd class="font-semibold text-secondary-800">31</dd></div>
+              <div><dt class="text-secondary-400">Snapshots</dt><dd class="font-semibold text-secondary-800">23</dd></div>
+            </dl>
+            <p class="mt-4 text-xs text-secondary-400">Updated 1d ago by Izzy</p>
+          </a>
+          <!-- Staging -->
+          <a href="./02-environment-detail.html" class="block rounded-lg border border-secondary-200 bg-white p-5 hover:border-primary-400 hover:shadow-sm transition">
+            <div class="flex items-center justify-between">
+              <h2 class="text-base font-semibold text-secondary-900">Staging</h2>
+              <span class="rounded-full bg-primary-50 px-2.5 py-0.5 text-xs font-medium text-primary-700">v5</span>
+            </div>
+            <p class="mt-1 text-sm text-secondary-500">Pre-production mirror of Prod</p>
+            <dl class="mt-4 flex items-center gap-6 text-sm">
+              <div><dt class="text-secondary-400">Secrets</dt><dd class="font-semibold text-secondary-800">28</dd></div>
+              <div><dt class="text-secondary-400">Snapshots</dt><dd class="font-semibold text-secondary-800">5</dd></div>
+            </dl>
+            <p class="mt-4 text-xs text-secondary-400">Updated 3d ago by Izzy</p>
+          </a>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

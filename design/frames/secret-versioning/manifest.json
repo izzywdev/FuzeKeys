@@ -1,0 +1,46 @@
+{
+  "feature": "secret-versioning",
+  "title": "Secret versioning & environment-grouped rollback",
+  "jira": "FKY-16",
+  "approved": true,
+  "approvedBy": "Izzy Weinberg",
+  "approvedAt": "2026-10-21",
+  "designSystem": "Tailwind tokens (primary/secondary) mirrored in ds.js — tokens only, no raw hex/px in frame markup",
+  "frames": [
+    {
+      "id": "environments",
+      "file": "01-environments.html",
+      "title": "Environments",
+      "route": "/secrets",
+      "acceptanceNotes": "Grid of environment cards (Dev/Prod/Staging) with current snapshot version, secret count, snapshot count. 'New environment' primary action. Cards link to the environment detail."
+    },
+    {
+      "id": "environment-detail",
+      "file": "02-environment-detail.html",
+      "title": "Environment detail (secrets table)",
+      "route": "/secrets/:envId",
+      "acceptanceNotes": "Secrets table: key, masked value, current version badge, updated. Values masked by default with a Reveal affordance. Header actions: History (snapshots), Export .env, Add secret. Rolled-back secrets show a 'rolled back' version badge."
+    },
+    {
+      "id": "secret-history",
+      "file": "03-secret-history.html",
+      "title": "Secret history drawer (reveal + rollback)",
+      "route": "/secrets/:envId?secret=:secretId",
+      "acceptanceNotes": "Right drawer with the per-secret version timeline (current highlighted). Each version: author/time/comment, masked value with Reveal, 'Roll back to vN'. One version shown revealed to demonstrate the revealed state. Footer states rollback is append-only."
+    },
+    {
+      "id": "environment-snapshots",
+      "file": "04-environment-snapshots.html",
+      "title": "Environment snapshot timeline + rollback-to-vN",
+      "route": "/secrets/:envId/history",
+      "acceptanceNotes": "Snapshot timeline (current highlighted) with 'Roll back to vN' per snapshot and a confirm panel showing the per-secret diff a rollback would apply, stating a new snapshot is appended. This is the 'rollback list Dev to v N' flow."
+    },
+    {
+      "id": "export-env",
+      "file": "05-export-env.html",
+      "title": "Export .env",
+      "route": "/secrets/:envId/export",
+      "acceptanceNotes": "Modal exporting the current (or a chosen snapshot's) values as a .env. Masked by default; a 'Reveal values' checkbox (audited) expands them. Copy and Download actions. Empty environment disables export."
+    }
+  ]
+}
