@@ -63,12 +63,11 @@ def _get_cipher() -> Fernet:
     try:
         return Fernet(key.strip().encode())
     except Exception as exc:  # noqa: BLE001 - malformed key value
-        # Log only the exception TYPE, never its message/args — a malformed-key
-        # error can echo key material (avoids the logger-credential-disclosure).
-        logger.error(
-            "Refusing secret crypto operation: invalid Fernet key (%s)",
-            type(exc).__name__,
-        )
+        # Static message with no interpolation — the exception is deliberately
+        # NOT logged, since a malformed-key error can echo key material. The
+        # reason is recorded via log_security_event below.
+        # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure
+        logger.error("Refusing secret crypto operation: invalid Fernet key")
         log_security_event(
             "secret_crypto_unavailable", details={"reason": "encryption_key_invalid"}
         )

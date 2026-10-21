@@ -11,7 +11,7 @@ All operations are scoped to the authenticated user; encryption fails closed
 """
 
 from datetime import datetime
-from typing import Optional
+from typing import Optional, cast
 
 from fastapi import APIRouter, Depends, Query, Response, status
 from pydantic import BaseModel, Field
@@ -27,6 +27,16 @@ router = APIRouter()
 
 _KEY_PATTERN = r"^[A-Za-z_][A-Za-z0-9_]*$"
 _NAME_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9 _-]*$"
+
+
+async def _current_user_id(current_user: User = Depends(get_current_user)) -> int:
+    """The authenticated user's id as a plain ``int``.
+
+    ``User.id`` is a bare SQLAlchemy ``Column`` (not ``Mapped``), so static
+    typing infers ``Column[int]``; coerce once here so every endpoint hands a
+    clean ``int`` to the service layer.
+    """
+    return cast(int, current_user.id)
 
 
 # --- schemas --------------------------------------------------------------
@@ -165,10 +175,10 @@ def _secret_response(secret) -> SecretResponse:
 @router.post("/environments", response_model=EnvironmentResponse, status_code=201)
 async def create_environment(
     body: EnvironmentCreate,
-    current_user: User = Depends(get_current_user),
+    user_id: int = Depends(_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    env = await svc.create_environment(db, current_user.id, body.name, body.description)
+    env = await svc.create_environment(db, user_id, body.name, body.description)
     return await _env_response(db, env)
 
 
@@ -176,10 +186,10 @@ async def create_environment(
 async def list_environments(
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
-    current_user: User = Depends(get_current_user),
+    user_id: int = Depends(_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    envs, total = await svc.list_environments(db, current_user.id, offset, limit)
+    envs, total = await svc.list_environments(db, user_id, offset, limit)
     items = [await _env_response(db, e) for e in envs]
     return Page(items=items, page=_page(items, offset, limit, total))
 
@@ -187,20 +197,20 @@ async def list_environments(
 @router.get("/environments/{env_id}", response_model=EnvironmentResponse)
 async def get_environment(
     env_id: int,
-    current_user: User = Depends(get_current_user),
+    user_id: int = Depends(_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    env = await svc.get_environment(db, current_user.id, env_id)
+    env = await svc.get_environment(db, user_id, env_id)
     return await _env_response(db, env)
 
 
 @router.delete("/environments/{env_id}", status_code=204)
 async def delete_environment(
     env_id: int,
-    current_user: User = Depends(get_current_user),
+    user_id: int = Depends(_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    await svc.delete_environment(db, current_user.id, env_id)
+    await svc.delete_environment(db, user_id, env_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -209,10 +219,10 @@ async def list_snapshots(
     env_id: int,
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
-    current_user: User = Depends(get_current_user),
+    user_id: int = Depends(_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    snaps, total = await svc.list_snapshots(db, current_user.id, env_id, offset, limit)
+    snaps, total = await svc.list_snapshots(db, user_id, env_id, offset, limit)
     items = [
         SnapshotResponse(
             snapshot_version=s.snapshot_version,
@@ -230,12 +240,10 @@ async def list_snapshots(
 async def rollback_environment(
     env_id: int,
     body: RollbackEnvRequest,
-    current_user: User = Depends(get_current_user),
+    user_id: int = Depends(_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    env = await svc.rollback_environment(
-        db, current_user.id, env_id, body.snapshot_version
-    )
+    env = await svc.rollback_environment(db, user_id, env_id, body.snapshot_version)
     return await _env_response(db, env)
 
 
@@ -250,10 +258,10 @@ async def rollback_environment(
 async def export_environment(
     env_id: int,
     snapshot: Optional[int] = Query(default=None, ge=1),
-    current_user: User = Depends(get_current_user),
+    user_id: int = Depends(_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    values = await svc.export_environment(db, current_user.id, env_id, snapshot)
+    values = await svc.export_environment(db, user_id, env_id, snapshot)
     return ExportResponse(
         environment_id=env_id, snapshot_version=snapshot, values=values
     )
@@ -268,12 +276,12 @@ async def export_environment(
 async def create_secret(
     env_id: int,
     body: SecretCreate,
-    current_user: User = Depends(get_current_user),
+    user_id: int = Depends(_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     secret = await svc.create_secret(
         db,
-        current_user.id,
+        user_id,
         env_id,
         body.key,
         body.value,
@@ -288,10 +296,10 @@ async def list_secrets(
     env_id: int,
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
-    current_user: User = Depends(get_current_user),
+    user_id: int = Depends(_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    secrets, total = await svc.list_secrets(db, current_user.id, env_id, offset, limit)
+    secrets, total = await svc.list_secrets(db, user_id, env_id, offset, limit)
     items = [_secret_response(s) for s in secrets]
     return Page(items=items, page=_page(items, offset, limit, total))
 
@@ -301,11 +309,11 @@ async def update_secret(
     env_id: int,
     secret_id: int,
     body: SecretUpdate,
-    current_user: User = Depends(get_current_user),
+    user_id: int = Depends(_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     secret = await svc.update_secret(
-        db, current_user.id, env_id, secret_id, body.value, body.comment
+        db, user_id, env_id, secret_id, body.value, body.comment
     )
     return _secret_response(secret)
 
@@ -314,10 +322,10 @@ async def update_secret(
 async def delete_secret(
     env_id: int,
     secret_id: int,
-    current_user: User = Depends(get_current_user),
+    user_id: int = Depends(_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    await svc.delete_secret(db, current_user.id, env_id, secret_id)
+    await svc.delete_secret(db, user_id, env_id, secret_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -330,11 +338,11 @@ async def list_versions(
     secret_id: int,
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
-    current_user: User = Depends(get_current_user),
+    user_id: int = Depends(_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     versions, total = await svc.list_versions(
-        db, current_user.id, env_id, secret_id, offset, limit
+        db, user_id, env_id, secret_id, offset, limit
     )
     items = [
         VersionResponse(
@@ -357,11 +365,11 @@ async def reveal_secret(
     env_id: int,
     secret_id: int,
     body: RevealRequest,
-    current_user: User = Depends(get_current_user),
+    user_id: int = Depends(_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     version, value = await svc.reveal_value(
-        db, current_user.id, env_id, secret_id, body.version
+        db, user_id, env_id, secret_id, body.version
     )
     return RevealResponse(secret_id=secret_id, version=version, value=value)
 
@@ -374,10 +382,8 @@ async def rollback_secret(
     env_id: int,
     secret_id: int,
     body: RollbackSecretRequest,
-    current_user: User = Depends(get_current_user),
+    user_id: int = Depends(_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    secret = await svc.rollback_secret(
-        db, current_user.id, env_id, secret_id, body.version
-    )
+    secret = await svc.rollback_secret(db, user_id, env_id, secret_id, body.version)
     return _secret_response(secret)
