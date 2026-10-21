@@ -1,4 +1,4 @@
-# fuze:managed template=mcp-maintain.yml baseline=v1 digest=sha256:1eb9ed65b819760f0b606bc8b8f3e687dfb78bc8ae1685631f7eac498c13291c
+# fuze:managed template=mcp-maintain.yml baseline=v1 digest=sha256:6d7ae20d4d826e173c50fe607f2dda87b2f61a26b4705d67ccc29b619728c10e
 name: MCP Maintain
 
 # Keeps this repo's Model Context Protocol (MCP) surface current, as part of CI. The
@@ -152,16 +152,21 @@ jobs:
           BOT_PAT: ${{ secrets.GH_RELEASE_PAT }}
           GH_DEFAULT: ${{ github.token }}
         run: |
+          # ci_capable: true only for an App/PAT identity, whose push TRIGGERS downstream CI.
+          # A GITHUB_TOKEN push does not (hardening-convention.md §8), so consumers of this
+          # output (the deterministic commit-back below) MUST NOT push under it — they guard
+          # on this flag rather than silently landing a reconcile on a head with no CI.
           if [ -n "${APP_TOKEN:-}" ]; then
-            tok="$APP_TOKEN"; who="fuze-agent (App installation token)"
+            tok="$APP_TOKEN"; who="fuze-agent (App installation token)"; ci_capable=true
           elif [ -n "${BOT_PAT:-}" ]; then
-            tok="$BOT_PAT"; who="GH_RELEASE_PAT (bot PAT)"
+            tok="$BOT_PAT"; who="GH_RELEASE_PAT (bot PAT)"; ci_capable=true
           else
-            tok="$GH_DEFAULT"; who="GITHUB_TOKEN"
+            tok="$GH_DEFAULT"; who="GITHUB_TOKEN"; ci_capable=false
             echo "::warning title=agent-identity::No FUZE_AGENT_APP_* App secrets and no GH_RELEASE_PAT on this repo — the maintainer's commit-back will push as GITHUB_TOKEN, whose head gets NO CI (hardening-convention.md §8). Set the fuze-agent App secrets to fix."
           fi
           echo "::add-mask::$tok"
           echo "token=$tok" >> "$GITHUB_OUTPUT"
+          echo "ci_capable=$ci_capable" >> "$GITHUB_OUTPUT"
           echo "Agent-PR identity: $who"
 
       - name: Checkout PR head (writable, same-repo only)
@@ -209,10 +214,97 @@ jobs:
             echo "run=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Run mcp-maintainer
+      # DETERMINISTIC FIRST. Project the OpenAPI spec into tools.json under the coverage rule
+      # (governance/mcp-tool-coverage-standard.md), reconcile it, and fail on a curation/validity
+      # error — all WITHOUT an LLM. The agent step below runs ONLY when this reports `needs-agent`
+      # (a selected tool with no description — the one language-judgement residue). This is why a
+      # vendor billing outage can no longer red an MCP PR: the mechanical work never calls a model.
+      # The checker ships with this workflow (scripts/mcp_check.py + its self-test); the candidate
+      # paths mirror gate-pagination/gate-ds-conformance so a repo that vendors it elsewhere works.
+      - name: Deterministic MCP check & reconcile
+        id: mcpcheck
         if: steps.marker.outputs.run == 'true'
+        shell: bash
+        # head.ref via env, never interpolated into the script body — an expression injection
+        # into a `run:` block is the exact pattern actionlint/semgrep flag, and this job holds
+        # contents: write on the branch. PR_TOKEN is the SAME collaborator identity the checkout
+        # resolved above (fuze-agent App -> GH_RELEASE_PAT -> GITHUB_TOKEN); the push below uses it
+        # EXPLICITLY rather than relying on whatever actions/checkout persisted, so a reconcile
+        # commit triggers downstream CI instead of silently landing under GITHUB_TOKEN (Rule 5).
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_TOKEN: ${{ steps.identity.outputs.token }}
+          CI_CAPABLE: ${{ steps.identity.outputs.ci_capable }}
+        run: |
+          set -uo pipefail
+          CHECK=""
+          for c in scripts/mcp_check.py .fuze/mcp_check.py .github/scripts/mcp_check.py; do
+            if [ -f "$c" ]; then CHECK="$c"; break; fi
+          done
+          if [ -z "$CHECK" ]; then
+            echo "::warning title=mcp-maintain::mcp_check.py not found in repo — skipping the deterministic step; the agent will run."
+            echo "needs-agent=true" >> "$GITHUB_OUTPUT"
+            echo "status=missing-checker" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          python3 "$CHECK" --manifest .fuze/manifest.json --repo-root . --write
+          rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "::error title=mcp-maintain::deterministic MCP check failed (curation/validity error above) — this is NOT a provider problem. Fix the spec/selection (see governance/mcp-tool-coverage-standard.md) and re-run."
+            exit "$rc"
+          fi
+          # Commit back a reconciled tools.json if the projection changed it. `[skip mcp]` keeps
+          # this from re-triggering (the marker step above gates on it). Pushes under the
+          # collaborator identity this job already checked out with, so CI runs on the new head.
+          if [ -n "$(git status --porcelain mcp/tools.json 2>/dev/null)" ]; then
+            # GUARD (Rule 5): a GITHUB_TOKEN push does not trigger downstream CI, so a reconcile
+            # landed under it would sit on a head no gate ever re-runs on. When the resolved
+            # identity is not CI-capable (no App/PAT), DO NOT push — route to the agent instead
+            # (fuze-code-action owns its own App-backed commit-back) and let that path, or a human
+            # setting the fuze-agent App secrets, land the reconcile. Never a silent GITHUB_TOKEN push.
+            if [ "${CI_CAPABLE:-false}" != "true" ]; then
+              echo "needs-agent=true" >> "$GITHUB_OUTPUT"
+              echo "::warning title=mcp-maintain::tools.json drifted but the resolved identity is GITHUB_TOKEN (no App/PAT) — NOT pushing a reconcile that would land on a head with no CI (hardening-convention.md §8). Routing to the agent; set the fuze-agent App secrets to enable the deterministic commit-back."
+            # The commit+push run in a `set -e` subshell: this block's outer shell deliberately
+            # omits `set -e` (it captures the checker's `rc=$?` above), so a bare `git push`
+            # failure here would be swallowed and the step would exit 0 with a false "reconciled"
+            # notice while tools.json stayed drifted — and needs-agent is already false, so no
+            # fallback would fire. The subshell makes any git failure abort and fail the step.
+            # Push EXPLICITLY with the resolved collaborator token (not the inherited checkout
+            # credential) so the reconcile commit triggers downstream CI. PR_TOKEN is masked.
+            elif ( set -e
+                   git config user.name "fuze-agent"
+                   git config user.email "fuze-agent@users.noreply.github.com"
+                   git add mcp/tools.json
+                   git commit -m "chore(mcp-maintain): reconcile tools.json to spec [skip mcp]"
+                   git push "https://x-access-token:${PR_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${HEAD_REF}" ); then
+              echo "::notice title=mcp-maintain::reconciled mcp/tools.json deterministically and pushed [skip mcp]."
+            else
+              echo "::error title=mcp-maintain::reconcile commit/push FAILED — tools.json is drifted and was NOT committed. Not reporting success."
+              exit 1
+            fi
+          fi
+
+      # Residue only: a selected tool with no description (needs language), a stdio server the
+      # checker does not project, or no checker in the repo. Everything mechanical is already done
+      # and committed above, so when this does not run (the common case) the PR is still maintained.
+      - name: Run mcp-maintainer
+        if: steps.marker.outputs.run == 'true' && steps.mcpcheck.outputs.needs-agent == 'true'
         uses: ./.github/actions/fuze-code-action
         with:
+          # GitHub token for claude-code-action's git/PR work AND rung 1a's token
+          # setup. Reuse the collaborator-backed identity resolved above
+          # (fuze-agent App -> GH_RELEASE_PAT -> GITHUB_TOKEN) — the SAME token this
+          # job's checkout already persists so the commit-back triggers CI. Without
+          # it, fuze-code-action forwards an empty github_token and claude-code-action
+          # falls back to minting its OWN token via the Claude GitHub App, whose
+          # exchange fails `401 Unauthorized - User does not have write access on this
+          # repository` and sinks rung 1a (the Anthropic SUBSCRIPTION OAuth path) as an
+          # availability failure — the chain then needlessly drops to the metered rungs
+          # (LiteLLM / API key / Codex / Gemini), so a subscription-billed run both
+          # costs per token and goes red whenever those providers are out of credit.
+          # Measured 2026-10-13 on izzywdev/FuzeInfra PR #1363 (run 38418608308).
+          github-token: ${{ steps.identity.outputs.token }}
           # Same shape as gate-code-review in harden-gate.yml: the CLI reads
           # ANTHROPIC_AUTH_TOKEN, some SDK paths still read ANTHROPIC_API_KEY, so
           # both carry the resolved credential — whichever endpoint won the probe.
