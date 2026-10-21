@@ -9,11 +9,16 @@ Security: secret values are NEVER stored in plaintext here. `SecretVersion`
 holds only Fernet ciphertext produced with the same ``CREDENTIAL_ENCRYPTION_KEY``
 regime as the credentials API (see ``app.services.secret_versioning``), and the
 snapshot/entry tables reference version rows by id — they never copy a value.
+
+Typed with SQLAlchemy 2.0 ``Mapped``/``mapped_column`` so instance attributes
+carry their scalar Python types (not ``Column[...]``) under mypy.
 """
+
+from datetime import datetime
+from typing import Optional
 
 from sqlalchemy import (
     Boolean,
-    Column,
     DateTime,
     ForeignKey,
     Integer,
@@ -21,7 +26,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.database import Base
@@ -40,29 +45,37 @@ class SecretEnvironment(Base):
         UniqueConstraint("user_id", "name", name="uq_secret_env_user_name"),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     # Optional org scoping, mirrors Identity.org_id (nullable — no secrets here).
-    org_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)
+    org_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("organizations.id"), nullable=True
+    )
 
-    name = Column(String(100), nullable=False)
-    description = Column(String(500), nullable=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
     # Highest snapshot number recorded for this environment (0 == none yet).
-    current_snapshot_version = Column(Integer, nullable=False, default=0)
+    current_snapshot_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), onupdate=func.now()
+    )
 
-    secrets = relationship(
+    secrets: Mapped[list["Secret"]] = relationship(
         "Secret",
         back_populates="environment",
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
-    snapshots = relationship(
+    snapshots: Mapped[list["EnvironmentSnapshot"]] = relationship(
         "EnvironmentSnapshot",
         back_populates="environment",
         cascade="all, delete-orphan",
@@ -88,24 +101,30 @@ class Secret(Base):
         UniqueConstraint("environment_id", "key", name="uq_secret_env_key"),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
-    environment_id = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    environment_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("secret_environments.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    key = Column(String(255), nullable=False)
-    description = Column(String(500), nullable=True)
+    key: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
-    current_version = Column(Integer, nullable=False, default=0)
-    is_deleted = Column(Boolean, nullable=False, default=False)
+    current_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), onupdate=func.now()
+    )
 
-    environment = relationship("SecretEnvironment", back_populates="secrets")
-    versions = relationship(
+    environment: Mapped["SecretEnvironment"] = relationship(
+        "SecretEnvironment", back_populates="secrets"
+    )
+    versions: Mapped[list["SecretVersion"]] = relationship(
         "SecretVersion",
         back_populates="secret",
         cascade="all, delete-orphan",
@@ -131,28 +150,32 @@ class SecretVersion(Base):
         UniqueConstraint("secret_id", "version", name="uq_secret_version"),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
-    secret_id = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    secret_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("secrets.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    version = Column(Integer, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # Fernet ciphertext — NEVER plaintext.
-    encrypted_value = Column(Text, nullable=False)
+    encrypted_value: Mapped[str] = mapped_column(Text, nullable=False)
     # Keyed HMAC of the plaintext, for no-op change detection only. Never served.
-    value_hmac = Column(String(64), nullable=True)
+    value_hmac: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
 
-    change_comment = Column(String(500), nullable=True)
-    is_rollback = Column(Boolean, nullable=False, default=False)
-    rolled_back_from_version = Column(Integer, nullable=True)
+    change_comment: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    is_rollback: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    rolled_back_from_version: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True
+    )
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    created_by_user_id = Column(Integer, nullable=True)
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    created_by_user_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
-    secret = relationship("Secret", back_populates="versions")
+    secret: Mapped["Secret"] = relationship("Secret", back_populates="versions")
 
     def __repr__(self):
         return (
@@ -174,23 +197,29 @@ class EnvironmentSnapshot(Base):
         ),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
-    environment_id = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    environment_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("secret_environments.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    snapshot_version = Column(Integer, nullable=False)
-    label = Column(String(200), nullable=True)
-    is_rollback = Column(Boolean, nullable=False, default=False)
-    rolled_back_from_snapshot = Column(Integer, nullable=True)
+    snapshot_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    label: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    is_rollback: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    rolled_back_from_snapshot: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True
+    )
 
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    created_by_user_id = Column(Integer, nullable=True)
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    created_by_user_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
-    environment = relationship("SecretEnvironment", back_populates="snapshots")
-    entries = relationship(
+    environment: Mapped["SecretEnvironment"] = relationship(
+        "SecretEnvironment", back_populates="snapshots"
+    )
+    entries: Mapped[list["SecretSnapshotEntry"]] = relationship(
         "SecretSnapshotEntry",
         back_populates="snapshot",
         cascade="all, delete-orphan",
@@ -213,23 +242,25 @@ class SecretSnapshotEntry(Base):
 
     __tablename__ = "secret_snapshot_entries"
 
-    id = Column(Integer, primary_key=True, index=True)
-    snapshot_id = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    snapshot_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("environment_snapshots.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    secret_id = Column(
+    secret_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("secrets.id", ondelete="CASCADE"), nullable=False
     )
-    secret_version_id = Column(
+    secret_version_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("secret_versions.id", ondelete="CASCADE"), nullable=False
     )
-    secret_key = Column(String(255), nullable=False)
-    version = Column(Integer, nullable=False)
+    secret_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    snapshot = relationship("EnvironmentSnapshot", back_populates="entries")
+    snapshot: Mapped["EnvironmentSnapshot"] = relationship(
+        "EnvironmentSnapshot", back_populates="entries"
+    )
 
     def __repr__(self):
         return (

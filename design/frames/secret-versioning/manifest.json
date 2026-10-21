@@ -42,5 +42,6 @@
       "route": "/secrets/:envId/export",
       "acceptanceNotes": "Modal exporting the current (or a chosen snapshot's) values as a .env. Masked by default; a 'Reveal values' checkbox (audited) expands them. Copy and Download actions. Empty environment disables export."
     }
-  ]
+  ],
+  "stamp": "3182c393bf95bb61680b236a5a38326c2bce55aeaf7d80042e098b59629a2ba3"
 }
