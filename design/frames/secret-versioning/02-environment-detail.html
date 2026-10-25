@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FuzeKeys — Dev environment</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com/3.4.16"></script>
+  <script src="./ds.js"></script>
+</head>
+<body class="font-sans bg-secondary-50 text-secondary-900 min-h-screen">
+  <div class="flex min-h-screen">
+    <aside class="w-56 shrink-0 bg-secondary-900 text-secondary-100 hidden md:flex md:flex-col">
+      <div class="px-5 py-4 text-lg font-bold text-white">FuzeKeys</div>
+      <nav class="flex-1 px-2 space-y-1 text-sm">
+        <a class="block px-3 py-2 rounded-md text-secondary-300 hover:bg-secondary-800" href="#">Dashboard</a>
+        <a class="block px-3 py-2 rounded-md text-secondary-300 hover:bg-secondary-800" href="#">Identities</a>
+        <a class="block px-3 py-2 rounded-md text-secondary-300 hover:bg-secondary-800" href="#">Accounts</a>
+        <a class="block px-3 py-2 rounded-md bg-primary-600 text-white font-medium" href="#" aria-current="page">Secrets</a>
+        <a class="block px-3 py-2 rounded-md text-secondary-300 hover:bg-secondary-800" href="#">Automation</a>
+      </nav>
+    </aside>
+
+    <main class="flex-1">
+      <header class="bg-white border-b border-secondary-200 px-6 py-4">
+        <nav class="text-xs text-secondary-400 mb-1"><a href="./01-environments.html" class="hover:text-primary-600">Environments</a> / <span class="text-secondary-600">Dev</span></nav>
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <h1 class="text-xl font-semibold text-secondary-900">Dev</h1>
+            <span class="rounded-full bg-primary-50 px-2.5 py-0.5 text-xs font-medium text-primary-700">snapshot v8</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <a href="./04-environment-snapshots.html" class="rounded-md border border-secondary-300 bg-white px-3 py-2 text-sm font-medium text-secondary-700 hover:bg-secondary-50">History</a>
+            <a href="./05-export-env.html" class="rounded-md border border-secondary-300 bg-white px-3 py-2 text-sm font-medium text-secondary-700 hover:bg-secondary-50">Export .env</a>
+            <button class="rounded-md bg-primary-600 px-3 py-2 text-sm font-medium text-white hover:bg-primary-700">+ Add secret</button>
+          </div>
+        </div>
+      </header>
+
+      <section class="p-6">
+        <div class="overflow-hidden rounded-lg border border-secondary-200 bg-white">
+          <table class="min-w-full divide-y divide-secondary-200 text-sm">
+            <thead class="bg-secondary-50 text-left text-xs font-semibold uppercase tracking-wide text-secondary-500">
+              <tr>
+                <th class="px-4 py-3">Key</th>
+                <th class="px-4 py-3">Value</th>
+                <th class="px-4 py-3">Version</th>
+                <th class="px-4 py-3">Updated</th>
+                <th class="px-4 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-secondary-100">
+              <tr class="hover:bg-secondary-50">
+                <td class="px-4 py-3 font-medium text-secondary-900">DATABASE_URL</td>
+                <td class="px-4 py-3"><code class="rounded bg-secondary-100 px-2 py-1 text-secondary-500 tracking-widest">••••••••••••</code></td>
+                <td class="px-4 py-3"><span class="rounded-full bg-secondary-100 px-2 py-0.5 text-xs text-secondary-600">v3</span></td>
+                <td class="px-4 py-3 text-secondary-500">2h ago</td>
+                <td class="px-4 py-3 text-right">
+                  <button class="text-xs font-medium text-secondary-600 hover:text-primary-600">Reveal</button>
+                  <a href="./03-secret-history.html" class="ml-3 text-xs font-medium text-primary-600 hover:text-primary-700">History</a>
+                </td>
+              </tr>
+              <tr class="hover:bg-secondary-50">
+                <td class="px-4 py-3 font-medium text-secondary-900">STRIPE_SECRET_KEY</td>
+                <td class="px-4 py-3"><code class="rounded bg-secondary-100 px-2 py-1 text-secondary-500 tracking-widest">••••••••••••</code></td>
+                <td class="px-4 py-3"><span class="rounded-full bg-secondary-100 px-2 py-0.5 text-xs text-secondary-600">v1</span></td>
+                <td class="px-4 py-3 text-secondary-500">5d ago</td>
+                <td class="px-4 py-3 text-right">
+                  <button class="text-xs font-medium text-secondary-600 hover:text-primary-600">Reveal</button>
+                  <a href="./03-secret-history.html" class="ml-3 text-xs font-medium text-primary-600 hover:text-primary-700">History</a>
+                </td>
+              </tr>
+              <tr class="hover:bg-secondary-50">
+                <td class="px-4 py-3 font-medium text-secondary-900">SMTP_PASSWORD</td>
+                <td class="px-4 py-3"><code class="rounded bg-secondary-100 px-2 py-1 text-secondary-500 tracking-widest">••••••••••••</code></td>
+                <td class="px-4 py-3"><span class="rounded-full bg-primary-50 px-2 py-0.5 text-xs font-medium text-primary-700">v5 · rolled back</span></td>
+                <td class="px-4 py-3 text-secondary-500">1h ago</td>
+                <td class="px-4 py-3 text-right">
+                  <button class="text-xs font-medium text-secondary-600 hover:text-primary-600">Reveal</button>
+                  <a href="./03-secret-history.html" class="ml-3 text-xs font-medium text-primary-600 hover:text-primary-700">History</a>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="mt-3 text-xs text-secondary-400">Values are masked by default. Revealing a value is recorded in the audit log.</p>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

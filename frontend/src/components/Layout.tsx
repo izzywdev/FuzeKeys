@@ -8,6 +8,7 @@ const Layout: React.FC = () => {
     { name: 'Dashboard', href: '/dashboard' },
     { name: 'Identities', href: '/identities' },
     { name: 'Accounts', href: '/accounts' },
+    { name: 'Secrets', href: '/secrets' },
     { name: 'Sites Database', href: '/sites' },
     { name: 'Chat', href: '/chat' },
   ];

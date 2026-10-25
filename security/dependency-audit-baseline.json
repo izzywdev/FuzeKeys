@@ -1,25 +1,332 @@
 {
   "_comment": "Known, pre-existing dependency advisories. The gate in scripts/dependency_audit.py fails on anything NOT listed here, so a pull request that introduces a new vulnerable dependency is blocked. Entries are debt to burn down, not an approval -- shrink this file, do not grow it.",
-  "npm": {},
+  "npm": {
+    "1242604": {
+      "package": "follow-redirects",
+      "severity": "high",
+      "title": "follow-redirects array-form headers bypass cross-origin credential stripping"
+    },
+    "1242605": {
+      "package": "follow-redirects",
+      "severity": "high",
+      "title": "follow-redirects sensitiveHeaders regex escaping can expose credential headers"
+    },
+    "1242623": {
+      "package": "vite",
+      "severity": "moderate",
+      "title": "launch-editor: escapeCmdArgs() omits % escaping on Windows"
+    },
+    "1242652": {
+      "package": "vite",
+      "severity": "moderate",
+      "title": "launch-editor: Editor CLI flag misinterpretation causing arbitrary command execution for some editors"
+    },
+    "1242659": {
+      "package": "vite",
+      "severity": "high",
+      "title": "launch-editor: `fs.existsSync()` existence check can be bypassed on Windows"
+    },
+    "1242725": {
+      "package": "vite",
+      "severity": "low",
+      "title": "Vite: Cross origin script execution through Vite custom middleware"
+    },
+    "1242731": {
+      "package": "vite",
+      "severity": "moderate",
+      "title": "Vite: Files outside `server.fs.allow` could be served when project paths match system paths on non-Windows machine"
+    },
+    "1242766": {
+      "package": "@vitest/mocker",
+      "severity": "moderate",
+      "title": "Vitest: Code injection via unauthenticated manual mock registration"
+    },
+    "1242768": {
+      "package": "@vitest/mocker",
+      "severity": "moderate",
+      "title": "Vitest: Windows backslash traversal bypasses the @vitest/mocker redirect allowlist fix"
+    }
+  },
   "python": {
-    "CVE-2024-7774": {
-      "fix_versions": [],
-      "package": "langchain",
-      "version": "0.0.335"
-    },
-    "GHSA-f4xh-w4cj-qxq8": {
+    "CVE-2026-111063": {
       "fix_versions": [
-        "0.8.18"
+        "3.14.4"
       ],
-      "package": "langsmith",
-      "version": "0.0.92"
+      "package": "aiohttp",
+      "version": "3.9.1"
     },
-    "PYSEC-2024-118": {
+    "CVE-2026-111064": {
       "fix_versions": [
-        "0.2.5"
+        "3.14.4"
       ],
-      "package": "langchain",
-      "version": "0.0.335"
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "CVE-2026-111065": {
+      "fix_versions": [
+        "3.14.4"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "CVE-2026-111066": {
+      "fix_versions": [
+        "3.14.4"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "CVE-2026-111748": {
+      "fix_versions": [
+        "3.14.4"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "CVE-2026-111749": {
+      "fix_versions": [
+        "3.14.4"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "CVE-2026-111750": {
+      "fix_versions": [
+        "3.14.4"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
+    },
+    "CVE-2026-112390": {
+      "fix_versions": [
+        "13.0.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "CVE-2026-112391": {
+      "fix_versions": [
+        "13.0.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "CVE-2026-112392": {
+      "fix_versions": [
+        "13.0.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "CVE-2026-112393": {
+      "fix_versions": [
+        "13.0.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "CVE-2026-112395": {
+      "fix_versions": [
+        "13.0.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "CVE-2026-112397": {
+      "fix_versions": [
+        "13.0.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "CVE-2026-112398": {
+      "fix_versions": [
+        "13.0.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "CVE-2026-112399": {
+      "fix_versions": [
+        "13.0.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "CVE-2026-112400": {
+      "fix_versions": [
+        "13.0.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "CVE-2026-112401": {
+      "fix_versions": [
+        "13.0.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "CVE-2026-112402": {
+      "fix_versions": [
+        "13.0.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "CVE-2026-112404": {
+      "fix_versions": [
+        "13.0.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "CVE-2026-112406": {
+      "fix_versions": [
+        "13.0.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "CVE-2026-112891": {
+      "fix_versions": [
+        "13.0.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "CVE-2026-112892": {
+      "fix_versions": [
+        "13.0.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "CVE-2026-112893": {
+      "fix_versions": [
+        "13.0.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "CVE-2026-112894": {
+      "fix_versions": [
+        "13.0.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "CVE-2026-112895": {
+      "fix_versions": [
+        "13.0.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "CVE-2026-112896": {
+      "fix_versions": [
+        "13.0.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "CVE-2026-112897": {
+      "fix_versions": [
+        "13.0.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "CVE-2026-112899": {
+      "fix_versions": [
+        "13.0.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "CVE-2026-112900": {
+      "fix_versions": [
+        "13.0.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "CVE-2026-112901": {
+      "fix_versions": [
+        "13.0.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "CVE-2026-114134": {
+      "fix_versions": [
+        "26.10.1"
+      ],
+      "package": "black",
+      "version": "23.11.0"
+    },
+    "CVE-2026-96636": {
+      "fix_versions": [
+        "13.0.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "CVE-2026-96637": {
+      "fix_versions": [
+        "13.0.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "CVE-2026-96638": {
+      "fix_versions": [
+        "13.0.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "CVE-2026-96640": {
+      "fix_versions": [
+        "13.0.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "CVE-2026-96641": {
+      "fix_versions": [
+        "13.0.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "CVE-2026-96642": {
+      "fix_versions": [
+        "13.0.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "CVE-2026-96644": {
+      "fix_versions": [
+        "13.0.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "CVE-2026-96778": {
+      "fix_versions": [
+        "13.0.0"
+      ],
+      "package": "pillow",
+      "version": "10.1.0"
+    },
+    "GHSA-2g87-pp6c-29x5": {
+      "fix_versions": [
+        "3.14.4"
+      ],
+      "package": "aiohttp",
+      "version": "3.9.1"
     },
     "PYSEC-2024-24": {
       "fix_versions": [
@@ -35,26 +342,12 @@
       "package": "aiohttp",
       "version": "3.9.1"
     },
-    "PYSEC-2024-323": {
-      "fix_versions": [
-        "0.2.9"
-      ],
-      "package": "langchain",
-      "version": "0.0.335"
-    },
     "PYSEC-2024-38": {
       "fix_versions": [
         "0.0.7"
       ],
       "package": "python-multipart",
       "version": "0.0.6"
-    },
-    "PYSEC-2024-43": {
-      "fix_versions": [
-        "0.1.11"
-      ],
-      "package": "langchain",
-      "version": "0.0.335"
     },
     "PYSEC-2024-48": {
       "fix_versions": [
@@ -147,38 +440,12 @@
       "package": "aiohttp",
       "version": "3.9.1"
     },
-    "PYSEC-2026-1325": {
-      "fix_versions": [],
-      "package": "ecdsa",
-      "version": "0.19.2"
-    },
-    "PYSEC-2026-1507": {
-      "fix_versions": [
-        "0.2.0"
-      ],
-      "package": "langchain",
-      "version": "0.0.335"
-    },
-    "PYSEC-2026-1509": {
-      "fix_versions": [
-        "0.1.0"
-      ],
-      "package": "langchain",
-      "version": "0.0.335"
-    },
-    "PYSEC-2026-1510": {
-      "fix_versions": [
-        "0.0.353"
-      ],
-      "package": "langchain",
-      "version": "0.0.335"
-    },
     "PYSEC-2026-161": {
       "fix_versions": [
         "1.0.1"
       ],
       "package": "starlette",
-      "version": "0.27.0"
+      "version": "0.50.0"
     },
     "PYSEC-2026-165": {
       "fix_versions": [
@@ -235,20 +502,6 @@
       ],
       "package": "requests",
       "version": "2.31.0"
-    },
-    "PYSEC-2026-1941": {
-      "fix_versions": [
-        "0.47.2"
-      ],
-      "package": "starlette",
-      "version": "0.27.0"
-    },
-    "PYSEC-2026-1943": {
-      "fix_versions": [
-        "0.40.0"
-      ],
-      "package": "starlette",
-      "version": "0.27.0"
     },
     "PYSEC-2026-2094": {
       "fix_versions": [
@@ -404,13 +657,6 @@
       "package": "black",
       "version": "23.11.0"
     },
-    "PYSEC-2026-2192": {
-      "fix_versions": [
-        "1.3.9"
-      ],
-      "package": "langchain",
-      "version": "0.0.335"
-    },
     "PYSEC-2026-2253": {
       "fix_versions": [
         "12.3.0"
@@ -465,14 +711,14 @@
         "1.1.0"
       ],
       "package": "starlette",
-      "version": "0.27.0"
+      "version": "0.50.0"
     },
     "PYSEC-2026-2281": {
       "fix_versions": [
         "1.1.0"
       ],
       "package": "starlette",
-      "version": "0.27.0"
+      "version": "0.50.0"
     },
     "PYSEC-2026-237": {
       "fix_versions": [
@@ -486,35 +732,14 @@
         "1.3.0"
       ],
       "package": "starlette",
-      "version": "0.27.0"
+      "version": "0.50.0"
     },
     "PYSEC-2026-249": {
       "fix_versions": [
         "1.3.1"
       ],
       "package": "starlette",
-      "version": "0.27.0"
-    },
-    "PYSEC-2026-2555": {
-      "fix_versions": [
-        "0.3.30"
-      ],
-      "package": "langchain",
-      "version": "0.0.335"
-    },
-    "PYSEC-2026-2582": {
-      "fix_versions": [
-        "0.8.0"
-      ],
-      "package": "langsmith",
-      "version": "0.0.92"
-    },
-    "PYSEC-2026-2583": {
-      "fix_versions": [
-        "0.7.31"
-      ],
-      "package": "langsmith",
-      "version": "0.0.92"
+      "version": "0.50.0"
     },
     "PYSEC-2026-2874": {
       "fix_versions": [

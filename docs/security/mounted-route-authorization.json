@@ -1,8 +1,8 @@
 {
   "source": "actual app.main FastAPI mounts; startup/deployment not executed",
   "production_verified": false,
-  "route_method_count": 93,
-  "mutating_http_count": 47,
+  "route_method_count": 107,
+  "mutating_http_count": 55,
   "assessment_counts": {
     "broker_platform_mapping_gap": 3,
     "device_proof_platform_migration_gap": 5,
@@ -14,7 +14,7 @@
     "instance_enforced_with_staged_registration": 10,
     "local_session_profile": 1,
     "parent_instance_enforced_child_lifecycle_gap": 2,
-    "platform_policy_design_gap": 22,
+    "platform_policy_design_gap": 36,
     "public_catalog_or_health": 3,
     "public_framework_documentation": 8,
     "public_health": 2,
@@ -296,6 +296,216 @@
       ],
       "assessment": "instance_enforced",
       "reason": "SQL ownership and immutable verified mapping plus exact instance allow precede response, decryption or mutation. Live mappings/grants remain required."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/secrets/environments",
+      "endpoint": "app.routers.secrets.create_environment",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "app.routers.secrets._current_user_id",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/secrets/environments",
+      "endpoint": "app.routers.secrets.list_environments",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "app.routers.secrets._current_user_id",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/secrets/environments/{env_id}",
+      "endpoint": "app.routers.secrets.get_environment",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "app.routers.secrets._current_user_id",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/secrets/environments/{env_id}",
+      "endpoint": "app.routers.secrets.delete_environment",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "app.routers.secrets._current_user_id",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/secrets/environments/{env_id}/snapshots",
+      "endpoint": "app.routers.secrets.list_snapshots",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "app.routers.secrets._current_user_id",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/secrets/environments/{env_id}/rollback",
+      "endpoint": "app.routers.secrets.rollback_environment",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "app.routers.secrets._current_user_id",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/secrets/environments/{env_id}/export",
+      "endpoint": "app.routers.secrets.export_environment",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "app.routers.secrets._current_user_id",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/secrets/environments/{env_id}/secrets",
+      "endpoint": "app.routers.secrets.create_secret",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "app.routers.secrets._current_user_id",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/secrets/environments/{env_id}/secrets",
+      "endpoint": "app.routers.secrets.list_secrets",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "app.routers.secrets._current_user_id",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/secrets/environments/{env_id}/secrets/{secret_id}",
+      "endpoint": "app.routers.secrets.update_secret",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "app.routers.secrets._current_user_id",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/secrets/environments/{env_id}/secrets/{secret_id}",
+      "endpoint": "app.routers.secrets.delete_secret",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "app.routers.secrets._current_user_id",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/secrets/environments/{env_id}/secrets/{secret_id}/versions",
+      "endpoint": "app.routers.secrets.list_versions",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "app.routers.secrets._current_user_id",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/secrets/environments/{env_id}/secrets/{secret_id}/reveal",
+      "endpoint": "app.routers.secrets.reveal_secret",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "app.routers.secrets._current_user_id",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/secrets/environments/{env_id}/secrets/{secret_id}/rollback",
+      "endpoint": "app.routers.secrets.rollback_secret",
+      "include_in_schema": true,
+      "dependencies": [
+        "app.database.get_async_session",
+        "app.routers.auth.get_current_user",
+        "app.routers.secrets._current_user_id",
+        "fastapi.security.http.HTTPBearer"
+      ],
+      "guard_helpers": [],
+      "assessment": "platform_policy_design_gap",
+      "reason": "Existing authentication/proof dependencies are inventoried below. No reviewed complete resource/tenant/instance permission contract is implemented for this mounted endpoint."
     },
     {
       "method": "POST",

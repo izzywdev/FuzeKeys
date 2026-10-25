@@ -1,4 +1,4 @@
-# fuze:managed template=harden-gate.yml baseline=v1 digest=sha256:28c9214203ae139eff071a7835c87f429fe22eec5f566fbff9a2898d6bcd0359
+# fuze:managed template=harden-gate.yml baseline=v1 digest=sha256:57e229546c01e026f4a084d5ad17ccd27af70bd8658bed8cb262f0ab67ff6406
 name: Harden Gate
 
 # Unified protection gate shared verbatim across all hardened repos.
@@ -347,6 +347,32 @@ jobs:
           # enforcing, `bash -e` aborts the step on that first exit 5 and ~16 repos go red
           # for a reason that has nothing to do with their code — a gate failing on its own
           # scaffolding. Fixing the scoping is a prerequisite for enforcing this job at all.
+          #
+          # NEITHER STEP BELOW MAY FAIL SILENTLY. The loop used to be
+          #   ( cd "$d" && pip install -q -r req pytest 2>/dev/null && pytest -q )
+          # so a failed install (FuzePlan: ResolutionImpossible after a Dependabot bump)
+          # short-circuited past pytest with pip's stderr discarded: nothing ran, nothing was
+          # printed, and the job was green. It stayed green for weeks while testing nothing.
+          # Now a failed install is an ::error:: annotation carrying pip's own output, and a
+          # hung suite is cut off by `timeout` rather than by the 20-minute job limit, because
+          # a CANCELLED required check blocks merges and a reported failure does not.
+          # This job is still report-only (see the header); the annotations are the signal.
+          #
+          # Budget: every directory gets at most GATE_TEST_PYTEST_TIMEOUT seconds of pytest and
+          # GATE_TEST_PIP_TIMEOUT of install, and the whole loop stops short of the job limit
+          # (GATE_TEST_BUDGET) so the sum over many directories cannot cancel the job either.
+          PIP_TIMEOUT=${GATE_TEST_PIP_TIMEOUT:-300}
+          PYTEST_TIMEOUT=${GATE_TEST_PYTEST_TIMEOUT:-600}
+          BUDGET=${GATE_TEST_BUDGET:-1000}
+          # Smallest slice of budget worth starting a step with. Checked again AFTER the install:
+          # `timeout --kill-after` lets pip overrun its deadline, so the remainder can be <= 0 by
+          # then, and a non-positive duration makes `timeout` exit 125 (a misleading "pytest failed").
+          MIN_SLICE=${GATE_TEST_MIN_SLICE:-60}
+          # Encode a log tail as one annotation message (GitHub needs %, CR and LF escaped).
+          annotate_tail() { tail -n 25 "$1" | sed -e 's/%/%25/g' -e 's/\r//g' | awk 'BEGIN{ORS="%0A"} {print}'; }
+          # SECONDS is NOT reset: bash counts it from the start of this step, so the budget also
+          # covers the npm test above. Resetting it here would let a slow npm suite plus a full
+          # pytest budget overrun the job limit.
           for req in $(git ls-files '**/requirements*.txt' 'requirements*.txt' 2>/dev/null); do
             d=$(dirname "$req")
             # A requirements file is not evidence of a test suite. Only run where tests exist.
@@ -354,12 +380,42 @@ jobs:
               echo "::notice::skipping $d — requirements file but no test_*.py/*_test.py"
               continue
             fi
+            left=$((BUDGET - SECONDS))
+            if [ "$left" -lt "$MIN_SLICE" ]; then
+              echo "::error title=gate-test: pytest not run::$d was NOT tested — the ${BUDGET}s budget for this job is spent (an earlier directory was slow)."
+              continue
+            fi
             echo "::group::pytest $d"
-            ( cd "$d" && pip install -q -r "$(basename "$req")" pytest 2>/dev/null && pytest -q )
+            log=$(mktemp)
+            ( cd "$d" && timeout --kill-after=15 "$(( PIP_TIMEOUT < left ? PIP_TIMEOUT : left ))" \
+                pip install -q -r "$(basename "$req")" pytest ) >"$log" 2>&1
             rc=$?
-            # exit 5 is pytest's "no tests collected". Treat it as nothing-to-do rather than
-            # failure, so a stray requirements file can never redden an enforcing run.
-            [ $rc -eq 5 ] && echo "::notice::$d collected no tests"
+            cat "$log"
+            if [ $rc -ne 0 ]; then
+              if [ $rc -eq 124 ] || [ $rc -eq 137 ]; then why="timed out after ${PIP_TIMEOUT}s"; else why="exited $rc"; fi
+              echo "::error title=gate-test: dependency install failed::$d was NOT tested — pip install -r $(basename "$req") $why.%0A$(annotate_tail "$log")"
+              echo "::endgroup::"
+              continue
+            fi
+            left=$((BUDGET - SECONDS))
+            if [ "$left" -lt "$MIN_SLICE" ]; then
+              echo "::error title=gate-test: pytest not run::$d dependencies installed but pytest was NOT run — the ${BUDGET}s budget for this job ran out during the install."
+              echo "::endgroup::"
+              continue
+            fi
+            # To a file, not `| tee`: a test that spawns a detached child (setsid) survives the
+            # timeout and would hold a pipe open, hanging the loop past its own deadline.
+            ( cd "$d" && timeout --kill-after=15 "$(( PYTEST_TIMEOUT < left ? PYTEST_TIMEOUT : left ))" pytest -q ) >"$log" 2>&1
+            rc=$?
+            cat "$log"
+            case $rc in
+              0) ;;
+              # exit 5 is pytest's "no tests collected". Treat it as nothing-to-do rather than
+              # failure, so a stray requirements file can never redden an enforcing run.
+              5) echo "::notice::$d collected no tests" ;;
+              124|137) echo "::error title=gate-test: pytest timed out::$d was cut off after ${PYTEST_TIMEOUT}s (or the remaining job budget) — the suite hung or is too slow; it was NOT fully run.%0A$(annotate_tail "$log")" ;;
+              *) echo "::warning title=gate-test: pytest failed::$d pytest exited $rc (report-only).%0A$(annotate_tail "$log")" ;;
+            esac
             echo "::endgroup::"
           done
           echo "test complete (report-only)"; exit 0
@@ -1344,6 +1400,7 @@ jobs:
           ANTHROPIC_AUTH_TOKEN: ${{ secrets.LITELLM_FUZE_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.LITELLM_FUZE_KEY }}
           ANTHROPIC_MODEL: claude-opus-5
+          CLAUDE_CODE_DISABLE_1M_CONTEXT: '0'
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -1354,7 +1411,10 @@ jobs:
           # Diff to a temp file first: piping straight into `head` makes git die
           # of SIGPIPE (exit 141) when head closes the stream early.
           git diff "origin/$BASE_REF"...HEAD -- ':!*.lock' ':!package-lock.json' > /tmp/fulldiff.txt 2>/dev/null || true
-          DIFF=$(head -c 80000 /tmp/fulldiff.txt)
+          # Generous cap (this reviewer runs with the 1M-token window, see
+          # CLAUDE_CODE_DISABLE_1M_CONTEXT below) so a large PR gets a real review instead of
+          # the first 80k. Report-only, so truncation here only ever cost comment quality.
+          DIFF=$(head -c 600000 /tmp/fulldiff.txt)
           if [ -z "$DIFF" ]; then echo "No diff to review."; exit 0; fi
           PROMPT="You are an automated code reviewer. Review this PR diff for runtime-correctness bugs only (wrong conditions, null derefs, missing awaits, off-by-one, swallowed errors). Ignore style, naming, tests, perf. Output at most 5 findings as a bullet list: \`path/file:line — description\`. If none, output exactly: (none)"$'\n\n'"$DIFF"
           REVIEW=$(claude -p "$PROMPT" 2>&1) || {
