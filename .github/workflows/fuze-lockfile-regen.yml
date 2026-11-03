@@ -1,0 +1,580 @@
+name: Fuze Lockfile Regen
+
+# REGENERATES npm LOCKFILES IN CI SO AGENT SESSIONS NEVER HOLD A PRIVATE-REGISTRY TOKEN.
+#
+# WHY THIS EXISTS. Every Fuze repo's `.npmrc` authenticates `@izzywdev/*` on GitHub Packages
+# with `${NODE_AUTH_TOKEN}`. GitHub repo secrets never reach a cloud agent session's
+# container, and the owner decided NOT to put that token into the cloud environment. So a
+# session that edits `package.json` (e.g. the fleet-wide `@izzywdev/fuzefront-telemetry`
+# rollout) cannot run `npm install`, and its `package-lock.json` goes stale — `npm ci` then
+# fails every downstream build. This workflow closes that gap: CI, which DOES hold
+# NODE_AUTH_TOKEN (fleet-sourced, scripts/provision_secrets.py FLEET_SOURCED), regenerates the
+# lockfile(s) on the PR's own branch and pushes the result back.
+#
+# THE SECURITY MODEL (the reason this file is longer than "npm install && git push"):
+#
+#   1. NO PR CODE RUNS WITH A TOKEN. `npm install --package-lock-only --ignore-scripts` only
+#      resolves the dependency graph: no lifecycle script (preinstall/install/postinstall/
+#      prepare) of the PR or of any dependency executes, and nothing is written to
+#      node_modules. No `pull_request_target` anywhere: the definition that runs is the PR
+#      head's own, and the fork guard below means a fork PR (which gets no secrets anyway)
+#      SKIPS rather than fails.
+#
+#   2. THE REGISTRY IS CONFIGURED BY THIS WORKFLOW, NEVER BY THE BRANCH. A branch could edit
+#      `.npmrc` to point `@izzywdev:registry` (or the default registry) at an attacker host,
+#      and npm would then send the auth token there. So every `.npmrc` in the tree is MOVED
+#      ASIDE before the install, and registry + auth come only from a runner-temp userconfig
+#      (NPM_CONFIG_USERCONFIG): `@izzywdev` -> npm.pkg.github.com, default -> registry.npmjs.org,
+#      and an `_authToken` scoped (nerf-darted) to `//npm.pkg.github.com/` ONLY. A small
+#      allowlist of NON-network behaviour keys (legacy-peer-deps, strict-peer-deps, ...) is
+#      carried over from a quarantined `.npmrc` as CLI flags so a repo that needs e.g.
+#      `legacy-peer-deps=true` still resolves; any registry/URL/auth/proxy/cafile key is
+#      dropped. The `.npmrc` files are restored afterwards and are never part of the commit.
+#      After the install, EVERY `resolved` URL in a changed lockfile must be on
+#      registry.npmjs.org or npm.pkg.github.com, or the run fails.
+#
+#   3. THE PUSH CREDENTIAL NEVER SHARES A JOB WITH PR CONTENT. Two jobs, split on purpose
+#      (scripts/gate_credential_exposure.py rule R1):
+#        * `regen`  — checks out the PR head, holds ONLY the read-scoped NODE_AUTH_TOKEN and
+#                     a `contents: read` GITHUB_TOKEN, and hands the changed lockfiles on as
+#                     an artifact.
+#        * `commit` — holds the push identity (fuze-agent App -> GH_RELEASE_PAT ->
+#                     GITHUB_TOKEN), but NEVER checks out or fetches the branch. It writes
+#                     the lockfile blobs through the Git Data API onto the exact head SHA
+#                     `regen` worked from, with a non-force ref update, so a branch that
+#                     moved in between is refused rather than clobbered.
+#      Only paths whose basename is `package-lock.json` are ever placed in the commit tree.
+#
+#   4. THE PUSH RE-TRIGGERS CI. A GITHUB_TOKEN push triggers no workflows, so the PR head
+#      would carry zero checks. Same identity chain as fuze-ci-autofix.yml's "Resolve push
+#      identity": App installation token, else GH_RELEASE_PAT, else GITHUB_TOKEN with a
+#      warning that checks will not re-run.
+#
+#   5. IT CANNOT LOOP. The regen commit touches only `package-lock.json`, so the
+#      `**/package.json` path filter cannot fire on it. Belt and braces: the run is skipped
+#      when the head commit is one this workflow wrote (its `[fuze-lockfile-regen]` marker)
+#      or was authored by `github-actions[bot]`. The fuze-agent App identity is deliberately
+#      NOT skipped wholesale: fuze.yml's agent pushes as that same App, and its
+#      package.json edits are exactly what this workflow exists to serve.
+#
+# HOW A SESSION USES IT. `pull_request` workflows defined on the PR head run for that PR, so
+# a session adds this file to its own branch in the same PR as its package.json edit (until
+# sdlc-bootstrap has installed it fleet-wide). For an existing branch with no package.json
+# change in flight, dispatch it: `gh workflow run fuze-lockfile-regen.yml --ref <branch>
+# -f ref=<branch>`.
+#
+# DISTRIBUTION. Installed by sdlc-bootstrap (caps/workflows.py STACK). It is credential-
+# bearing, so governance/workflow-autoinstall.json lists it under `excluded`: governance-sync
+# reconciles its drift once present but never creates it by bot commit.
+#
+# RUNNER: the hosted-default `pick-runner` chooser, copied from fuze-code-review.yml. No job
+# hard-codes a pool label: outside FuzeSDLC the ARC scale set is registered under the repo
+# name, so a literal `fuze-runner` would queue forever there. All three `runs-on:` values are
+# expressions, which render.py's scalar runner substitution leaves as written.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - '**/package.json'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch to regenerate lockfiles on (never the default branch)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuze-lockfile-regen-${{ github.event.pull_request.number || inputs.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Budget-aware runner selection ────────────────────
+  # Verbatim from fuze-code-review.yml (see its header). Also the FORK GUARD for the whole
+  # workflow: a fork PR receives no secrets, so every job is SKIPPED (not failed) from here.
+  pick-runner:
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' ||
+          github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ${{ vars.HARDEN_GATE_RUNNER || vars.CI_RUNNER_LABELS || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    outputs:
+      runner: ${{ steps.pick.outputs.runner }}
+    steps:
+      - id: pick
+        shell: bash
+        env:
+          IS_PRIVATE: ${{ github.event.repository.private }}
+          OWNER: ${{ github.repository_owner }}
+          # fuze:secret-sourcing CI_BUDGET_TOKEN=fleet — OPTIONAL org-wide Actions-billing read token; the chooser degrades to the self-hosted pool by name when unset
+          BUDGET_TOKEN: ${{ secrets.CI_BUDGET_TOKEN }}
+          FORCE_RUNNER: ${{ vars.HARDEN_GATE_RUNNER }}
+        run: |
+          set -euo pipefail
+          emit() { echo "runner=$1" >> "$GITHUB_OUTPUT"; echo "selected runner: $1"; }
+
+          choose_pool() {
+            if [ -n "${BUDGET_TOKEN:-}" ]; then
+              local runners online
+              runners="$(curl -sS -H "Authorization: Bearer ${BUDGET_TOKEN}" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runners?per_page=100" || true)"
+              online="$(printf '%s' "${runners}" | jq -r '[.runners[]? | select(.status=="online")] | length' 2>/dev/null || true)"
+              if printf '%s' "${online}" | grep -qE '^[0-9]+$'; then
+                if [ "${online}" -eq 0 ]; then
+                  echo "::warning title=pick-runner::the fuze-runner pool has 0 runners online — routing to ubuntu-latest instead of queueing forever (izzywdev/FuzeSDLC#266)"
+                  emit ubuntu-latest; return
+                fi
+                echo "::notice title=pick-runner::fuze-runner pool has ${online} runner(s) online"
+                emit fuze-runner; return
+              fi
+              echo "::notice title=pick-runner::runner liveness unverified (runners API unreadable) — using the self-hosted pool"
+              emit fuze-runner; return
+            fi
+            echo "::notice title=pick-runner::runner liveness unverified (no CI_BUDGET_TOKEN; the runners probe needs administration:read) — using the self-hosted pool"
+            emit fuze-runner
+          }
+
+          if [ -n "${FORCE_RUNNER:-}" ]; then
+            emit "${FORCE_RUNNER}"; exit 0
+          fi
+          if [ "${IS_PRIVATE:-}" != "true" ]; then
+            emit ubuntu-latest; exit 0
+          fi
+          if [ -z "${BUDGET_TOKEN:-}" ]; then
+            choose_pool; exit 0
+          fi
+          resp="$(curl -sS -H "Authorization: Bearer ${BUDGET_TOKEN}" -H "Accept: application/vnd.github+json" "https://api.github.com/orgs/${OWNER}/settings/billing/actions" || true)"
+          used="$(printf '%s' "${resp}" | jq -r '.total_minutes_used // empty' 2>/dev/null || true)"
+          incl="$(printf '%s' "${resp}" | jq -r '.included_minutes // empty' 2>/dev/null || true)"
+          if printf '%s' "${used}" | grep -qE '^[0-9]+$' && printf '%s' "${incl}" | grep -qE '^[0-9]+$' && [ "${used}" -lt "${incl}" ]; then
+            emit ubuntu-latest
+          else
+            echo "::notice title=pick-runner::Actions budget exhausted or unreadable (used=${used:-?} incl=${incl:-?})"
+            choose_pool
+          fi
+
+  # ── Regenerate (PR content, NO write credential) ─────
+  regen:
+    needs: [pick-runner]
+    runs-on: ${{ needs.pick-runner.outputs.runner }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.collect.outputs.changed }}
+      head_sha: ${{ steps.head.outputs.sha }}
+      branch: ${{ steps.head.outputs.branch }}
+    steps:
+      - name: Refuse the default branch
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          REF: ${{ inputs.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if [ "$REF" = "$DEFAULT_BRANCH" ] || [ "$REF" = "refs/heads/$DEFAULT_BRANCH" ]; then
+            echo "::error::lockfile regen pushes to the branch it runs on; it never targets the default branch ($DEFAULT_BRANCH). Dispatch it for a PR branch."
+            exit 1
+          fi
+
+      # The PR HEAD, not the merge ref: the lockfile must match the branch it is pushed to.
+      # persist-credentials: false — this job never pushes, so no token is left in .git/config.
+      - name: Checkout PR head
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.ref }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Resolve head commit + loop guard
+        id: head
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+          DISPATCH_REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            branch="$PR_BRANCH"
+          else
+            branch="${DISPATCH_REF#refs/heads/}"
+          fi
+          sha="$(git rev-parse HEAD)"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          msg="$(git log -1 --format=%B)"
+          author="$(git log -1 --format=%an)"
+          if printf '%s' "$msg" | grep -qF '[fuze-lockfile-regen]' || [ "$author" = "github-actions[bot]" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::head commit $sha was written by the lockfile-regen bot identity — skipping (loop guard)."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # No `registry-url`: setup-node would write its own .npmrc and export NODE_AUTH_TOKEN
+      # into every later step. Registry config comes only from the userconfig below.
+      - name: Setup Node
+        if: steps.head.outputs.skip != 'true'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          node-version: '24.x'
+
+      # Move EVERY .npmrc in the tree (files and symlinks, outside node_modules) aside, so no
+      # branch-controlled file can redirect a scope's registry to a host that would receive
+      # the auth token. Restored by the always() step below.
+      - name: Neutralise repo .npmrc files
+        id: npmrc
+        if: steps.head.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          Q="$RUNNER_TEMP/npmrc-quarantine"
+          mkdir -p "$Q"
+          : > "$Q/.list"
+          while IFS= read -r -d '' f; do
+            rel="${f#./}"
+            mkdir -p "$Q/$(dirname "$rel")"
+            mv "$f" "$Q/$rel"
+            printf '%s\n' "$rel" >> "$Q/.list"
+            echo "quarantined $rel"
+          done < <(find . -path ./.git -prune -o -name node_modules -prune -o \( -type f -o -type l \) -name .npmrc -print0)
+          if find . -path ./.git -prune -o -name node_modules -prune -o -name .npmrc -print | grep -q .; then
+            echo "::error::an .npmrc is still present after quarantine — refusing to install with a token."
+            exit 1
+          fi
+          echo "quarantine=$Q" >> "$GITHUB_OUTPUT"
+
+      # The ONLY registry configuration npm sees. The token is written into a 0600 file in
+      # RUNNER_TEMP and is NOT exported into any later step's environment.
+      - name: Write workflow-owned npm userconfig
+        if: steps.head.outputs.skip != 'true'
+        env:
+          # fuze:secret-sourcing NODE_AUTH_TOKEN=fleet — read:packages token for @izzywdev/* on GitHub Packages (scripts/provision_secrets.py FLEET_SOURCED)
+          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
+        run: |
+          set -euo pipefail
+          umask 077
+          d="$RUNNER_TEMP/npm-userconfig"
+          mkdir -p "$d"
+          {
+            echo "registry=https://registry.npmjs.org/"
+            echo "@izzywdev:registry=https://npm.pkg.github.com"
+            if [ -n "${NODE_AUTH_TOKEN:-}" ]; then
+              echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}"
+            fi
+          } > "$d/npmrc"
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "::warning::NODE_AUTH_TOKEN is not set on ${GITHUB_REPOSITORY} — private @izzywdev/* packages will fail to resolve. Provision it via FuzeSDLC provision-secrets.yml."
+          fi
+          echo "NPM_CONFIG_USERCONFIG=$d/npmrc" >> "$GITHUB_ENV"
+
+      # --package-lock-only --ignore-scripts in every directory with a package.json (outside
+      # node_modules) that has a package-lock.json or is a workspace root. Workspace members
+      # are covered by their root's install and are not run separately.
+      - name: Regenerate lockfiles (--package-lock-only --ignore-scripts)
+        if: steps.head.outputs.skip != 'true'
+        env:
+          QUARANTINE: ${{ steps.npmrc.outputs.quarantine }}
+        run: |
+          python3 - <<'PY'
+          # --- fuze-lockfile-regen:discover ---
+          import fnmatch, json, os, re, subprocess, sys
+
+          # Non-network npm behaviour keys a repo's .npmrc may legitimately need for the graph
+          # to resolve. Anything else (registry, *:registry, //host/:_authToken, proxy, cafile,
+          # strict-ssl, script-shell, ...) is DROPPED, never passed through.
+          SAFE_KEYS = {"legacy-peer-deps", "strict-peer-deps", "engine-strict", "lockfile-version",
+                       "install-strategy", "install-links", "prefer-dedupe", "save-exact",
+                       "include-workspace-root", "workspaces-update"}
+          SAFE_VALUE = re.compile(r"^[A-Za-z0-9._-]{1,32}$")
+
+          def safe_flags(npmrc_path):
+              flags = []
+              if not npmrc_path or not os.path.isfile(npmrc_path) or os.path.islink(npmrc_path):
+                  return flags
+              with open(npmrc_path, encoding="utf-8", errors="replace") as f:
+                  for line in f:
+                      line = line.strip()
+                      if not line or line[0] in "#;" or "=" not in line:
+                          continue
+                      key, _, val = line.partition("=")
+                      key, val = key.strip(), val.strip()
+                      if key in SAFE_KEYS and SAFE_VALUE.match(val):
+                          flags.append(f"--{key}={val}")
+              return flags
+
+          def discover(root="."):
+              """Directories to regenerate, relative to root, sorted shallow-first."""
+              found = []
+              for dirpath, dirnames, filenames in os.walk(root):
+                  dirnames[:] = sorted(d for d in dirnames if d not in ("node_modules", ".git"))
+                  if "package.json" not in filenames:
+                      continue
+                  try:
+                      with open(os.path.join(dirpath, "package.json"), encoding="utf-8") as f:
+                          pkg = json.load(f)
+                  except (OSError, ValueError):
+                      print(f"::warning::skipping unparseable {os.path.join(dirpath, 'package.json')}")
+                      continue
+                  ws = pkg.get("workspaces") if isinstance(pkg, dict) else None
+                  if isinstance(ws, dict):  # {"packages": [...]} form
+                      ws = ws.get("packages")
+                  ws = [str(p).rstrip("/") for p in ws] if isinstance(ws, list) else []
+                  has_lock = "package-lock.json" in filenames
+                  if ws or has_lock:
+                      found.append((os.path.relpath(dirpath, root).replace(os.sep, "/"), ws))
+              found.sort(key=lambda t: (t[0].count("/") if t[0] != "." else -1, t[0]))
+
+              def member_of_a_workspace(d):
+                  # A workspace member's lockfile is owned by its root's install.
+                  for r, globs in found:
+                      if not globs or r == d:
+                          continue
+                      if r != "." and not d.startswith(r + "/"):
+                          continue
+                      rel = d if r == "." else d[len(r) + 1:]
+                      if any(fnmatch.fnmatch(rel, g.removeprefix("./")) for g in globs):
+                          return True
+                  return False
+              return [d for d, _ws in found if not member_of_a_workspace(d)]
+          # --- end fuze-lockfile-regen:discover ---
+
+          if __name__ == "__main__":
+              q = os.environ.get("QUARANTINE", "")
+              dirs = discover(".")
+              if not dirs:
+                  print("::notice::no package.json with a package-lock.json or workspaces found — nothing to regenerate.")
+                  sys.exit(0)
+              failed = []
+              for d in dirs:
+                  flags = safe_flags(os.path.join(q, d, ".npmrc") if q else "")
+                  cmd = ["npm", "install", "--package-lock-only", "--ignore-scripts",
+                         "--no-audit", "--no-fund"] + flags
+                  print(f"::group::{d}: {' '.join(cmd)}")
+                  rc = subprocess.run(cmd, cwd=d).returncode
+                  print("::endgroup::")
+                  if rc != 0:
+                      failed.append(d)
+                      print(f"::error::npm lockfile regeneration failed in {d} (exit {rc})")
+              sys.exit(1 if failed else 0)
+          PY
+
+      - name: Remove npm userconfig
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/npm-userconfig"
+
+      - name: Restore repo .npmrc files
+        if: always() && steps.npmrc.outputs.quarantine != ''
+        env:
+          Q: ${{ steps.npmrc.outputs.quarantine }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r rel; do
+            [ -n "$rel" ] || continue
+            mv "$Q/$rel" "$rel"
+          done < "$Q/.list"
+
+      # Changed lockfiles only. Anything else the install touched is a hard error, not
+      # something to silently leave out (and .npmrc must be byte-identical after restore).
+      - name: Collect changed lockfiles
+        id: collect
+        if: steps.head.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          git status --porcelain=v1 --untracked-files=all -z > "$RUNNER_TEMP/status.z"
+          : > "$RUNNER_TEMP/changed.txt"
+          other=""
+          while IFS= read -r -d '' entry; do
+            path="${entry:3}"
+            case "$path" in
+              package-lock.json|*/package-lock.json) printf '%s\n' "$path" >> "$RUNNER_TEMP/changed.txt" ;;
+              *) other="$other $path" ;;
+            esac
+          done < "$RUNNER_TEMP/status.z"
+          if [ -n "$other" ]; then
+            echo "::error::the regeneration changed files other than package-lock.json:$other — refusing to continue."
+            exit 1
+          fi
+          if [ ! -s "$RUNNER_TEMP/changed.txt" ]; then
+            echo "::notice::lockfiles are already in sync with package.json — nothing to commit."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          out="$RUNNER_TEMP/lockfile-out"
+          mkdir -p "$out"
+          while IFS= read -r p; do
+            mkdir -p "$out/$(dirname "$p")"
+            cp "$p" "$out/$p"
+            echo "changed: $p"
+          done < "$RUNNER_TEMP/changed.txt"
+
+      - name: Verify resolved URLs (registry allowlist)
+        if: steps.collect.outputs.changed == 'true'
+        run: |
+          python3 - "$RUNNER_TEMP/changed.txt" <<'PY'
+          # --- fuze-lockfile-regen:allowlist ---
+          import json, sys
+
+          ALLOWED = ("https://registry.npmjs.org/", "https://npm.pkg.github.com/")
+
+          def bad_resolved(lock):
+              """Every (name, resolved) whose `resolved` is outside ALLOWED. Workspace/file
+              links (`"link": true`) carry a relative path, not a URL, and are exempt."""
+              bad = []
+              for name, meta in (lock.get("packages") or {}).items():
+                  if isinstance(meta, dict) and "resolved" in meta and not meta.get("link"):
+                      if not str(meta["resolved"]).startswith(ALLOWED):
+                          bad.append((name or "<root>", meta["resolved"]))
+              def walk(deps, prefix):
+                  for name, meta in (deps or {}).items():
+                      if not isinstance(meta, dict):
+                          continue
+                      r = meta.get("resolved")
+                      if r is not None and not str(r).startswith(ALLOWED):
+                          bad.append((prefix + name, r))
+                      walk(meta.get("dependencies"), prefix + name + ">")
+              walk(lock.get("dependencies"), "")
+              return bad
+          # --- end fuze-lockfile-regen:allowlist ---
+
+          if __name__ == "__main__":
+              with open(sys.argv[1], encoding="utf-8") as f:
+                  paths = [p.strip() for p in f if p.strip()]
+              failures = 0
+              for p in paths:
+                  with open(p, encoding="utf-8") as f:
+                      lock = json.load(f)
+                  for name, url in bad_resolved(lock):
+                      failures += 1
+                      print(f"::error file={p}::{name} resolves outside the registry allowlist: {url}")
+              if failures:
+                  print(f"::error::{failures} resolved URL(s) outside {', '.join(ALLOWED)} — not committing.")
+                  sys.exit(1)
+              print(f"all resolved URLs in {len(paths)} lockfile(s) are on the allowlist")
+          PY
+
+      - name: Upload regenerated lockfiles
+        if: steps.collect.outputs.changed == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fuze-lockfile-regen
+          path: ${{ runner.temp }}/lockfile-out
+          include-hidden-files: false
+          if-no-files-found: error
+          retention-days: 1
+
+  # ── Commit (write credential, NO PR content on disk) ─
+  commit:
+    needs: [pick-runner, regen]
+    if: needs.regen.outputs.changed == 'true'
+    runs-on: ${{ needs.pick-runner.outputs.runner }}
+    timeout-minutes: 10
+    # contents: write is used only by the GITHUB_TOKEN fallback arm of the identity chain.
+    permissions:
+      contents: write
+    steps:
+      - name: Mint fuze-agent App token
+        id: app_token
+        continue-on-error: true
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.FUZE_AGENT_APP_ID }}
+          private-key: ${{ secrets.FUZE_AGENT_APP_PRIVATE_KEY }}
+
+      # Same chain as fuze-ci-autofix.yml's "Resolve push identity".
+      - name: Resolve push identity
+        id: identity
+        env:
+          APP_TOKEN: ${{ steps.app_token.outputs.token }}
+          BOT_PAT: ${{ secrets.GH_RELEASE_PAT }}
+          GH_DEFAULT: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -n "${APP_TOKEN:-}" ]; then
+            tok="$APP_TOKEN"; who="fuze-agent (App installation token)"; triggers_ci=true
+          elif [ -n "${BOT_PAT:-}" ]; then
+            tok="$BOT_PAT"; who="GH_RELEASE_PAT (bot PAT)"; triggers_ci=true
+          else
+            tok="$GH_DEFAULT"; who="GITHUB_TOKEN"; triggers_ci=false
+            echo "::warning title=lockfile-regen-identity::No FUZE_AGENT_APP_* App secrets and no GH_RELEASE_PAT — a lockfile commit pushed as GITHUB_TOKEN will NOT trigger any workflow, so the PR head will have no checks. Set the fuze-agent App secrets to fix."
+          fi
+          echo "::add-mask::$tok"
+          echo "token=$tok" >> "$GITHUB_OUTPUT"
+          echo "triggers_ci=$triggers_ci" >> "$GITHUB_OUTPUT"
+          echo "Push identity: $who"
+
+      - name: Download regenerated lockfiles
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: fuze-lockfile-regen
+          path: ${{ runner.temp }}/lockfile-in
+
+      # Commit through the Git Data API onto the exact SHA `regen` worked from. The tree
+      # holds ONLY package-lock.json entries; the ref update is non-force, so a branch that
+      # moved since `regen` read it is refused (re-run or re-dispatch) instead of clobbered.
+      - name: Commit lockfiles to the PR branch
+        env:
+          GH_TOKEN: ${{ steps.identity.outputs.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ needs.regen.outputs.branch }}
+          BASE_SHA: ${{ needs.regen.outputs.head_sha }}
+          IN_DIR: ${{ runner.temp }}/lockfile-in
+          TRIGGERS_CI: ${{ steps.identity.outputs.triggers_ci }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$BASE_SHA" | grep -qE '^[0-9a-f]{40}$' || { echo "::error::bad base sha"; exit 1; }
+          current="$(gh api "repos/${REPO}/git/ref/heads/${BRANCH}" --jq .object.sha)"
+          if [ "$current" != "$BASE_SHA" ]; then
+            echo "::error::${BRANCH} moved from ${BASE_SHA} to ${current} while lockfiles were regenerated — not overwriting. Re-run this workflow (or dispatch it with -f ref=${BRANCH})."
+            exit 1
+          fi
+          python3 - <<'PY'
+          # --- fuze-lockfile-regen:stage ---
+          import base64, json, os, subprocess, sys
+
+          def lockfile_paths(root):
+              """Relative paths of every file under root. ONLY `package-lock.json` files are
+              allowed; anything else (or any path escaping the root) aborts the commit."""
+              out = []
+              for dirpath, _dirs, files in os.walk(root):
+                  for fn in files:
+                      rel = os.path.relpath(os.path.join(dirpath, fn), root).replace(os.sep, "/")
+                      if fn != "package-lock.json" or rel.startswith("../") or "/../" in rel or rel.startswith("/"):
+                          raise SystemExit(f"::error::refusing to commit non-lockfile path: {rel}")
+                      out.append(rel)
+              return sorted(out)
+          # --- end fuze-lockfile-regen:stage ---
+
+          repo, root, base = os.environ["REPO"], os.environ["IN_DIR"], os.environ["BASE_SHA"]
+          def api(method, path, payload=None):
+              cmd = ["gh", "api", "-X", method, f"repos/{repo}/{path}"]
+              if payload is not None:
+                  cmd += ["--input", "-"]
+              res = subprocess.run(cmd, input=json.dumps(payload) if payload is not None else None,
+                                   capture_output=True, text=True)
+              if res.returncode != 0:
+                  sys.exit(f"::error::gh api {method} {path} failed: {res.stderr.strip()}")
+              return json.loads(res.stdout)
+
+          paths = lockfile_paths(root)
+          if not paths:
+              sys.exit("::error::artifact held no lockfiles")
+          tree = []
+          for rel in paths:
+              with open(os.path.join(root, rel), "rb") as f:
+                  blob = api("POST", "git/blobs", {"content": base64.b64encode(f.read()).decode(),
+                                                   "encoding": "base64"})
+              tree.append({"path": rel, "mode": "100644", "type": "blob", "sha": blob["sha"]})
+          base_tree = api("GET", f"git/commits/{base}")["tree"]["sha"]
+          new_tree = api("POST", "git/trees", {"base_tree": base_tree, "tree": tree})["sha"]
+          msg = ("chore(deps): regenerate package-lock.json [fuze-lockfile-regen]\n\n"
+                 "Regenerated in CI with `npm install --package-lock-only --ignore-scripts`\n"
+                 "against workflow-owned registry config (fuze-lockfile-regen.yml).\n\n"
+                 + "\n".join(f"- {p}" for p in paths))
+          commit = api("POST", "git/commits", {"message": msg, "tree": new_tree, "parents": [base]})["sha"]
+          api("PATCH", f"git/refs/heads/{os.environ['BRANCH']}", {"sha": commit, "force": False})
+          print(f"::notice::pushed {commit} to {os.environ['BRANCH']} ({len(paths)} lockfile(s))")
+          PY
+          if [ "$TRIGGERS_CI" != "true" ]; then
+            echo "::warning::committed as GITHUB_TOKEN — no workflows will run on the new head until the next push to ${BRANCH}."
+          fi

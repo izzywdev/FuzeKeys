@@ -80,6 +80,8 @@ jobs:
           context: frontend
           file: frontend/Dockerfile
           push: true
+          secrets: |
+            node_auth_token=${{ secrets.NODE_AUTH_TOKEN }}
           tags: |
             ghcr.io/izzywdev/fuzekeys/frontend:latest
             ghcr.io/izzywdev/fuzekeys/frontend:${{ needs.version.outputs.appversion }}

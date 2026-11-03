@@ -1,8 +1,11 @@
+# syntax=docker/dockerfile:1
 # Build stage — standalone CRA build (direct access / standalone mode)
 FROM node:24-alpine AS build-standalone
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci --legacy-peer-deps
+COPY package*.json .npmrc ./
+# @izzywdev/* comes from GitHub Packages; the token is a BuildKit secret, never an ARG/layer.
+RUN --mount=type=secret,id=node_auth_token \
+    NODE_AUTH_TOKEN="$(cat /run/secrets/node_auth_token 2>/dev/null || true)" npm ci --legacy-peer-deps
 COPY . .
 RUN npm run build
 
@@ -11,8 +14,10 @@ FROM node:24-alpine AS build-mfe
 ARG VITE_API_URL=https://api.keys.prod.fuzefront.com
 ENV VITE_API_URL=${VITE_API_URL}
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci --legacy-peer-deps
+COPY package*.json .npmrc ./
+# @izzywdev/* comes from GitHub Packages; the token is a BuildKit secret, never an ARG/layer.
+RUN --mount=type=secret,id=node_auth_token \
+    NODE_AUTH_TOKEN="$(cat /run/secrets/node_auth_token 2>/dev/null || true)" npm ci --legacy-peer-deps
 COPY . .
 RUN npm run build:mfe
 
