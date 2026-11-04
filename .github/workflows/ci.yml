@@ -12,8 +12,8 @@ jobs:
     
     strategy:
       matrix:
-        python-version: ["3.9", "3.10", "3.11"]
-        node-version: [18.x, 20.x]
+        python-version: ["3.10", "3.11"]
+        node-version: [24.x]
     
     services:
       postgres:
@@ -149,29 +149,27 @@ jobs:
     - name: Run Frontend Tests
       run: |
         cd frontend
-        npm test -- --coverage --watchAll=false
+        npm test
 
     - name: Upload Python Coverage to Codecov
       # Skipped (visibly) when CODECOV_TOKEN is absent: codecov-action v4+ has no
       # tokenless upload for same-repo runs, and a green no-op step is worse than none.
       if: env.CODECOV_TOKEN_SET == 'true'
-      uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
+      uses: ./.github/actions/upload-coverage
       with:
         files: backend/coverage.xml
         flags: backend
         name: backend-coverage
         token: ${{ secrets.CODECOV_TOKEN }}
-        fail_ci_if_error: true
 
     - name: Upload Frontend Coverage to Codecov
       if: env.CODECOV_TOKEN_SET == 'true'
-      uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
+      uses: ./.github/actions/upload-coverage
       with:
         files: frontend/coverage/lcov.info
         flags: frontend
         name: frontend-coverage
         token: ${{ secrets.CODECOV_TOKEN }}
-        fail_ci_if_error: true
 
   security-scan:
     runs-on: ubuntu-latest
@@ -286,4 +284,4 @@ jobs:
         else
           echo "❌ Some checks failed!"
           exit 1
-        fi 
+        fi

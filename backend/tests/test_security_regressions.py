@@ -34,13 +34,25 @@ ENVIRONMENT CONSTRAINT (documented, not ours to fix):
 """
 
 import asyncio
+from unittest.mock import AsyncMock
 
 import pytest
+import pytest_asyncio
 from fastapi import HTTPException
 
 # Importing these specific modules is cv2-free (verified). Importing app.main is NOT.
 import app.routers.credentials as credentials_mod
 import app.routers.sms as sms_mod
+from app.security.fuzefront_auth import Identity as DelegatedIdentity
+
+DELEGATED = DelegatedIdentity(
+    subject="owner",
+    tenant_id="tenant-1",
+    scopes=frozenset({"connectors:credentials:read", "connectors:credentials:write"}),
+    audience="service:fuzekeys",
+    actor={"sub": "service:scraper"},
+    token_kind="fuze-delegation",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +182,7 @@ class TestVerifyApiKeyFailsClosed:
 # Ownership chain: Account.identity_id -> Identity.id, Identity.user_id -> User.id.
 #
 # We exercise the REAL endpoint handlers (request_account_credentials /
-# store_account_credentials) against a real (in-memory SQLite) synchronous
+# store_account_credentials) against a real (in-memory SQLite) asynchronous
 # SQLAlchemy session, seeding two identities owned by different users, each with
 # its own account. We stub verify_api_key out by passing service_name directly
 # (the handlers take service_name as a plain arg), so this isolates the
@@ -179,50 +191,38 @@ class TestVerifyApiKeyFailsClosed:
 # Reversion this would catch: removing the `Account.identity_id == identity_id`
 # filter (i.e. looking up by account_id alone), which is the IDOR.
 # ===========================================================================
+@pytest.mark.asyncio
 class TestIdorOwnershipScoping:
     @pytest.fixture(autouse=True)
-    def _grant_full_identity_scope(self):
-        """These tests isolate the per-IDENTITY IDOR layer (Account.identity_id
-        scoping). The newer per-KEY scope gate (HIGH-2, require_identity_scope)
-        sits in FRONT of it, so we grant the calling service a wildcard scope here
-        and restore it afterwards; otherwise the request would 403 on key-scope
-        before ever reaching the IDOR check under test. The key-scope behaviour is
-        covered independently in TestServiceKeyIdentityScoping."""
-        original = credentials_mod.SERVICE_IDENTITY_SCOPES
-        credentials_mod.SERVICE_IDENTITY_SCOPES = {"scraper-service": "*"}
-        yield
-        credentials_mod.SERVICE_IDENTITY_SCOPES = original
+    def _allow_platform_decision(self, monkeypatch):
+        """Isolate the SQL identity/account predicate from platform decisions."""
+        monkeypatch.setattr(
+            credentials_mod, "require_delegated_owner_permission", AsyncMock()
+        )
 
-    @pytest.fixture
-    def db_session(self):
-        """A synchronous in-memory SQLite session with the User/Identity/Account
+    @pytest_asyncio.fixture
+    async def db_session(self):
+        """An asynchronous in-memory SQLite session with the User/Identity/Account
         tables created. Uses the app's real ORM models so the scoping query the
         endpoint runs is exercised verbatim."""
-        from sqlalchemy import create_engine
-        from sqlalchemy.orm import sessionmaker
+        from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-        # Import the models AND database.Base. account/identity/user all bind to
-        # app.database.Base; importing the modules registers their tables on it.
         from app.database import Base
-        from app.models.account import Account  # noqa: F401  (registers table)
+        from app.models.account import Account
         from app.models.identity import Identity
         from app.models.user import User
 
-        engine = create_engine("sqlite:///:memory:")
-        # Create only the tables defined on app.database.Base (not the separate
-        # sms Base). create_all is safe/idempotent for the registered tables.
-        Base.metadata.create_all(engine)
-
-        Session = sessionmaker(bind=engine)
-        session = Session()
+        engine = create_async_engine("sqlite+aiosqlite://")
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
         try:
-            yield session, User, Identity, Account
+            async with AsyncSession(engine, expire_on_commit=False) as session:
+                yield session, User, Identity, Account
         finally:
-            session.close()
-            engine.dispose()
+            await engine.dispose()
 
     @staticmethod
-    def _seed_two_tenants(session, User, Identity, Account):
+    async def _seed_two_tenants(session, User, Identity, Account):
         """Create two users, each with one identity owning one account."""
         user_a = User(
             email="<EMAIL_a>",
@@ -237,12 +237,12 @@ class TestIdorOwnershipScoping:
             master_key_hash="m",
         )
         session.add_all([user_a, user_b])
-        session.flush()
+        await session.flush()
 
         identity_a = Identity(user_id=user_a.id, name="Identity A")
         identity_b = Identity(user_id=user_b.id, name="Identity B")
         session.add_all([identity_a, identity_b])
-        session.flush()
+        await session.flush()
 
         account_a = Account(
             identity_id=identity_a.id,
@@ -257,14 +257,14 @@ class TestIdorOwnershipScoping:
             encrypted_credentials=None,
         )
         session.add_all([account_a, account_b])
-        session.commit()
+        await session.commit()
         return identity_a, identity_b, account_a, account_b
 
-    def test_retrieve_with_wrong_owning_identity_yields_404(self, db_session):
+    async def test_retrieve_with_wrong_owning_identity_yields_404(self, db_session):
         """IDOR core: account_b belongs to identity_b. A request for account_b
         that names identity_a (a different owner) must 404 — no cross-tenant data."""
         session, User, Identity, Account = db_session
-        identity_a, identity_b, account_a, account_b = self._seed_two_tenants(
+        identity_a, identity_b, account_a, account_b = await self._seed_two_tenants(
             session, User, Identity, Account
         )
 
@@ -274,19 +274,15 @@ class TestIdorOwnershipScoping:
             credential_types=[],
         )
         with pytest.raises(HTTPException) as exc:
-            _run(
-                credentials_mod.request_account_credentials(
-                    req, "scraper-service", session
-                )
-            )
+            await credentials_mod.request_account_credentials(req, DELEGATED, session)
         assert exc.value.status_code == 404
 
-    def test_retrieve_with_correct_owner_succeeds(self, db_session):
+    async def test_retrieve_with_correct_owner_succeeds(self, db_session):
         """The legitimate path: correct (identity, account) pair returns the
         account (200), proving the 404 above is the scoping check, not a blanket deny.
         """
         session, User, Identity, Account = db_session
-        identity_a, identity_b, account_a, account_b = self._seed_two_tenants(
+        identity_a, identity_b, account_a, account_b = await self._seed_two_tenants(
             session, User, Identity, Account
         )
 
@@ -295,19 +291,19 @@ class TestIdorOwnershipScoping:
             account_id=account_b.id,
             credential_types=[],
         )
-        resp = _run(
-            credentials_mod.request_account_credentials(req, "scraper-service", session)
+        resp = await credentials_mod.request_account_credentials(
+            req, DELEGATED, session
         )
         assert resp.account_id == account_b.id
         assert resp.site_name == "SiteB"
 
-    def test_store_with_wrong_owning_identity_yields_404_and_no_mutation(
+    async def test_store_with_wrong_owning_identity_yields_404_and_no_mutation(
         self, db_session, monkeypatch
     ):
         """Store path enforces the same scoping AND does not mutate the victim's
         account when the wrong owner is named."""
         session, User, Identity, Account = db_session
-        identity_a, identity_b, account_a, account_b = self._seed_two_tenants(
+        identity_a, identity_b, account_a, account_b = await self._seed_two_tenants(
             session, User, Identity, Account
         )
         # Provide a working cipher so a (hypothetically-passing) store wouldn't 503
@@ -326,24 +322,20 @@ class TestIdorOwnershipScoping:
             metadata=None,
         )
         with pytest.raises(HTTPException) as exc:
-            _run(
-                credentials_mod.store_account_credentials(
-                    req, "scraper-service", session
-                )
-            )
+            await credentials_mod.store_account_credentials(req, DELEGATED, session)
         assert exc.value.status_code == 404
 
-        session.expire_all()
-        refreshed = session.get(Account, account_b.id)
+        await session.refresh(account_b)
+        refreshed = account_b
         assert (
             refreshed.encrypted_credentials == before
         ), "victim account must not be mutated"
         assert refreshed.encrypted_credentials is None
 
-    def test_store_with_correct_owner_succeeds(self, db_session, monkeypatch):
+    async def test_store_with_correct_owner_succeeds(self, db_session, monkeypatch):
         """Legitimate store with the correct owner persists encrypted credentials."""
         session, User, Identity, Account = db_session
-        identity_a, identity_b, account_a, account_b = self._seed_two_tenants(
+        identity_a, identity_b, account_a, account_b = await self._seed_two_tenants(
             session, User, Identity, Account
         )
         from cryptography.fernet import Fernet
@@ -357,251 +349,18 @@ class TestIdorOwnershipScoping:
             credentials={"password": "legit"},
             metadata=None,
         )
-        result = _run(
-            credentials_mod.store_account_credentials(req, "scraper-service", session)
+        result = await credentials_mod.store_account_credentials(
+            req, DELEGATED, session
         )
         assert result["success"] is True
-        session.expire_all()
-        refreshed = session.get(Account, account_b.id)
+        await session.refresh(account_b)
+        refreshed = account_b
         assert refreshed.encrypted_credentials is not None
 
 
 # ===========================================================================
-# AREA 3: OTP device auth + request binding  (sms.receive_otp)
-#
-# Fix under test (sms.receive_otp + _verify_device + register_device):
-#   - Requires header X-Device-Key verified via _verify_device against the
-#     module-level registered_device_keys -> 401 if device unknown / key bad.
-#   - Requires a request_id that exists in pending_otp_requests -> 404 if absent.
-#   - Rejects a device that isn't the one assigned to that request -> 403.
-#   - Validates OTP format (digits, length bounds) -> 400.
-#   - Succeeds only for the authenticated, bound device + open request.
-#   - register_device issues + persists a secrets.token_urlsafe(32) key.
-#
-# We seed the module-level dicts directly and call receive_otp(...) with a fake
-# DB session (and stub the websocket broadcast) so we exercise the auth/binding
-# logic without app.main.
-#
-# Reversion this would catch: dropping the X-Device-Key check (any caller could
-# submit), matching the "first waiting" request instead of a bound request_id,
-# or not enforcing assigned-device binding.
-# ===========================================================================
-class _FakeQuery:
-    def filter(self, *a, **k):
-        return self
-
-    def first(self):
-        return None
-
-
-class _FakeDbSession:
-    """Minimal stand-in for a SQLAlchemy Session used by receive_otp.
-
-    Records add/commit so tests can assert whether persistence was attempted,
-    and returns no device on query (so the 'update last seen' branch is a no-op)."""
-
-    def __init__(self):
-        self.added = []
-        self.commits = 0
-
-    def add(self, obj):
-        self.added.append(obj)
-
-    def commit(self):
-        self.commits += 1
-
-    def query(self, *a, **k):
-        return _FakeQuery()
-
-
-class TestOtpDeviceAuthAndBinding:
-    @pytest.fixture(autouse=True)
-    def _isolate_module_state(self):
-        """Reset the module-level dicts before AND after each test so no global
-        OTP/device state leaks between tests."""
-        orig_keys = dict(sms_mod.registered_device_keys)
-        orig_pending = dict(sms_mod.pending_otp_requests)
-        sms_mod.registered_device_keys.clear()
-        sms_mod.pending_otp_requests.clear()
-        yield
-        sms_mod.registered_device_keys.clear()
-        sms_mod.registered_device_keys.update(orig_keys)
-        sms_mod.pending_otp_requests.clear()
-        sms_mod.pending_otp_requests.update(orig_pending)
-
-    @pytest.fixture(autouse=True)
-    def _stub_broadcast(self, monkeypatch):
-        """Stub the websocket broadcast so the success path doesn't need a real
-        connection manager; record that it was (not) called."""
-
-        async def _noop_broadcast(*a, **k):
-            return None
-
-        monkeypatch.setattr(sms_mod.sms_manager, "broadcast", _noop_broadcast)
-
-    @staticmethod
-    def _make_request(device_id, request_id, otp="123456"):
-        return sms_mod.OtpRequest(
-            otp=otp,
-            sender="VERIFY",
-            message_body="Your code is 123456",
-            timestamp=1_700_000_000_000,
-            device_id=device_id,
-            confidence=0.99,
-            request_id=request_id,
-        )
-
-    @staticmethod
-    def _future_ts():
-        from datetime import datetime, timedelta
-
-        return (datetime.utcnow() + timedelta(seconds=300)).timestamp()
-
-    def test_unknown_device_rejected_401(self):
-        """No X-Device-Key / device not registered -> 401 (device auth fails)."""
-        sms_mod.pending_otp_requests["req-1"] = {
-            "status": "waiting",
-            "timeout": self._future_ts(),
-        }
-        req = self._make_request(device_id="dev-unknown", request_id="req-1")
-
-        # Missing header
-        with pytest.raises(HTTPException) as exc:
-            _run(sms_mod.receive_otp(req, x_device_key=None, db=_FakeDbSession()))
-        assert exc.value.status_code == 401
-
-        # Header present but device not registered
-        with pytest.raises(HTTPException) as exc2:
-            _run(sms_mod.receive_otp(req, x_device_key="some-key", db=_FakeDbSession()))
-        assert exc2.value.status_code == 401
-
-    def test_registered_device_wrong_key_rejected_401(self):
-        """A registered device but the WRONG key -> 401."""
-        sms_mod.registered_device_keys["dev-1"] = "correct-key"
-        sms_mod.pending_otp_requests["req-1"] = {
-            "status": "waiting",
-            "timeout": self._future_ts(),
-        }
-        req = self._make_request(device_id="dev-1", request_id="req-1")
-        with pytest.raises(HTTPException) as exc:
-            _run(
-                sms_mod.receive_otp(req, x_device_key="wrong-key", db=_FakeDbSession())
-            )
-        assert exc.value.status_code == 401
-
-    def test_unknown_request_id_yields_404(self):
-        """Authenticated device, but the request_id isn't pending -> 404."""
-        sms_mod.registered_device_keys["dev-1"] = "correct-key"
-        # No pending_otp_requests entries.
-        req = self._make_request(device_id="dev-1", request_id="does-not-exist")
-        with pytest.raises(HTTPException) as exc:
-            _run(
-                sms_mod.receive_otp(
-                    req, x_device_key="correct-key", db=_FakeDbSession()
-                )
-            )
-        assert exc.value.status_code == 404
-
-    def test_invalid_otp_format_yields_400(self):
-        """Authenticated device + valid request, but a non-numeric / out-of-bounds
-        OTP -> 400 (format validation)."""
-        sms_mod.registered_device_keys["dev-1"] = "correct-key"
-        sms_mod.pending_otp_requests["req-1"] = {
-            "status": "waiting",
-            "timeout": self._future_ts(),
-        }
-        for bad_otp in ("abc123", "12", "123456789012"):
-            req = self._make_request(device_id="dev-1", request_id="req-1", otp=bad_otp)
-            with pytest.raises(HTTPException) as exc:
-                _run(
-                    sms_mod.receive_otp(
-                        req, x_device_key="correct-key", db=_FakeDbSession()
-                    )
-                )
-            assert exc.value.status_code == 400, f"otp {bad_otp!r} should be 400"
-
-    def test_device_not_assigned_to_request_yields_403(self):
-        """A request pre-assigned to dev-1 cannot be completed by a different
-        (also authenticated) device dev-2 -> 403."""
-        sms_mod.registered_device_keys["dev-1"] = "key-1"
-        sms_mod.registered_device_keys["dev-2"] = "key-2"
-        sms_mod.pending_otp_requests["req-1"] = {
-            "status": "waiting",
-            "timeout": self._future_ts(),
-            "assigned_device_id": "dev-1",  # request belongs to dev-1
-        }
-        req = self._make_request(device_id="dev-2", request_id="req-1")
-        with pytest.raises(HTTPException) as exc:
-            _run(sms_mod.receive_otp(req, x_device_key="key-2", db=_FakeDbSession()))
-        assert exc.value.status_code == 403
-
-    def test_bound_device_succeeds_and_completes_request(self):
-        """Happy path: the assigned, authenticated device with a valid OTP for an
-        open request succeeds and the request is marked completed."""
-        sms_mod.registered_device_keys["dev-1"] = "key-1"
-        sms_mod.pending_otp_requests["req-1"] = {
-            "status": "waiting",
-            "timeout": self._future_ts(),
-            "assigned_device_id": "dev-1",
-        }
-        db = _FakeDbSession()
-        req = self._make_request(device_id="dev-1", request_id="req-1", otp="123456")
-        result = _run(sms_mod.receive_otp(req, x_device_key="key-1", db=db))
-
-        assert result["success"] is True
-        assert result["request_id"] == "req-1"
-        assert sms_mod.pending_otp_requests["req-1"]["status"] == "completed"
-        assert sms_mod.pending_otp_requests["req-1"]["otp_code"] == "123456"
-        assert db.commits >= 1
-
-    def test_unassigned_request_binds_to_first_authenticated_device(self):
-        """An unassigned open request is bound to the first authenticated device
-        that answers; a SECOND different device is then rejected (403)."""
-        sms_mod.registered_device_keys["dev-1"] = "key-1"
-        sms_mod.registered_device_keys["dev-2"] = "key-2"
-        sms_mod.pending_otp_requests["req-1"] = {
-            "status": "waiting",
-            "timeout": self._future_ts(),
-            # no assigned_device_id
-        }
-        # First device completes it.
-        req1 = self._make_request(device_id="dev-1", request_id="req-1")
-        _run(sms_mod.receive_otp(req1, x_device_key="key-1", db=_FakeDbSession()))
-        assert sms_mod.pending_otp_requests["req-1"]["assigned_device_id"] == "dev-1"
-
-    def test_register_device_issues_strong_persisted_key(self, monkeypatch):
-        """register_device issues a secrets.token_urlsafe(32) key, persists it in
-        registered_device_keys, and that key then verifies via _verify_device."""
-        captured = {}
-        real_token_urlsafe = sms_mod.secrets.token_urlsafe
-
-        def _spy(n):
-            val = real_token_urlsafe(n)
-            captured["nbytes"] = n
-            captured["value"] = val
-            return val
-
-        monkeypatch.setattr(sms_mod.secrets, "token_urlsafe", _spy)
-
-        reg = sms_mod.DeviceRegistrationRequest(
-            device_id="dev-new",
-            device_name="Pixel",
-            os_version="14",
-            app_version="1.0.0",
-        )
-        result = _run(sms_mod.register_device(reg, db=_FakeDbSession()))
-
-        assert result["success"] is True
-        assert captured["nbytes"] == 32, "key must be secrets.token_urlsafe(32)"
-        issued = result["api_key"]
-        assert issued == captured["value"]
-        # Persisted and verifiable.
-        assert sms_mod.registered_device_keys["dev-new"] == issued
-        assert sms_mod._verify_device("dev-new", issued) is True
-        assert sms_mod._verify_device("dev-new", "not-the-key") is False
-
-
-# ===========================================================================
+# Durable SMS principal, assignment, restart and creator-isolation coverage lives
+# in test_sms_request_isolation.py and exercises the real AsyncSession path.
 # AREA 4: Per-tenant service-key scoping  (HIGH-2 / appsec #18)
 #
 # Fix under test (credentials.require_identity_scope + _load_service_identity_scopes
@@ -674,51 +433,18 @@ class TestServiceKeyIdentityScoping:
         assert loaded["scraper-service"] == "*"
         assert loaded["mobile-service"] == {1, 2, 3}
 
-    # --- get_identity_accounts enforces the scope BEFORE any DB lookup --------
-    def test_get_identity_accounts_out_of_scope_denied_403(self):
-        """The endpoint must 403 an out-of-scope identity WITHOUT touching the DB
-        (so a bad db would not even be queried). Closes the enumeration BOLA."""
-        credentials_mod.SERVICE_IDENTITY_SCOPES = {"scraper-service": {1}}
-
-        class _ExplodingDb:
-            def query(self, *a, **k):
-                raise AssertionError(
-                    "DB must not be queried for an out-of-scope identity"
-                )
-
-        with pytest.raises(HTTPException) as exc:
-            _run(
-                credentials_mod.get_identity_accounts(
-                    identity_id=99,  # not in {1}
-                    service_name="scraper-service",
-                    db=_ExplodingDb(),
-                )
-            )
-        assert exc.value.status_code == 403
-
-    def test_request_account_credentials_out_of_scope_denied_403(self):
-        """The IDOR-hardened retrieval path now ALSO fails closed on key scope:
-        an out-of-scope identity is rejected 403 before any account lookup."""
-        credentials_mod.SERVICE_IDENTITY_SCOPES = {"scraper-service": {1}}
-
-        class _ExplodingDb:
-            def query(self, *a, **k):
-                raise AssertionError(
-                    "DB must not be queried for an out-of-scope identity"
-                )
-
-        req = credentials_mod.AccountCredentialRequest(
-            identity_id=99,
-            account_id=5,
-            credential_types=[],
-        )
-        with pytest.raises(HTTPException) as exc:
-            _run(
-                credentials_mod.request_account_credentials(
-                    req, "scraper-service", _ExplodingDb()
-                )
-            )
-        assert exc.value.status_code == 403
+    # The parser/constant-time unit contract remains for compatibility, but the
+    # mounted credential routes deliberately no longer accept this legacy proof.
+    def test_static_service_key_is_not_a_mounted_credential_dependency(self):
+        for route in credentials_mod.router.routes:
+            if route.path == "/api/credentials/health":
+                continue
+            calls = {
+                dependency.call
+                for dependency in route.dependant.dependencies
+                if dependency.call is not None
+            }
+            assert credentials_mod.verify_api_key not in calls
 
 
 import app.routers.llm_scraper as llm_mod  # cv2-free

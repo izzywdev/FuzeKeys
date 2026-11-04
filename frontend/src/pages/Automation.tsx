@@ -104,7 +104,7 @@ export default function Automation() {
         const error = await response.json();
         alert(`Error: ${error.detail}`);
       }
-    } catch (error) {
+    } catch {
       alert('Error adding email configuration');
     } finally {
       setLoading(false);
@@ -142,7 +142,7 @@ export default function Automation() {
         const error = await response.json();
         alert(`Error: ${error.detail}`);
       }
-    } catch (error) {
+    } catch {
       alert('Error creating automation job');
     } finally {
       setLoading(false);
@@ -434,4 +434,4 @@ export default function Automation() {
       </div>
     </div>
   );
-} 
+}

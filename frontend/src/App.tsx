@@ -19,8 +19,8 @@ function App() {
           toastOptions={{
             duration: 4000,
             style: {
-              background: '#363636',
-              color: '#fff',
+              background: 'var(--fk-toast-background)',
+              color: 'var(--fk-toast-foreground)',
             },
           }}
         />
@@ -45,4 +45,4 @@ function App() {
   );
 }
 
-export default App; 
+export default App;

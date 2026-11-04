@@ -57,8 +57,15 @@ class GoogleApiService {
     // why the 404 went unnoticed: an identity vault silently showed invented
     // identities. GoogleIntegrationPage.loadIdentities already surfaces errors
     // via notification.error, so the failure is now allowed to reach it.
-    const { data } = await apiClient.get('/identities/');
-    return data;
+    const identities: Identity[] = [];
+    let offset: number | null = 0;
+    while (offset !== null) {
+      const { data }: { data: { items: Identity[]; page: { next_offset: number | null } } } =
+        await apiClient.get('/identities/', { params: { limit: 100, offset } });
+      identities.push(...data.items);
+      offset = data.page.next_offset;
+    }
+    return identities;
   }
 
   async getGoogleAccounts(identityId: number): Promise<GoogleAccountsResponse> {
@@ -107,4 +114,4 @@ class GoogleApiService {
 }
 
 const googleApiService = new GoogleApiService();
-export default googleApiService; 
+export default googleApiService;

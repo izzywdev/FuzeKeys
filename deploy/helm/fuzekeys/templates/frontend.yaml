@@ -26,8 +26,11 @@ spec:
       initContainers:
         # Runs BEFORE the app container, so an unregistered app never serves traffic.
         - name: fuzefront-register
-          image: curlimages/curl:8.8.0
-          command: ["/bin/sh", "/registration/register.sh"]
+          image: alpine:3.20
+          command:
+            - /bin/sh
+            - -c
+            - apk add --no-cache curl jq >/dev/null && exec /registration/register.sh
           env:
             - name: FUZEFRONT_API_URL
               value: {{ .Values.fuzefront.apiUrl | quote }}

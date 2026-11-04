@@ -1,4 +1,4 @@
-FROM node:18-alpine
+FROM node:24-alpine
 
 # Set working directory
 WORKDIR /app
@@ -10,7 +10,7 @@ RUN apk add --no-cache curl bash
 COPY package*.json ./
 
 # Install dependencies
-RUN npm install --legacy-peer-deps
+RUN npm ci --legacy-peer-deps
 
 # Copy source code
 COPY . .
@@ -27,4 +27,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:3000 || exit 1
 
 # Default command runs tests
-CMD ["npm", "test", "--", "--testPathPattern=SitesDatabase", "--watchAll=false", "--verbose", "--coverage"] 
+CMD ["npm", "test", "--", "SitesDatabase"]

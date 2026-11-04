@@ -1,0 +1,3 @@
+# Public routes are explicit, narrow exceptions to the platform-auth gate.
+# The gate scans decorator-local paths, before APIRouter prefixes are applied.
+GET /health  # liveness only; returns coarse counts and no device, OTP, owner or tenant data

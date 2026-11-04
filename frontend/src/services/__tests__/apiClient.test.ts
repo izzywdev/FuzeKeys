@@ -9,6 +9,8 @@
  * prefix, so nothing caught it.
  */
 
+import { vi as jest } from 'vitest';
+
 describe('apiClient base URL', () => {
   const ORIGINAL_ENV = process.env;
 
@@ -21,39 +23,35 @@ describe('apiClient base URL', () => {
     process.env = ORIGINAL_ENV;
   });
 
-  const loadBase = (): string => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    return require('../apiClient').API_BASE_URL;
-  };
+  const loadBase = async (): Promise<typeof import('../apiClient')> => import('../apiClient');
 
-  it('appends the /api/v1 prefix to the configured origin', () => {
+  it('appends the /api/v1 prefix to the configured origin', async () => {
     process.env.REACT_APP_API_URL = 'https://api.keys.prod.fuzefront.com';
-    expect(loadBase()).toBe('https://api.keys.prod.fuzefront.com/api/v1');
+    expect((await loadBase()).API_BASE_URL).toBe('https://api.keys.prod.fuzefront.com/api/v1');
   });
 
-  it('falls back to the local backend origin, still versioned', () => {
+  it('falls back to the local backend origin, still versioned', async () => {
     delete process.env.REACT_APP_API_URL;
-    expect(loadBase()).toBe('http://localhost:8002/api/v1');
+    expect((await loadBase()).API_BASE_URL).toBe('http://localhost:8002/api/v1');
   });
 
-  it('does not double up the slash when the origin has a trailing one', () => {
+  it('does not double up the slash when the origin has a trailing one', async () => {
     process.env.REACT_APP_API_URL = 'https://api.keys.prod.fuzefront.com/';
-    expect(loadBase()).toBe('https://api.keys.prod.fuzefront.com/api/v1');
+    expect((await loadBase()).API_BASE_URL).toBe('https://api.keys.prod.fuzefront.com/api/v1');
   });
 
-  it('exposes the un-versioned origin separately for legacy routers', () => {
+  it('exposes the un-versioned origin separately for legacy routers', async () => {
     // Eight backend routers are still mounted without the prefix (/api/google,
     // /api/sms, ...). Their callers need the bearer token but cannot use the
     // versioned base. This stays a distinct export so the un-versioned surface
     // remains countable, and shrinks as routers migrate.
     process.env.REACT_APP_API_URL = 'https://api.keys.prod.fuzefront.com';
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { LEGACY_API_BASE_URL, API_BASE_URL } = require('../apiClient');
+    const { LEGACY_API_BASE_URL, API_BASE_URL } = await loadBase();
     expect(LEGACY_API_BASE_URL).toBe('https://api.keys.prod.fuzefront.com');
     expect(API_BASE_URL).toBe(`${LEGACY_API_BASE_URL}/api/v1`);
   });
 
-  it('always ends in /api/v1 whatever the origin', () => {
+  it('always ends in /api/v1 whatever the origin', async () => {
     for (const origin of [
       'http://localhost:8002',
       'https://api.keys.prod.fuzefront.com',
@@ -61,7 +59,7 @@ describe('apiClient base URL', () => {
     ]) {
       jest.resetModules();
       process.env.REACT_APP_API_URL = origin;
-      expect(loadBase()).toMatch(/\/api\/v1$/);
+      expect((await loadBase()).API_BASE_URL).toMatch(/\/api\/v1$/);
     }
   });
 });

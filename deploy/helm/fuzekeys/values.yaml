@@ -76,6 +76,10 @@ config:
   # for the pre-built image; the real value must be baked at image build.
   apiBaseUrl: "https://api.keys.prod.fuzefront.com"
   fuzefrontSecurityUrl: "http://fuzefront-security.fuzefront.svc.cluster.local:3002"
+  # Canonical organization UUID. Configure only after Security's tenant session
+  # proof and real membership/grant provisioning are deployed. Empty fails closed
+  # for explicit account linking; existing login/connectors remain unaffected.
+  authzTenant: ""
   vaultKvMount: "secret"
   # Prefer a separately managed, auto-unsealed Vault in production. When empty
   # and vault.enabled=true, the chart uses its internal Vault Service.
@@ -103,6 +107,9 @@ secrets:
   secretKey: ""
   credentialEncryptionKey: ""
   masterKeySalt: ""
+  # Strong out-of-band bootstrap proof for /api/sms/register-device. Production
+  # supplies SMS_DEVICE_ENROLLMENT_TOKEN through the existing SealedSecret.
+  smsDeviceEnrollmentToken: ""
   openaiApiKey: ""
   # Token for a least-privilege policy limited to secret/data/connectors/*.
   vaultToken: ""
@@ -187,6 +194,10 @@ serviceAccount:
 # --- Backend: FastAPI (app.main:app), port 8002, /health. ------------------
 backend:
   enabled: true
+  # Mount the chart-managed /app/logs and /app/data PVCs. Production can turn
+  # this off while retaining the PVC objects when a local-path node is lost;
+  # Postgres and Vault remain the durable stores.
+  mountPersistence: true
   image:
     repository: "" # defaults to <global.imageRepository>/backend
     tag: ""        # defaults to Chart.appVersion
@@ -303,6 +314,10 @@ vault:
     storageClass: ""
     accessMode: ReadWriteOnce
     size: 1Gi
+    # Immutable creation-time metadata. For an existing StatefulSet, copy its
+    # exact spec.volumeClaimTemplates[0].metadata.labels before upgrading.
+    # Empty uses stable identity labels for NEW installations only.
+    claimLabels: {}
   resources:
     requests: { cpu: 100m, memory: 128Mi }
     limits: { cpu: 500m, memory: 512Mi }

@@ -29,6 +29,18 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 fuzekeys.io/environment: {{ .Values.global.environment }}
 {{- end -}}
 
+{{/* Claim-template metadata is immutable. Never derive it from release versions.
+     Existing installations must retain their exact creation-time labels. */}}
+{{- define "fuzekeys.vaultClaimLabels" -}}
+{{- if .Values.vault.persistence.claimLabels -}}
+{{- toYaml .Values.vault.persistence.claimLabels -}}
+{{- else -}}
+app.kubernetes.io/name: {{ include "fuzekeys.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/component: vault
+{{- end -}}
+{{- end -}}
+
 {{/* Per-component selector labels. Call as (dict "ctx" . "component" "backend") */}}
 {{- define "fuzekeys.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "fuzekeys.name" .ctx }}

@@ -1,16 +1,11 @@
-"""FuzeFront Security middleware binding for this Python service.
-
-Kept API-compatible with ``fuzefront-service-auth`` so it can be replaced by
-the published package without changing route dependencies.
-"""
-import json
+"""FuzeFront Security middleware binding for delegated connector requests."""
 import os
-import urllib.parse
-import urllib.request
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Optional
 
 from fastapi import Header, HTTPException, Request
+from fuzefront_service_auth import MachineTokenVerifier, TokenVerificationError
 
 
 @dataclass(frozen=True)
@@ -20,36 +15,31 @@ class Identity:
     audience: Optional[str] = None
     actor: Optional[dict] = None
     token_kind: Optional[str] = None
+    tenant_id: Optional[str] = None
+
+
+@lru_cache(maxsize=1)
+def _verifier() -> MachineTokenVerifier:
+    base = os.environ.get("FUZEFRONT_SECURITY_URL", "http://fuzefront-security:3002")
+    if not base.startswith(("http://", "https://")):
+        raise HTTPException(status_code=503, detail="invalid identity service URL")
+    return MachineTokenVerifier(base_url=base, timeout=3)
 
 
 def _introspect(token: str) -> Identity:
-    base = os.environ.get(
-        "FUZEFRONT_SECURITY_URL", "http://fuzefront-security:3002"
-    ).rstrip("/")
-    if urllib.parse.urlparse(base).scheme not in {"http", "https"}:
-        raise HTTPException(status_code=401, detail="invalid identity service URL")
-    request = urllib.request.Request(
-        f"{base}/api/v1/security/tokens/introspect",
-        data=json.dumps({"token": token}).encode(),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
     try:
-        # Origin is constrained to http(s) above.
-        with urllib.request.urlopen(request, timeout=3) as response:  # nosec B310
-            body = json.loads(response.read())
-    except Exception as exc:
+        verified = _verifier().verify_machine_token(token)
+    except TokenVerificationError as exc:
         raise HTTPException(
             status_code=401, detail="identity verification unavailable"
         ) from exc
-    if body.get("active") is not True or not body.get("subject"):
-        raise HTTPException(status_code=401, detail="inactive identity")
     return Identity(
-        subject=body["subject"],
-        scopes=frozenset(str(body.get("scope", "")).split()),
-        audience=body.get("audience"),
-        actor=body.get("actor"),
-        token_kind=body.get("tokenKind"),
+        subject=verified.subject,
+        scopes=frozenset(verified.scopes),
+        audience=verified.audience,
+        actor=verified.actor,
+        token_kind=verified.token_kind,
+        tenant_id=verified.tenant_id,
     )
 
 

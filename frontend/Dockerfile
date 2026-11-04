@@ -1,18 +1,18 @@
 # Build stage — standalone CRA build (direct access / standalone mode)
-FROM node:18-alpine AS build-standalone
+FROM node:24-alpine AS build-standalone
 WORKDIR /app
 COPY package*.json ./
-RUN npm install --legacy-peer-deps
+RUN npm ci --legacy-peer-deps
 COPY . .
 RUN npm run build
 
 # Build stage — MFE build (served as FuzeFront remote via module federation)
-FROM node:18-alpine AS build-mfe
+FROM node:24-alpine AS build-mfe
 ARG VITE_API_URL=https://api.keys.prod.fuzefront.com
 ENV VITE_API_URL=${VITE_API_URL}
 WORKDIR /app
 COPY package*.json ./
-RUN npm install --legacy-peer-deps
+RUN npm ci --legacy-peer-deps
 COPY . .
 RUN npm run build:mfe
 
@@ -28,6 +28,11 @@ COPY --from=build-standalone /app/build /usr/share/nginx/html
 COPY --from=build-mfe /app/dist-mfe /usr/share/nginx/html/apps/fuzekeys
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+RUN sed -i 's#pid /var/run/nginx.pid;#pid /tmp/nginx.pid;#' /etc/nginx/nginx.conf \
+    && chown -R nginx:nginx /var/cache/nginx /var/run /usr/share/nginx/html
+
+USER nginx
 
 EXPOSE 3000
 

@@ -163,7 +163,7 @@ def test_expired_grant_denied(service, db):
 
 def test_revoked_grant_denied(service):
     g = _grant(service)
-    service.revoke(grant_id=g.grant_id, reason="compromised")
+    service.revoke(caller=B, grant_id=g.grant_id, reason="compromised")
     with pytest.raises(BrokerDenied):
         service.redeem(ctx=_ctx(A), handle=g.handle)
 
@@ -172,7 +172,7 @@ def test_revoke_between_grant_and_redeem_blocks_release(service):
     """A multi-use grant redeemed once, then revoked, must not release again."""
     g = _grant(service, single_use=False)
     assert service.redeem(ctx=_ctx(A), handle=g.handle).credential
-    service.revoke(grant_id=g.grant_id)
+    service.revoke(caller=B, grant_id=g.grant_id)
     with pytest.raises(BrokerDenied):
         service.redeem(ctx=_ctx(A), handle=g.handle)
 
@@ -360,7 +360,7 @@ def test_unknown_unauthorized_revoked_expired_share_one_message(service, db):
 
     # revoked
     g2 = _grant(service)
-    service.revoke(grant_id=g2.grant_id)
+    service.revoke(caller=B, grant_id=g2.grant_id)
     with pytest.raises(BrokerDenied) as e:
         service.redeem(ctx=_ctx(A), handle=g2.handle)
     messages.add(e.value.public_message)
@@ -483,7 +483,7 @@ def test_rest_and_mcp_paths_agree_on_success(service):
 # 8. mint_token (RFC 8693)
 # ======================================================================
 def test_mint_token_is_bound_to_authenticated_identity(service):
-    from jose import jwt
+    import jwt
 
     tok = service.mint_token(ctx=_ctx(A), audience="FuzeBI", scope="read:reports")
     claims = jwt.decode(
@@ -497,7 +497,7 @@ def test_mint_token_is_bound_to_authenticated_identity(service):
 
 def test_mint_token_cannot_impersonate_via_assertion(service):
     """Authenticated A asserting it is EVIL still mints a token bound to A, never EVIL."""
-    from jose import jwt
+    import jwt
 
     tok = service.mint_token(
         ctx=_ctx(A, asserted=EVIL.principal), audience="X", scope="s"

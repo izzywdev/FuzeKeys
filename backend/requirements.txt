@@ -1,5 +1,6 @@
 # Web Framework
-fastapi==0.104.1
+fastapi==0.123.0
+starlette>=0.49.1,<1
 uvicorn[standard]==0.24.0
 python-multipart==0.0.6
 
@@ -18,19 +19,14 @@ passlib[bcrypt]==1.7.4
 # (5.x today) makes every hash_password() call raise. Pin until passlib is
 # replaced.
 bcrypt==4.0.1
-# 3.5.0 clears CVE-2024-33663 (CRITICAL, JWT algorithm confusion),
-# CVE-2024-33664 and PYSEC-2025-185, and -- unlike 3.4.0 -- does it without
-# dragging in a vulnerable pyasn1. 3.4.0 capped pyasn1<0.5.0, which resolves to
-# 0.4.8 and its own 6 advisories; 3.5.0 relaxed that to pyasn1>=0.5.0, so the
-# resolver takes a clean 0.6.4. Measured with pip-audit:
-#     3.3.0 -> 5 jose advisories, pyasn1 0.6.4 clean   (6 total)
-#     3.4.0 -> 0 jose advisories, pyasn1 0.4.8 with 6  (7 total)
-#     3.5.0 -> 0 jose advisories, pyasn1 0.6.4 clean   (1 total)
-# The one remaining is ecdsa PYSEC-2026-1325, a transitive dep of python-jose at
-# every version, with no fix released. Do not pin below 3.5.0.
-python-jose[cryptography]==3.5.0
+# Replace unpatched python-jose (CVE-2026-85394) with maintained PyJWT.
+# Keep algorithm allowlists explicit in every verifier.
+PyJWT[crypto]==2.15.1
 # Secret-broker: attenuable capability handles (macaroons) for A2A delegation.
 pymacaroons==0.13.0
+# Published Python verifier shared with FuzeFront service-auth SDK. The release
+# wheel is pinned by content hash so the cluster and CI install identical code.
+fuzefront-service-auth @ https://github.com/izzywdev/FuzeFront/releases/download/service-auth-py-v1.0.0/fuzefront_service_auth-1.0.0-py3-none-any.whl#sha256=29e33ce1d37c511b05cf13d3326163a4c25f2d4e7d746a266858c89919d0ebc1
 
 # Web Automation & Scraping
 playwright==1.40.0
@@ -43,7 +39,9 @@ lxml==4.9.3
 # AI & Natural Language Processing
 openai==1.3.8
 anthropic==0.7.8
-langchain==0.0.335
+# LangChain is not imported by the service; its legacy pin pulled in a
+# vulnerable LangSmith. Keep AnyIO above fixes for the two 2026 advisories.
+anyio>=4.14.2,<5
 tiktoken==0.5.2
 
 # Docker Integration
@@ -52,7 +50,7 @@ docker==6.1.3
 # Data Processing
 pandas==2.1.4
 numpy==1.25.2
-pydantic==2.5.0
+pydantic==2.12.5
 pydantic-settings==2.1.0
 
 # Email Processing
@@ -79,4 +77,4 @@ pytest==7.4.3
 pytest-asyncio==0.21.1
 black==23.11.0
 isort==5.12.0
-mypy==1.7.1 
+mypy==1.7.1
