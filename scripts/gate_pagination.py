@@ -147,10 +147,17 @@ def _resp_2xx_schema(op: dict) -> dict | None:
     return None
 
 
-def _has_envelope(schema: dict) -> bool:
+def _has_envelope(schema: dict, spec: dict | None = None, seen: set[str] | None = None) -> bool:
     """A {items:[], page:{}} envelope (resolved or inline)."""
     if not isinstance(schema, dict):
         return False
+    ref = schema.get('$ref')
+    if isinstance(ref, str) and ref.startswith('#/components/schemas/') and spec:
+        seen = seen or set()
+        if ref in seen:
+            return False
+        target = spec.get('components', {}).get('schemas', {}).get(ref.rsplit('/', 1)[-1], {})
+        return _has_envelope(target, spec, seen | {ref})
     props = schema.get("properties", {}) or {}
     has_items = "items" in props and _schema_is_array(props.get("items", {}))
     has_page = "page" in props
@@ -159,7 +166,7 @@ def _has_envelope(schema: dict) -> bool:
     # composed envelope
     for k in ("allOf", "oneOf", "anyOf"):
         for sub in schema.get(k, []) or []:
-            if _has_envelope(sub):
+            if _has_envelope(sub, spec, seen):
                 return True
     return False
 
@@ -217,7 +224,7 @@ def check_spec(path: str, allow: set[str]) -> list[str]:
         params = _param_names(op, path_item)
         has_limit = "limit" in params
         has_walk = "cursor" in params or "offset" in params
-        has_env = _has_envelope(resp_schema or {})
+        has_env = _has_envelope(resp_schema or {}, spec)
         missing = []
         if not has_limit:
             missing.append("`limit`")

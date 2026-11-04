@@ -61,6 +61,8 @@ spec:
             {{- end }}
             - name: FUZEFRONT_SECURITY_URL
               value: {{ .Values.config.fuzefrontSecurityUrl | quote }}
+            - name: FUZEKEYS_AUTHZ_TENANT
+              value: {{ .Values.config.authzTenant | default "" | quote }}
           livenessProbe:
             httpGet:
               path: {{ $comp.probes.path }}
@@ -100,14 +102,14 @@ spec:
                   audience: fuzefront-security
                   expirationSeconds: 600
         - name: logs
-          {{- if .Values.persistence.logs.enabled }}
+          {{- if and .Values.persistence.logs.enabled $comp.mountPersistence }}
           persistentVolumeClaim:
             claimName: {{ include "fuzekeys.fullname" . }}-logs
           {{- else }}
           emptyDir: {}
           {{- end }}
         - name: data
-          {{- if .Values.persistence.data.enabled }}
+          {{- if and .Values.persistence.data.enabled $comp.mountPersistence }}
           persistentVolumeClaim:
             claimName: {{ include "fuzekeys.fullname" . }}-data
           {{- else }}

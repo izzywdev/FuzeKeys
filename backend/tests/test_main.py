@@ -26,6 +26,9 @@ class TestMainApp:
         data = response.json()
         assert data["status"] == "healthy"
         assert "timestamp" in data
+        assert data["connector_credential_protocol"] == "google-shared-v1"
+        assert "credential" not in data
+        assert "google_identity" not in data
 
     @pytest.mark.asyncio
     async def test_api_info_endpoint(self, client: AsyncClient):

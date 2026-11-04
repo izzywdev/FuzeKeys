@@ -62,7 +62,7 @@ spec:
     - metadata:
         name: vault-file
         labels:
-          {{- include "fuzekeys.labels" . | nindent 10 }}
+          {{- include "fuzekeys.vaultClaimLabels" . | nindent 10 }}
       spec:
         accessModes:
           - {{ $comp.persistence.accessMode }}

@@ -278,10 +278,9 @@ class TestSiteIntegrationsAPI:
         assert response.status_code == 200
 
         data = response.json()
-        assert "sites" in data
-        assert "count" in data
-        assert isinstance(data["sites"], list)
-        assert "permit_io" in data["sites"]
+        assert isinstance(data["items"], list)
+        assert data["page"]["total"] >= len(data["items"])
+        assert "permit_io" in data["items"]
 
     def test_get_site_capabilities(self):
         """Test getting site capabilities endpoint."""

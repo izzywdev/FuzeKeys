@@ -1,11 +1,12 @@
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.models.user import User
 from app.routers.auth import get_current_user
+from app.utils.pagination import Page, PageInfo
 
 from ..llm_scraper_service.llm_integration.code_generator import (
     ScraperCode,
@@ -149,14 +150,18 @@ async def improve_scraper(request: ImproveScraperRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/scrapers", response_model=ScraperListResponse)
-async def list_scrapers():
+@router.get("/scrapers", response_model=Page[dict])
+async def list_scrapers(
+    limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0)
+):
     """List all generated scrapers"""
     try:
         stats = code_generator.get_generation_stats()
 
         scrapers = []
-        for scraper_id, scraper_info in stats["scrapers"].items():
+        keys = sorted(stats["scrapers"])
+        for scraper_id in keys[offset : offset + limit]:
+            scraper_info = stats["scrapers"][scraper_id]
             scrapers.append(
                 {
                     "scraper_id": scraper_id,
@@ -168,7 +173,16 @@ async def list_scrapers():
                 }
             )
 
-        return ScraperListResponse(scrapers=scrapers, total_count=len(scrapers))
+        total = len(keys)
+        return Page(
+            items=scrapers,
+            page=PageInfo(
+                offset=offset,
+                limit=limit,
+                total=total,
+                next_offset=offset + limit if offset + limit < total else None,
+            ),
+        )
 
     except Exception as e:
         logger.error(f"Error listing scrapers: {e}")
@@ -210,8 +224,13 @@ async def get_scraper(site_name: str, action_type: str, version: Optional[int] =
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/scrapers/{site_name}/{action_type}/history")
-async def get_scraper_history(site_name: str, action_type: str):
+@router.get("/scrapers/{site_name}/{action_type}/history", response_model=Page[dict])
+async def get_scraper_history(
+    site_name: str,
+    action_type: str,
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
     """Get the full history of a scraper"""
     try:
         history = code_generator.get_scraper_history(site_name, action_type)
@@ -223,7 +242,7 @@ async def get_scraper_history(site_name: str, action_type: str):
             )
 
         history_data = []
-        for scraper in history:
+        for scraper in history[offset : offset + limit]:
             history_data.append(
                 {
                     "version": scraper.version,
@@ -233,12 +252,16 @@ async def get_scraper_history(site_name: str, action_type: str):
                 }
             )
 
-        return {
-            "site_name": site_name,
-            "action_type": action_type,
-            "total_versions": len(history),
-            "history": history_data,
-        }
+        total = len(history)
+        return Page(
+            items=history_data,
+            page=PageInfo(
+                offset=offset,
+                limit=limit,
+                total=total,
+                next_offset=offset + limit if offset + limit < total else None,
+            ),
+        )
 
     except HTTPException:
         raise
@@ -272,7 +295,7 @@ async def delete_scraper(site_name: str, action_type: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/stats")
+@router.get("/stats", openapi_extra={"x-pagination": "exempt"})
 async def get_generation_stats():
     """Get statistics about scraper generation"""
     try:

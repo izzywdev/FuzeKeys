@@ -1,11 +1,11 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import federation from '@originjs/vite-plugin-federation';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
-    federation({
+    ...(mode === 'standalone' ? [] : [federation({
       name: 'fuzeKeysApp',
       filename: 'remoteEntry.js',
       exposes: {
@@ -18,16 +18,16 @@ export default defineConfig({
         react: { requiredVersion: '^19.0.0' },
         'react-dom': { requiredVersion: '^19.0.0' },
       },
-    }),
+    })]),
   ],
   // Shim CRA-style env vars so existing source files don't need changing.
   // VITE_API_URL is passed as a Docker build-arg; falls back to the prod URL.
-  define: {
+  define: mode === 'test' ? {} : {
     'process.env.REACT_APP_API_URL': JSON.stringify(
       process.env.VITE_API_URL ?? 'https://api.keys.prod.fuzefront.com'
     ),
   },
-  base: '/apps/fuzekeys/',
+  base: mode === 'standalone' ? '/' : '/apps/fuzekeys/',
   server: {
     host: '0.0.0.0',
     port: 3004,
@@ -35,7 +35,7 @@ export default defineConfig({
     strictPort: true,
   },
   build: {
-    outDir: 'dist-mfe',
+    outDir: mode === 'standalone' ? 'build' : 'dist-mfe',
     target: 'esnext',
     minify: false,
     cssCodeSplit: false,
@@ -47,4 +47,9 @@ export default defineConfig({
     // behind a green healthcheck. Matches every other remote in the family.
     assetsDir: '',
   },
-});
+  test: {
+    environment: 'jsdom',
+    setupFiles: ['./src/setupTests.ts'],
+    globals: true,
+  },
+}));

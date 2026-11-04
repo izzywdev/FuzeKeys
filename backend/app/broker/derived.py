@@ -15,7 +15,7 @@ vault** (mirrors Vault/OpenBao dynamic secrets + response-wrapping):
    scoped, short-TTL downstream access token carrying an ``act`` (actor) claim.
    This is the secretless ideal — no stored secret is shared at all.
 
-Crypto is from ``cryptography`` / ``python-jose`` (both vetted); nothing hand-rolled.
+Crypto is from ``cryptography`` / ``PyJWT`` (both vetted); nothing hand-rolled.
 """
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from jose import jwt
+import jwt
 
 # RFC 8693 token type URIs.
 TOKEN_TYPE_ACCESS = "urn:ietf:params:oauth:token-type:access_token"  # noqa: S105

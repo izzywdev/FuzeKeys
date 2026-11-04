@@ -56,8 +56,15 @@ const Accounts: React.FC = () => {
       // serve (404), and relative, so under Module Federation it hit the shell's
       // origin rather than the API host. The route is /api/v1/accounts and is
       // auth-gated; apiClient supplies both the prefix and the bearer token.
-      const { data } = await apiClient.get('/accounts/');
-      setAccounts(data);
+      const allAccounts: Account[] = [];
+      let offset: number | null = 0;
+      while (offset !== null) {
+        const { data }: { data: { items: Account[]; page: { next_offset: number | null } } } =
+          await apiClient.get('/accounts/', { params: { limit: 100, offset } });
+        allAccounts.push(...data.items);
+        offset = data.page.next_offset;
+      }
+      setAccounts(allAccounts);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
@@ -335,4 +342,4 @@ const Accounts: React.FC = () => {
   );
 };
 
-export default Accounts; 
+export default Accounts;

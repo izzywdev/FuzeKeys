@@ -20,6 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.identity import Identity
 from app.models.user import User
 
+pytestmark = pytest.mark.usefixtures("verified_owner_permissions")
+
 BASE = "/api/v1/identities"
 
 NEW_IDENTITY = {
@@ -43,7 +45,10 @@ class TestIdentitiesAPI:
         """A user with no identities gets an empty list, not a 404."""
         response = await authed_client.get(f"{BASE}/")
         assert response.status_code == 200
-        assert response.json() == []
+        assert response.json() == {
+            "items": [],
+            "page": {"offset": 0, "limit": 50, "total": 0, "next_offset": None},
+        }
 
     @pytest.mark.asyncio
     async def test_list_identities_with_data(
@@ -54,9 +59,10 @@ class TestIdentitiesAPI:
         assert response.status_code == 200
 
         data = response.json()
-        assert len(data) == 1
+        assert data["page"]["total"] == 1
+        assert len(data["items"]) == 1
 
-        item = data[0]
+        item = data["items"][0]
         assert item["id"] == sample_identity.id
         assert item["name"] == "Test Identity"
         assert item["description"] == "Identity used by the API tests"
@@ -65,6 +71,23 @@ class TestIdentitiesAPI:
         # future widening of the list model is a failing test rather than a
         # silent broadening of what a list call leaks.
         assert set(item) == {"id", "name", "description", "created_at"}
+
+    @pytest.mark.asyncio
+    async def test_list_identities_page_boundaries(
+        self, authed_client: AsyncClient, sample_identity: Identity
+    ):
+        first = await authed_client.get(f"{BASE}/?limit=1&offset=0")
+        assert first.status_code == 200
+        assert first.json()["page"] == {
+            "offset": 0,
+            "limit": 1,
+            "total": 1,
+            "next_offset": None,
+        }
+        assert [item["id"] for item in first.json()["items"]] == [sample_identity.id]
+        beyond = await authed_client.get(f"{BASE}/?limit=1&offset=1")
+        assert beyond.json()["items"] == []
+        assert (await authed_client.get(f"{BASE}/?limit=101")).status_code == 422
 
     @pytest.mark.asyncio
     async def test_create_identity(self, authed_client: AsyncClient):
@@ -110,17 +133,14 @@ class TestIdentitiesAPI:
         assert stored.name == "Work Persona"
 
     @pytest.mark.asyncio
-    async def test_create_identity_assigns_current_user_as_owner(
+    async def test_create_identity_rejects_client_assigned_owner(
         self, authed_client: AsyncClient, db_session: AsyncSession, test_user: User
     ):
-        """user_id comes from the token, never from the request body."""
+        """A create body cannot smuggle in an owner identifier."""
         response = await authed_client.post(
             f"{BASE}/", json={**NEW_IDENTITY, "user_id": 9999}
         )
-        assert response.status_code == 200
-
-        stored = await db_session.get(Identity, response.json()["id"])
-        assert stored.user_id == test_user.id
+        assert response.status_code == 422
 
     @pytest.mark.asyncio
     async def test_create_identity_rejects_invalid_email(
@@ -192,7 +212,7 @@ class TestIdentitiesAPI:
         # ...and it does not leak through the list view either.
         listed = await authed_client.get(f"{BASE}/")
         assert listed.status_code == 200
-        assert listed.json() == []
+        assert listed.json()["items"] == []
 
     @pytest.mark.asyncio
     async def test_update_identity(

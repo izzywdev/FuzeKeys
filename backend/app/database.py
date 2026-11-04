@@ -78,6 +78,10 @@ async def create_tables():
             ApiKey,
             Identity,
             SignupScript,
+            SmsDevice,
+            SmsOtpReceived,
+            SmsOtpRequest,
+            SmsStatistics,
             User,
         )
 

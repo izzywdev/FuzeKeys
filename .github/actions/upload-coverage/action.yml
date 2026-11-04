@@ -1,0 +1,56 @@
+name: Verified coverage upload with bounded retries
+description: Retry the pinned Codecov action without bypassing uploader verification.
+inputs:
+  token:
+    required: true
+    description: Codecov upload token
+  files:
+    required: true
+    description: Coverage report paths
+  flags:
+    required: true
+    description: Coverage flags
+  name:
+    required: true
+    description: Coverage upload name
+runs:
+  using: composite
+  steps:
+    - name: Verified upload attempt 1
+      id: attempt1
+      continue-on-error: true
+      uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+      with:
+        files: ${{ inputs.files }}
+        flags: ${{ inputs.flags }}
+        name: ${{ inputs.name }}
+        token: ${{ inputs.token }}
+        fail_ci_if_error: true
+    - name: Verified upload attempt 2
+      id: attempt2
+      if: steps.attempt1.outcome == 'failure'
+      continue-on-error: true
+      uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+      with:
+        files: ${{ inputs.files }}
+        flags: ${{ inputs.flags }}
+        name: ${{ inputs.name }}
+        token: ${{ inputs.token }}
+        fail_ci_if_error: true
+    - name: Verified upload attempt 3
+      id: attempt3
+      if: steps.attempt2.outcome == 'failure'
+      continue-on-error: true
+      uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+      with:
+        files: ${{ inputs.files }}
+        flags: ${{ inputs.flags }}
+        name: ${{ inputs.name }}
+        token: ${{ inputs.token }}
+        fail_ci_if_error: true
+    - name: Require a successful verified upload
+      if: steps.attempt1.outcome != 'success' && steps.attempt2.outcome != 'success' && steps.attempt3.outcome != 'success'
+      shell: bash
+      run: |
+        echo '::error::Codecov upload failed after three verified attempts.'
+        exit 1

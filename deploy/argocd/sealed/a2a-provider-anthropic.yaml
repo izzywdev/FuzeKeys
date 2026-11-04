@@ -1,0 +1,15 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  creationTimestamp: null
+  name: a2a-provider-anthropic
+  namespace: fuzekeys
+spec:
+  encryptedData:
+    api-key: AgBEbNjrAGRrA1SQ0iP5jQ0e8kGzy1aS4xfm4AuXYWvdcbMvL1xoc/GpBWvOuilcYT7uMbsC67ciBGgOl550rohQtnbZvKl/dskQbfFumYYhj4aE4N+J/pITi5rsmFRfKCckOAbVaDfdTkcinjqN7m0tHOukOVzI1Gln4T79faRzcVl5ymDrLhEqwMwf+0yjPLp23TX/jv1g2/oYzAQ5sEYm28qYp+40+9Lp3FP6AuGW7bm5Xq15BvZrUNQXIbSc4qTOQnji1W0XcfqEGq0Z21VXsisikL9kemluXDD0j/jyqHzLxItCobCvwcBNG58wmYEdyUz9i4Np5BWPTNmfQqXh7AHPnacB3YRgoXN37lwV7d5px7BYfV2bNYMLxdFoHUv5RPFZ4v8VRKQonGU6+JPzQcgDTap+29S0uiYCr9/YkLg9Q+2JQFP2QoUJ+6SbE1a6oI1QSqrX8El3tkdnNayq0QF24RrC06yMiJOaKlhtD5wVc4Cwi4QA0V8g0snLg0I2bfX3uIxpkRIOsR/vKHBGJaT9+mn/AZeBH63Etv9KYQRftW6nTgOYyf3gH8t/YTr03Y0w7BDG1e1TVE5L4ZR7TOl1maYc5u6rOrW9UR/xbVCPTauC/RRUUY66RlnOfmtszRgmFXbDcnsCH5IXExF0EnSImY1GfiTmhsGtz7H2TJ1mjvPuFUz9ShwXww/5w7lq+TbJYUpBfQcDOeOnO90nOsqR1DVOiIF5mACbvTdNmqWrBnqQ2EDcjgAW2BykP8cgnWHm+msv9nyECe7JCmhe02UDz/ITypAPRZ7ELi/UOVs113aeCTrG8PtRBZj/7m8wvJQgKbVn7DLN/XE=
+  template:
+    metadata:
+      creationTimestamp: null
+      name: a2a-provider-anthropic
+      namespace: fuzekeys

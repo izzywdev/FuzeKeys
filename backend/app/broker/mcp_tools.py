@@ -106,10 +106,14 @@ def keys_mint_token(
 
 
 def keys_revoke(
-    service: BrokerService, *, grant_id: str, reason: str = "revoked"
+    service: BrokerService,
+    *,
+    caller: TransportIdentity,
+    grant_id: str,
+    reason: str = "revoked",
 ) -> Dict[str, Any]:
     """MCP ``keys.revoke`` — instant, idempotent, non-disclosing."""
-    service.revoke(grant_id=grant_id, reason=reason)
+    service.revoke(caller=caller, grant_id=grant_id, reason=reason)
     return {"status": "revoked", "grant_id": grant_id}
 
 

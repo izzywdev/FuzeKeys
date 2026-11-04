@@ -376,8 +376,25 @@ class BrokerService:
         return token
 
     # ---- revoke --------------------------------------------------------
-    def revoke(self, *, grant_id: str, reason: str = "revoked") -> bool:
-        row = self.db.query(Grant).filter(Grant.grant_id == grant_id).one_or_none()
+    def revoke(
+        self, *, caller: TransportIdentity, grant_id: str, reason: str = "revoked"
+    ) -> bool:
+        if (
+            not isinstance(caller, TransportIdentity)
+            or not caller.principal
+            or caller.principal.strip() != caller.principal
+        ):
+            raise BrokerDenied("authenticated grant owner required")
+        # Possession of the public grant ID is not revocation authority.
+        # Foreign and missing rows intentionally share the same no-op result.
+        row = (
+            self.db.query(Grant)
+            .filter(
+                Grant.grant_id == grant_id, Grant.grantor_identity == caller.principal
+            )
+            .with_for_update()
+            .one_or_none()
+        )
         if row is None:
             # Idempotent + non-disclosing: report the same result either way.
             self._audit(resource_ref=f"grant:{grant_id}", decision="revoke_noop")

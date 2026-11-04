@@ -2,10 +2,16 @@
 {{- $comp := .Values.vaultBootstrap -}}
 {{/*
   One-shot Vault bootstrap: init (once) + unseal + ensure the transit key, then
-  exits. Uses the pii-tokenizer image (command overrides the default CMD). Runs
-  as a post-install/post-upgrade hook so the Vault StatefulSet exists first.
-  FOLLOW-UP (Vault-in-k8s): writes the init file to the shared RWO PVC — see the
-  node-affinity caveat in vault.yaml. Gated OFF until the auto-unseal redesign.
+  exits. Uses the pii-tokenizer image (command overrides the default CMD).
+
+  This must be a normal Argo-managed Job, not a Helm post-install hook. Argo
+  translates post-install to PostSync, while the backend requires the Secret
+  created here before it can become Healthy; that creates a permanent rollout
+  deadlock. The Job may start alongside Vault and retries until the Service is
+  ready. Force+Replace reruns the idempotent bootstrap on every chart sync and
+  avoids Kubernetes Job pod-template immutability on upgrades.
+  FOLLOW-UP (Vault-in-k8s): the init file remains on the shared RWO PVC; replace
+  this bootstrap unseal path with KMS/transit auto-unseal or an operator.
 */}}
 apiVersion: batch/v1
 kind: Job
@@ -15,9 +21,7 @@ metadata:
     {{- include "fuzekeys.labels" . | nindent 4 }}
     app.kubernetes.io/component: vault-bootstrap
   annotations:
-    "helm.sh/hook": post-install,post-upgrade
-    "helm.sh/hook-weight": "0"
-    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    argocd.argoproj.io/sync-options: Replace=true,Force=true
 spec:
   backoffLimit: 3
   template:
