@@ -1,0 +1,6 @@
+{
+  "$doc": "Policy for gate-outbox (data-consistency-standard.md §3). Seeded at baseline-pending — flip to 'ratchet' and declare runtimePaths once a transactional-outbox relay exists in this repo.",
+  "mode": "baseline-pending",
+  "runtimePaths": [],
+  "knownUnhandled": []
+}
