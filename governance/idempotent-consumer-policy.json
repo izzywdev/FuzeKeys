@@ -1,0 +1,6 @@
+{
+  "$doc": "Policy for gate-idempotent-consumer (data-consistency-standard.md §4). Seeded at baseline-pending — flip to 'ratchet' and declare runtimePaths once a shared consumer runtime exists in this repo.",
+  "mode": "baseline-pending",
+  "runtimePaths": [],
+  "knownUnhandled": []
+}

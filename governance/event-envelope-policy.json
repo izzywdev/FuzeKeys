@@ -1,0 +1,6 @@
+{
+  "$doc": "Policy for gate-event-envelope (data-consistency-standard.md §3). Seeded at baseline-pending — flip to 'ratchet' and add registryPaths once event topic schemas exist in this repo.",
+  "mode": "baseline-pending",
+  "registryPaths": [],
+  "knownUnhandled": []
+}
