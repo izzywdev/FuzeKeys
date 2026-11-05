@@ -1,0 +1,6 @@
+{
+  "mode": "baseline-pending",
+  "_seeded": "sdlc-bootstrap. Flip mode to 'ratchet' and populate knownUnhandled after first passing enforcing run. See governance/data-consistency-standard.md §4.",
+  "runtimePackagePaths": [],
+  "knownUnhandled": []
+}
