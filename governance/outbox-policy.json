@@ -1,0 +1,5 @@
+{
+  "$doc": "Policy for scripts/gate_outbox.py (data-consistency-standard.md §3). Absence of this file makes the gate run in `fail` mode by design — this file exists so the mode is explicit and reviewable. FuzeKeys does not currently publish domain events via Kafka, so knownUnhandled is empty.",
+  "mode": "fail",
+  "knownUnhandled": []
+}

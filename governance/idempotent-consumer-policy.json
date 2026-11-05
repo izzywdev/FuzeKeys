@@ -1,0 +1,6 @@
+{
+  "$doc": "Policy for scripts/gate_idempotent_consumer.py (data-consistency-standard.md §4). Absence of this file makes the gate run in `fail` mode by design. FuzeKeys does not currently consume Kafka events, so runtimePaths and knownUnhandled are empty.",
+  "mode": "fail",
+  "runtimePaths": [],
+  "knownUnhandled": []
+}

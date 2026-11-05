@@ -1,0 +1,5 @@
+{
+  "$doc": "Policy for scripts/gate_event_envelope.py (data-consistency-standard.md §11). Absence of this file makes the gate run in `fail` mode by design. FuzeKeys does not currently define domain event schemas, so the gate passes vacuously and knownUnhandled is empty.",
+  "mode": "fail",
+  "knownUnhandled": []
+}
