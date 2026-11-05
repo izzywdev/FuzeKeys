@@ -1,4 +1,4 @@
-# fuze:managed template=gate-workflow-drift.yml baseline=v1 digest=sha256:46e78baf535330d51f05e8f3f44b2345a50dd2e1076ab4ea865db6797b4edb2b
+# fuze:managed template=gate-workflow-drift.yml baseline=v1 digest=sha256:7034f66272f2c3b28b8a947dfc3ff54d37635e90c315582147da99875aaf421f
 name: gate-workflow-drift
 
 # REQUIRED-check ratchet on `fuze:managed` workflow-file drift (governance/file-ownership.md).
@@ -60,44 +60,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Mirrors fuze-code-review.yml's pick-runner verbatim — see that file for the full
+  # Same chooser as fuze-code-review.yml (.github/actions/pick-runner) — see that file for the full
   # rationale. Not itself a required status context; only gate-workflow-drift below is.
   pick-runner:
-    runs-on: ${{ github.event.repository.private && 'fuze-runner' || 'ubuntu-latest' }}
+    runs-on: ${{ vars.HARDEN_GATE_RUNNER || vars.CI_RUNNER_LABELS || 'ubuntu-latest' }}
     outputs:
       runner: ${{ steps.pick.outputs.runner }}
     steps:
+      # The chooser logic lives in ONE place, .github/actions/pick-runner
+      # (governance/ci-runners.md). A local `uses:` resolves against the workspace, so
+      # check out just that directory first.
+      - name: Checkout pick-runner action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          sparse-checkout: .github/actions/pick-runner
+          persist-credentials: false
       - id: pick
-        shell: bash
-        env:
-          IS_PRIVATE: ${{ github.event.repository.private }}
-          OWNER: ${{ github.repository_owner }}
+        uses: ./.github/actions/pick-runner
+        with:
+          force-runner: ${{ vars.HARDEN_GATE_RUNNER }}
+          pool: ${{ vars.CI_RUNNER_POOL }}
+          is-private: ${{ github.event.repository.private }}
+          owner: ${{ github.repository_owner }}
           # fuze:secret-sourcing CI_BUDGET_TOKEN=fleet — OPTIONAL org-wide Actions-billing read token; the chooser degrades to the self-hosted pool by name when unset (no repo needs to provision it)
-          BUDGET_TOKEN: ${{ secrets.CI_BUDGET_TOKEN }}
-          FORCE_RUNNER: ${{ vars.HARDEN_GATE_RUNNER }}
-        run: |
-          set -euo pipefail
-          emit() { echo "runner=$1" >> "$GITHUB_OUTPUT"; echo "selected runner: $1"; }
-
-          if [ -n "${FORCE_RUNNER:-}" ]; then
-            emit "${FORCE_RUNNER}"; exit 0
-          fi
-          if [ "${IS_PRIVATE:-}" != "true" ]; then
-            emit ubuntu-latest; exit 0
-          fi
-          if [ -z "${BUDGET_TOKEN:-}" ]; then
-            echo "::notice title=pick-runner::no CI_BUDGET_TOKEN; using the self-hosted pool (free, not budget-gated)"
-            emit fuze-runner; exit 0
-          fi
-          resp="$(curl -sS -H "Authorization: Bearer ${BUDGET_TOKEN}" -H "Accept: application/vnd.github+json" "https://api.github.com/orgs/${OWNER}/settings/billing/actions" || true)"
-          used="$(printf '%s' "${resp}" | jq -r '.total_minutes_used // empty' 2>/dev/null || true)"
-          incl="$(printf '%s' "${resp}" | jq -r '.included_minutes // empty' 2>/dev/null || true)"
-          if printf '%s' "${used}" | grep -qE '^[0-9]+$' && printf '%s' "${incl}" | grep -qE '^[0-9]+$' && [ "${used}" -lt "${incl}" ]; then
-            emit ubuntu-latest
-          else
-            echo "::notice title=pick-runner::Actions budget exhausted or unreadable (used=${used:-?} incl=${incl:-?}) — using the self-hosted pool"
-            emit fuze-runner
-          fi
+          budget-token: ${{ secrets.CI_BUDGET_TOKEN }}
 
   gate-workflow-drift:
     needs: [pick-runner]
