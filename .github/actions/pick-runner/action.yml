@@ -1,0 +1,51 @@
+name: 'Pick runner (hosted default, repo ARC pool fallback)'
+description: >-
+  SINGLE POINT OF CHANGE for every `pick-runner` chooser job in the fleet. Emits the
+  `runs-on` label for the jobs that `needs:` the chooser. Public repo: ubuntu-latest.
+  Private repo: ubuntu-latest while the Actions budget lasts (when CI_BUDGET_TOKEN can
+  read it), otherwise the repo's own ARC scale set. The pool name resolves as
+  vars.HARDEN_GATE_RUNNER (force) > vars.CI_RUNNER_POOL > FuzeSDLC -> fuze-runner, any
+  other repo -> its lowercased name. A pool with 0 runners online is still chosen: ARC
+  scales from zero. See governance/ci-runners.md.
+  .
+  Callers must check out `.github/actions/pick-runner` first (a local `uses:` resolves
+  against the workspace); the canonical templates do a sparse checkout of just this
+  directory.
+
+inputs:
+  force-runner:
+    description: 'vars.HARDEN_GATE_RUNNER — emitted as-is when set.'
+    required: false
+    default: ''
+  pool:
+    description: 'vars.CI_RUNNER_POOL — overrides the derived pool name.'
+    required: false
+    default: ''
+  budget-token:
+    description: 'secrets.CI_BUDGET_TOKEN — optional Actions-billing read token.'
+    required: false
+    default: ''
+  is-private:
+    description: 'github.event.repository.private'
+    required: true
+  owner:
+    description: 'github.repository_owner'
+    required: true
+
+outputs:
+  runner:
+    description: 'The selected runs-on label.'
+    value: ${{ steps.pick.outputs.runner }}
+
+runs:
+  using: composite
+  steps:
+    - id: pick
+      shell: bash
+      env:
+        FORCE_RUNNER: ${{ inputs.force-runner }}
+        CI_RUNNER_POOL: ${{ inputs.pool }}
+        BUDGET_TOKEN: ${{ inputs.budget-token }}
+        IS_PRIVATE: ${{ inputs.is-private }}
+        OWNER: ${{ inputs.owner }}
+      run: bash "${GITHUB_ACTION_PATH}/pick_runner.sh"

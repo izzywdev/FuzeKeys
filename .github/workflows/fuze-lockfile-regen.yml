@@ -67,9 +67,9 @@ name: Fuze Lockfile Regen
 # bearing, so governance/workflow-autoinstall.json lists it under `excluded`: governance-sync
 # reconciles its drift once present but never creates it by bot commit.
 #
-# RUNNER: the hosted-default `pick-runner` chooser, copied from fuze-code-review.yml. No job
-# hard-codes a pool label: outside FuzeSDLC the ARC scale set is registered under the repo
-# name, so a literal `fuze-runner` would queue forever there. All three `runs-on:` values are
+# RUNNER: the hosted-default `pick-runner` chooser (.github/actions/pick-runner, shared with
+# fuze-code-review.yml). No job hard-codes a pool label: outside FuzeSDLC the ARC scale set is
+# named after the repo, so a literal `fuze-runner` would queue forever there. All three `runs-on:` values are
 # expressions, which render.py's scalar runner substitution leaves as written.
 
 on:
@@ -93,7 +93,7 @@ concurrency:
 
 jobs:
   # ── Budget-aware runner selection ────────────────────
-  # Verbatim from fuze-code-review.yml (see its header). Also the FORK GUARD for the whole
+  # Same chooser as fuze-code-review.yml (see its header). Also the FORK GUARD for the whole
   # workflow: a fork PR receives no secrets, so every job is SKIPPED (not failed) from here.
   pick-runner:
     if: >-
@@ -104,56 +104,23 @@ jobs:
     outputs:
       runner: ${{ steps.pick.outputs.runner }}
     steps:
+      # The chooser logic lives in ONE place, .github/actions/pick-runner
+      # (governance/ci-runners.md). A local `uses:` resolves against the workspace, so
+      # check out just that directory first.
+      - name: Checkout pick-runner action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          sparse-checkout: .github/actions/pick-runner
+          persist-credentials: false
       - id: pick
-        shell: bash
-        env:
-          IS_PRIVATE: ${{ github.event.repository.private }}
-          OWNER: ${{ github.repository_owner }}
+        uses: ./.github/actions/pick-runner
+        with:
+          force-runner: ${{ vars.HARDEN_GATE_RUNNER }}
+          pool: ${{ vars.CI_RUNNER_POOL }}
+          is-private: ${{ github.event.repository.private }}
+          owner: ${{ github.repository_owner }}
           # fuze:secret-sourcing CI_BUDGET_TOKEN=fleet — OPTIONAL org-wide Actions-billing read token; the chooser degrades to the self-hosted pool by name when unset
-          BUDGET_TOKEN: ${{ secrets.CI_BUDGET_TOKEN }}
-          FORCE_RUNNER: ${{ vars.HARDEN_GATE_RUNNER }}
-        run: |
-          set -euo pipefail
-          emit() { echo "runner=$1" >> "$GITHUB_OUTPUT"; echo "selected runner: $1"; }
-
-          choose_pool() {
-            if [ -n "${BUDGET_TOKEN:-}" ]; then
-              local runners online
-              runners="$(curl -sS -H "Authorization: Bearer ${BUDGET_TOKEN}" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runners?per_page=100" || true)"
-              online="$(printf '%s' "${runners}" | jq -r '[.runners[]? | select(.status=="online")] | length' 2>/dev/null || true)"
-              if printf '%s' "${online}" | grep -qE '^[0-9]+$'; then
-                if [ "${online}" -eq 0 ]; then
-                  echo "::warning title=pick-runner::the fuze-runner pool has 0 runners online — routing to ubuntu-latest instead of queueing forever (izzywdev/FuzeSDLC#266)"
-                  emit ubuntu-latest; return
-                fi
-                echo "::notice title=pick-runner::fuze-runner pool has ${online} runner(s) online"
-                emit fuze-runner; return
-              fi
-              echo "::notice title=pick-runner::runner liveness unverified (runners API unreadable) — using the self-hosted pool"
-              emit fuze-runner; return
-            fi
-            echo "::notice title=pick-runner::runner liveness unverified (no CI_BUDGET_TOKEN; the runners probe needs administration:read) — using the self-hosted pool"
-            emit fuze-runner
-          }
-
-          if [ -n "${FORCE_RUNNER:-}" ]; then
-            emit "${FORCE_RUNNER}"; exit 0
-          fi
-          if [ "${IS_PRIVATE:-}" != "true" ]; then
-            emit ubuntu-latest; exit 0
-          fi
-          if [ -z "${BUDGET_TOKEN:-}" ]; then
-            choose_pool; exit 0
-          fi
-          resp="$(curl -sS -H "Authorization: Bearer ${BUDGET_TOKEN}" -H "Accept: application/vnd.github+json" "https://api.github.com/orgs/${OWNER}/settings/billing/actions" || true)"
-          used="$(printf '%s' "${resp}" | jq -r '.total_minutes_used // empty' 2>/dev/null || true)"
-          incl="$(printf '%s' "${resp}" | jq -r '.included_minutes // empty' 2>/dev/null || true)"
-          if printf '%s' "${used}" | grep -qE '^[0-9]+$' && printf '%s' "${incl}" | grep -qE '^[0-9]+$' && [ "${used}" -lt "${incl}" ]; then
-            emit ubuntu-latest
-          else
-            echo "::notice title=pick-runner::Actions budget exhausted or unreadable (used=${used:-?} incl=${incl:-?})"
-            choose_pool
-          fi
+          budget-token: ${{ secrets.CI_BUDGET_TOKEN }}
 
   # ── Regenerate (PR content, NO write credential) ─────
   regen:
