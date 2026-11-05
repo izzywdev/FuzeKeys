@@ -2,6 +2,7 @@
   "name": "fuzekeys-frontend",
   "version": "1.0.0",
   "private": true,
+  "description": "FuzeKeys web frontend (standalone app and FuzeFront MFE remote)",
   "dependencies": {
     "@ant-design/icons": "^5.2.6",
     "@headlessui/react": "^2.2.10",
