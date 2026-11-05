@@ -19,6 +19,11 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
+    "paths": {
+      "@izzywdev/fuzefront-telemetry/browser": [
+        "./node_modules/@izzywdev/fuzefront-telemetry/dist/browser.d.ts"
+      ]
+    },
     "types": ["node", "vitest/globals", "@testing-library/jest-dom/vitest"]
   },
   "include": [
