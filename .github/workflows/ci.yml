@@ -82,6 +82,8 @@ jobs:
         pip install pytest-cov flake8
 
     - name: Install Node.js dependencies
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
       run: |
         cd frontend
         npm ci --legacy-peer-deps

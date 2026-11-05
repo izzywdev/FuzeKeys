@@ -1,4 +1,4 @@
-# fuze:managed template=harden-gate.yml baseline=v1 digest=sha256:28c9214203ae139eff071a7835c87f429fe22eec5f566fbff9a2898d6bcd0359
+# fuze:managed template=harden-gate.yml baseline=v1 digest=sha256:4ba0eca61b566f99f31aa46b5a4cdae8d1b08d7d01b4e85d87aaa53c1104cceb
 name: Harden Gate
 
 # Unified protection gate shared verbatim across all hardened repos.
@@ -111,7 +111,7 @@ jobs:
     # `packages: read` is REQUIRED on every job that installs root npm dependencies, and
     # it is not inherited. A repo whose package.json pulls from GitHub Packages
     # (npm.pkg.github.com, e.g. @izzywdev/fuzefront-identity) authenticates with
-    # `${GITHUB_TOKEN}` from .npmrc; without this scope every install is a 401. Job-level
+    # `${NODE_AUTH_TOKEN}` from .npmrc; without this scope every install is a 401. Job-level
     # permissions REPLACE the workflow-level set, so `contents: read` is restated. None of
     # these jobs needs security-events or pull-requests (verified when this was added).
     #
@@ -130,9 +130,15 @@ jobs:
         with: { python-version: '3.12' }
       - name: Lint (adaptive, enforcing)
         shell: bash
-        # .npmrc reads `${GITHUB_TOKEN}`, which Actions does NOT export into a step's
-        # environment on its own; unset, npm sends no credential at all.
+        # .npmrc reads `${NODE_AUTH_TOKEN}`; older seeded copies still read `${GITHUB_TOKEN}`.
+        # Actions does NOT export either into a step's environment on its own; unset, npm sends
+        # no credential at all. BOTH are set so either .npmrc vintage authenticates during the
+        # fleet transition (.npmrc is SEEDED, not reconciled, so repos flip it on their own
+        # schedule). NODE_AUTH_TOKEN is the fuze-registry-bot PAT (read:packages) where FuzeSDLC
+        # has provisioned it, falling back to the per-run GITHUB_TOKEN; GITHUB_TOKEN stays the
+        # per-run token.
         env:
+          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN || secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
@@ -302,7 +308,7 @@ jobs:
     # `packages: read` is REQUIRED on every job that installs root npm dependencies, and
     # it is not inherited. A repo whose package.json pulls from GitHub Packages
     # (npm.pkg.github.com, e.g. @izzywdev/fuzefront-identity) authenticates with
-    # `${GITHUB_TOKEN}` from .npmrc; without this scope every install is a 401. Job-level
+    # `${NODE_AUTH_TOKEN}` from .npmrc; without this scope every install is a 401. Job-level
     # permissions REPLACE the workflow-level set, so `contents: read` is restated. None of
     # these jobs needs security-events or pull-requests (verified when this was added).
     #
@@ -321,9 +327,15 @@ jobs:
         with: { python-version: '3.12' }
       - name: Test (adaptive, report-only)
         shell: bash
-        # .npmrc reads `${GITHUB_TOKEN}`, which Actions does NOT export into a step's
-        # environment on its own; unset, npm sends no credential at all.
+        # .npmrc reads `${NODE_AUTH_TOKEN}`; older seeded copies still read `${GITHUB_TOKEN}`.
+        # Actions does NOT export either into a step's environment on its own; unset, npm sends
+        # no credential at all. BOTH are set so either .npmrc vintage authenticates during the
+        # fleet transition (.npmrc is SEEDED, not reconciled, so repos flip it on their own
+        # schedule). NODE_AUTH_TOKEN is the fuze-registry-bot PAT (read:packages) where FuzeSDLC
+        # has provisioned it, falling back to the per-run GITHUB_TOKEN; GITHUB_TOKEN stays the
+        # per-run token.
         env:
+          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN || secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set +e
@@ -347,6 +359,32 @@ jobs:
           # enforcing, `bash -e` aborts the step on that first exit 5 and ~16 repos go red
           # for a reason that has nothing to do with their code — a gate failing on its own
           # scaffolding. Fixing the scoping is a prerequisite for enforcing this job at all.
+          #
+          # NEITHER STEP BELOW MAY FAIL SILENTLY. The loop used to be
+          #   ( cd "$d" && pip install -q -r req pytest 2>/dev/null && pytest -q )
+          # so a failed install (FuzePlan: ResolutionImpossible after a Dependabot bump)
+          # short-circuited past pytest with pip's stderr discarded: nothing ran, nothing was
+          # printed, and the job was green. It stayed green for weeks while testing nothing.
+          # Now a failed install is an ::error:: annotation carrying pip's own output, and a
+          # hung suite is cut off by `timeout` rather than by the 20-minute job limit, because
+          # a CANCELLED required check blocks merges and a reported failure does not.
+          # This job is still report-only (see the header); the annotations are the signal.
+          #
+          # Budget: every directory gets at most GATE_TEST_PYTEST_TIMEOUT seconds of pytest and
+          # GATE_TEST_PIP_TIMEOUT of install, and the whole loop stops short of the job limit
+          # (GATE_TEST_BUDGET) so the sum over many directories cannot cancel the job either.
+          PIP_TIMEOUT=${GATE_TEST_PIP_TIMEOUT:-300}
+          PYTEST_TIMEOUT=${GATE_TEST_PYTEST_TIMEOUT:-600}
+          BUDGET=${GATE_TEST_BUDGET:-1000}
+          # Smallest slice of budget worth starting a step with. Checked again AFTER the install:
+          # `timeout --kill-after` lets pip overrun its deadline, so the remainder can be <= 0 by
+          # then, and a non-positive duration makes `timeout` exit 125 (a misleading "pytest failed").
+          MIN_SLICE=${GATE_TEST_MIN_SLICE:-60}
+          # Encode a log tail as one annotation message (GitHub needs %, CR and LF escaped).
+          annotate_tail() { tail -n 25 "$1" | sed -e 's/%/%25/g' -e 's/\r//g' | awk 'BEGIN{ORS="%0A"} {print}'; }
+          # SECONDS is NOT reset: bash counts it from the start of this step, so the budget also
+          # covers the npm test above. Resetting it here would let a slow npm suite plus a full
+          # pytest budget overrun the job limit.
           for req in $(git ls-files '**/requirements*.txt' 'requirements*.txt' 2>/dev/null); do
             d=$(dirname "$req")
             # A requirements file is not evidence of a test suite. Only run where tests exist.
@@ -354,12 +392,42 @@ jobs:
               echo "::notice::skipping $d — requirements file but no test_*.py/*_test.py"
               continue
             fi
+            left=$((BUDGET - SECONDS))
+            if [ "$left" -lt "$MIN_SLICE" ]; then
+              echo "::error title=gate-test: pytest not run::$d was NOT tested — the ${BUDGET}s budget for this job is spent (an earlier directory was slow)."
+              continue
+            fi
             echo "::group::pytest $d"
-            ( cd "$d" && pip install -q -r "$(basename "$req")" pytest 2>/dev/null && pytest -q )
+            log=$(mktemp)
+            ( cd "$d" && timeout --kill-after=15 "$(( PIP_TIMEOUT < left ? PIP_TIMEOUT : left ))" \
+                pip install -q -r "$(basename "$req")" pytest ) >"$log" 2>&1
             rc=$?
-            # exit 5 is pytest's "no tests collected". Treat it as nothing-to-do rather than
-            # failure, so a stray requirements file can never redden an enforcing run.
-            [ $rc -eq 5 ] && echo "::notice::$d collected no tests"
+            cat "$log"
+            if [ $rc -ne 0 ]; then
+              if [ $rc -eq 124 ] || [ $rc -eq 137 ]; then why="timed out after ${PIP_TIMEOUT}s"; else why="exited $rc"; fi
+              echo "::error title=gate-test: dependency install failed::$d was NOT tested — pip install -r $(basename "$req") $why.%0A$(annotate_tail "$log")"
+              echo "::endgroup::"
+              continue
+            fi
+            left=$((BUDGET - SECONDS))
+            if [ "$left" -lt "$MIN_SLICE" ]; then
+              echo "::error title=gate-test: pytest not run::$d dependencies installed but pytest was NOT run — the ${BUDGET}s budget for this job ran out during the install."
+              echo "::endgroup::"
+              continue
+            fi
+            # To a file, not `| tee`: a test that spawns a detached child (setsid) survives the
+            # timeout and would hold a pipe open, hanging the loop past its own deadline.
+            ( cd "$d" && timeout --kill-after=15 "$(( PYTEST_TIMEOUT < left ? PYTEST_TIMEOUT : left ))" pytest -q ) >"$log" 2>&1
+            rc=$?
+            cat "$log"
+            case $rc in
+              0) ;;
+              # exit 5 is pytest's "no tests collected". Treat it as nothing-to-do rather than
+              # failure, so a stray requirements file can never redden an enforcing run.
+              5) echo "::notice::$d collected no tests" ;;
+              124|137) echo "::error title=gate-test: pytest timed out::$d was cut off after ${PYTEST_TIMEOUT}s (or the remaining job budget) — the suite hung or is too slow; it was NOT fully run.%0A$(annotate_tail "$log")" ;;
+              *) echo "::warning title=gate-test: pytest failed::$d pytest exited $rc (report-only).%0A$(annotate_tail "$log")" ;;
+            esac
             echo "::endgroup::"
           done
           echo "test complete (report-only)"; exit 0
@@ -370,7 +438,7 @@ jobs:
     # `packages: read` is REQUIRED on every job that installs root npm dependencies, and
     # it is not inherited. A repo whose package.json pulls from GitHub Packages
     # (npm.pkg.github.com, e.g. @izzywdev/fuzefront-identity) authenticates with
-    # `${GITHUB_TOKEN}` from .npmrc; without this scope every install is a 401. Job-level
+    # `${NODE_AUTH_TOKEN}` from .npmrc; without this scope every install is a 401. Job-level
     # permissions REPLACE the workflow-level set, so `contents: read` is restated. None of
     # these jobs needs security-events or pull-requests (verified when this was added).
     #
@@ -400,9 +468,15 @@ jobs:
       # FuzeHub (`make: not found` on its self-hosted runner) were fixed first.
       - name: Build (adaptive, enforcing)
         shell: bash
-        # .npmrc reads `${GITHUB_TOKEN}`, which Actions does NOT export into a step's
-        # environment on its own; unset, npm sends no credential at all.
+        # .npmrc reads `${NODE_AUTH_TOKEN}`; older seeded copies still read `${GITHUB_TOKEN}`.
+        # Actions does NOT export either into a step's environment on its own; unset, npm sends
+        # no credential at all. BOTH are set so either .npmrc vintage authenticates during the
+        # fleet transition (.npmrc is SEEDED, not reconciled, so repos flip it on their own
+        # schedule). NODE_AUTH_TOKEN is the fuze-registry-bot PAT (read:packages) where FuzeSDLC
+        # has provisioned it, falling back to the per-run GITHUB_TOKEN; GITHUB_TOKEN stays the
+        # per-run token.
         env:
+          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN || secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ ! -f package.json ] || ! grep -q '"build"' package.json; then
@@ -1263,6 +1337,113 @@ jobs:
           [ "$findings" = "0" ] && echo "gate-version: OK (no unbumped package/contract changes)" || echo "gate-version: findings above (report-only — will gate once ratcheted)"
           exit 0
 
+  # ── Data-consistency event gates (governance/data-consistency-standard.md §3, §4, §11) ──
+  #
+  # Three jobs, one shape, all RATCHETS (the seeded policy ships `mode: baseline-pending` — full scan,
+  # warning + suggested baseline, exit 0 — until the repo baselines and flips to `ratchet`;
+  # fail-closed rules apply in both modes): each reads a per-repo policy
+  # (governance/<gate>-policy.json, SEEDED once and owned by the repo) holding a non-vacuity
+  # floor and a shrink-only `knownUnhandled` list. A NEW offender fails immediately; inherited
+  # debt warns and can only be removed; a listed entry that is now compliant FAILS until it is
+  # removed. No `|| true` and no `paths:` filter anywhere (a path-filtered gate that never runs
+  # reports nothing and can never be required; a `|| true` makes the job decorative).
+  #
+  # They ship with scripts/event_gate_lib.py + their self-tests, and the tests run FIRST: they
+  # assert each gate FAILS on a planted violation, so a broken gate reports as a broken gate
+  # rather than as a clean repo. Not yet in any repo's `required_now` — see
+  # governance/required-checks.json stage_6 for the promotion criterion.
+  gate-event-envelope:
+    # Every registered topic's schema is on envelope v2 (eventId/aggregate*), and the TS registry
+    # and its Python mirror agree on the topic list. The registry location is POLICY, not code.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with: { python-version: '3.12' }
+
+      - name: Event-envelope gate — self-tests (the gate must be known to FIRE)
+        shell: bash
+        run: |
+          for f in scripts/gate_event_envelope.py scripts/event_gate_lib.py scripts/__tests__/test_gate_event_envelope.py scripts/__tests__/test_event_gate_lib.py; do
+            if [ ! -f "$f" ]; then
+              echo "::error title=gate-event-envelope::$f is missing. sdlc-bootstrap installs the gate, its library, its self-tests, governance/event-envelope-policy.json and this job together — if you have this job you must have them all. Do NOT 'fix' this by skipping."
+              exit 1
+            fi
+          done
+          python -m unittest discover -s scripts/__tests__ -p 'test_gate_event_envelope.py' -v
+          python -m unittest discover -s scripts/__tests__ -p 'test_event_gate_lib.py' -v
+
+      - name: Event-envelope gate — report (every topic, parity, suggested ratchet)
+        shell: bash
+        run: python scripts/gate_event_envelope.py --report
+
+      - name: Event-envelope gate (enforcing)
+        shell: bash
+        run: |
+          python scripts/gate_event_envelope.py
+
+  gate-outbox:
+    # No direct producer call for a domain topic outside the transactional-outbox relay (§3).
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with: { python-version: '3.12' }
+
+      - name: Outbox gate — self-tests (the gate must be known to FIRE)
+        shell: bash
+        run: |
+          for f in scripts/gate_outbox.py scripts/event_gate_lib.py scripts/__tests__/test_gate_outbox.py scripts/__tests__/test_event_gate_lib.py; do
+            if [ ! -f "$f" ]; then
+              echo "::error title=gate-outbox::$f is missing. sdlc-bootstrap installs the gate, its library, its self-tests, governance/outbox-policy.json and this job together — if you have this job you must have them all. Do NOT 'fix' this by skipping."
+              exit 1
+            fi
+          done
+          python -m unittest discover -s scripts/__tests__ -p 'test_gate_outbox.py' -v
+          python -m unittest discover -s scripts/__tests__ -p 'test_event_gate_lib.py' -v
+
+      - name: Outbox gate — report (every offending file, suggested ratchet)
+        shell: bash
+        run: python scripts/gate_outbox.py --report
+
+      - name: Outbox gate (enforcing)
+        shell: bash
+        run: |
+          python scripts/gate_outbox.py
+
+  gate-idempotent-consumer:
+    # Every consumer is built on the shared runtime — no raw consumer.run( / kafka.consumer( /
+    # AIOKafkaConsumer( outside the runtime package paths the policy declares (§4).
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with: { python-version: '3.12' }
+
+      - name: Idempotent-consumer gate — self-tests (the gate must be known to FIRE)
+        shell: bash
+        run: |
+          for f in scripts/gate_idempotent_consumer.py scripts/event_gate_lib.py scripts/__tests__/test_gate_idempotent_consumer.py scripts/__tests__/test_event_gate_lib.py; do
+            if [ ! -f "$f" ]; then
+              echo "::error title=gate-idempotent-consumer::$f is missing. sdlc-bootstrap installs the gate, its library, its self-tests, governance/idempotent-consumer-policy.json and this job together — if you have this job you must have them all. Do NOT 'fix' this by skipping."
+              exit 1
+            fi
+          done
+          python -m unittest discover -s scripts/__tests__ -p 'test_gate_idempotent_consumer.py' -v
+          python -m unittest discover -s scripts/__tests__ -p 'test_event_gate_lib.py' -v
+
+      - name: Idempotent-consumer gate — report (every offending file, suggested ratchet)
+        shell: bash
+        run: python scripts/gate_idempotent_consumer.py --report
+
+      - name: Idempotent-consumer gate (enforcing)
+        shell: bash
+        run: |
+          python scripts/gate_idempotent_consumer.py
+
   gate-code-review:
       # NOTE: the `if:` below already excludes merge_group — a merge group has no
       # pull_request context, and this job needs github.event.pull_request.number.
@@ -1354,7 +1535,10 @@ jobs:
           # Diff to a temp file first: piping straight into `head` makes git die
           # of SIGPIPE (exit 141) when head closes the stream early.
           git diff "origin/$BASE_REF"...HEAD -- ':!*.lock' ':!package-lock.json' > /tmp/fulldiff.txt 2>/dev/null || true
-          DIFF=$(head -c 80000 /tmp/fulldiff.txt)
+          # $PROMPT (this diff + wrapper) is passed as a single CLI arg to `claude -p`, and
+          # Linux execve caps one arg at MAX_ARG_STRLEN = 131072 bytes, so keep the diff well
+          # under that. Report-only, so truncation here only ever cost comment quality.
+          DIFF=$(head -c 100000 /tmp/fulldiff.txt)
           if [ -z "$DIFF" ]; then echo "No diff to review."; exit 0; fi
           PROMPT="You are an automated code reviewer. Review this PR diff for runtime-correctness bugs only (wrong conditions, null derefs, missing awaits, off-by-one, swallowed errors). Ignore style, naming, tests, perf. Output at most 5 findings as a bullet list: \`path/file:line — description\`. If none, output exactly: (none)"$'\n\n'"$DIFF"
           REVIEW=$(claude -p "$PROMPT" 2>&1) || {

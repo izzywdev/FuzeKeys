@@ -2,10 +2,12 @@
   "name": "fuzekeys-frontend",
   "version": "1.0.0",
   "private": true,
+  "description": "FuzeKeys web frontend (standalone app and FuzeFront MFE remote)",
   "dependencies": {
     "@ant-design/icons": "^5.2.6",
     "@headlessui/react": "^2.2.10",
     "@heroicons/react": "^2.0.18",
+    "@izzywdev/fuzefront-telemetry": "^0.2.0",
     "@types/node": "^20.8.10",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
